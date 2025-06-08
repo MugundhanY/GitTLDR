@@ -1,0 +1,13 @@
+# Core dependencies
+google-generativeai
+sentence-transformers
+tiktoken
+qdrant-client
+redis
+b2sdk
+python-dotenv
+pydantic-settings
+
+# Optional dependencies for better performance
+torch
+transformers

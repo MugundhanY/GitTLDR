@@ -1,0 +1,104 @@
+# ==============================
+# Root-level ignores
+# ==============================
+
+# Environment files (do not commit secrets)
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# ==============================
+# Frontend (Next.js)
+# ==============================
+frontend/.next/
+frontend/out/
+frontend/node_modules/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+frontend/.turbo/
+frontend/.vercel/
+frontend/build/
+
+# ==============================
+# Backend (Node.js)
+# ==============================
+node-worker/node_modules/
+node-worker/dist/
+node-worker/build/
+node-worker/.env
+node-worker/.env.local
+node-worker/.env.*.local
+
+# ==============================
+# Python Worker
+# ==============================
+python-worker/__pycache__/
+python-worker/*.py[cod]
+python-worker/.env
+python-worker/.venv/
+python-worker/env/
+python-worker/venv/
+python-worker/.pytest_cache/
+python-worker/.mypy_cache/
+python-worker/.pytype/
+python-worker/.coverage
+python-worker/coverage.xml
+python-worker/htmlcov/
+python-worker/.tox/
+python-worker/.nox/
+python-worker/.pylint.d/
+python-worker/.ruff_cache/
+python-worker/.ipynb_checkpoints/
+python-worker/.idea/
+python-worker/.vscode/
+
+# Python virtual environment folders (generic)
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Byte-compiled / optimized / DLL files
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+python-worker/dist/
+python-worker/build/
+python-worker/*.egg-info/
+python-worker/.eggs/
+
+# ==============================
+# Other common ignores
+# ==============================
+
+# IDE and Editor configs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Coverage reports
+coverage/
+*.lcov
+
+# Temporary files
+*.tmp
+*.temp
+
+# npm/yarn lock files (you can choose to track or ignore)
+# package-lock.json
+# yarn.lock
