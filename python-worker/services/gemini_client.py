@@ -472,15 +472,33 @@ class GeminiClient:
     def get_rate_limit_status(self) -> Dict[str, Any]:
         """Get current rate limiting status for monitoring."""
         return {
-            "circuit_breaker_status": self.rate_limit_manager.get_circuit_breaker_status(),
-            "model_name": "gemini-2.0-flash-lite",
+            "circuit_breaker_status": self.rate_limit_manager.get_circuit_breaker_status(),            "model_name": "gemini-2.0-flash-lite",
             "configured": self._configured,
             "initialized": self._initialized
         }
 
     def _build_summary_prompt(self, text: str, context: str) -> str:
         """Build prompt for summarization."""
-        return f"""
+        if context == "git commit":
+            return f"""
+You are an expert code analyst. Provide a very concise summary of this git commit.
+
+Commit information:
+{text}
+
+Requirements:
+- Write a single, clear sentence (max 2 sentences)
+- Focus on the main change or feature
+- Use present tense
+- Avoid mentioning file names unless crucial
+- Keep it under 100 characters when possible
+
+Example format: "Adds user authentication with JWT tokens" or "Fixes database connection timeout issue"
+
+Summary:
+"""
+        else:
+            return f"""
 You are an expert code analyst. Please provide a concise, informative summary of the following {context} content.
 
 Focus on:
