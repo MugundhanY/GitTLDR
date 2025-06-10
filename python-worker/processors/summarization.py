@@ -96,8 +96,7 @@ class SummarizationProcessor:
         if not commit_data:
             raise ValueError("Commit data is required")
         
-        try:
-            # Build commit context from changes
+        try:            # Build enhanced commit context from changes
             change_summary = []
             for change in changes:
                 filename = change.get("filename", "unknown")
@@ -105,17 +104,22 @@ class SummarizationProcessor:
                 additions = change.get("additions", 0)
                 deletions = change.get("deletions", 0)
                 
-                change_summary.append(
-                    f"- {filename}: {status} (+{additions}/-{deletions})"
-                )
+                # Create more descriptive change entries
+                change_desc = f"- {filename}: {status}"
+                if additions > 0 or deletions > 0:
+                    change_desc += f" (+{additions}/-{deletions})"
+                change_summary.append(change_desc)
             
+            # Create enhanced commit context
             commit_context = f"""
-Commit: {commit_data.get('sha', 'unknown')}
+Commit: {commit_data.get('sha', 'unknown')[:8]}
 Message: {commit_data.get('message', '')}
 Author: {commit_data.get('author', {}).get('name', 'unknown')}
 
-Files changed:
+Files modified ({len(changes)} files):
 {chr(10).join(change_summary)}
+
+Context: This is a git commit representing changes made to a codebase. Analyze the commit message and file changes to understand what functionality was added, modified, or fixed.
 """
             
             # Generate summary using Gemini
