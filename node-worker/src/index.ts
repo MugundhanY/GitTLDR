@@ -312,7 +312,7 @@ async function startProcessors() {
 
 // Start server
 app.listen(PORT, async () => {
-  console.log(`🚀 Node.js Task Manager running on port ${PORT}`);
+  console.log(`[SERVER] Node.js Task Manager running on port ${PORT}`);
   console.log(`📡 Connected to Redis: ${process.env.REDIS_URL}`);
   console.log(`🎯 Queue name: ${process.env.QUEUE_NAME || 'gittldr_tasks'}`);
   

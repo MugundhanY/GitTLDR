@@ -4,8 +4,9 @@ import React, { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import AuthGuard from '@/components/auth/AuthGuard';
-import { ArrowLeftIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, CodeBracketIcon } from '@heroicons/react/24/outline';
 import { useUserData } from '@/hooks/useUserData';
+import { useRepository } from '@/contexts/RepositoryContext';
 
 // Import all components
 import CreditWarning from './CreditWarning';
@@ -16,7 +17,7 @@ import { GitHubRepo, CreditCheck, TabType } from './types';
 
 export default function CreateRepositoryPage() {
   const router = useRouter();
-  const { userData, isLoading: userLoading } = useUserData();
+  const { userData, isLoading: userLoading } = useUserData();  const { addRepositoryFromData, repositories: existingRepositories, selectRepository } = useRepository();
   
   // State management
   const [githubUrl, setGithubUrl] = useState('');
@@ -33,6 +34,19 @@ export default function CreateRepositoryPage() {
   const [hasAccessToken, setHasAccessToken] = useState(false);
   const [publicOnly, setPublicOnly] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('url');
+  // Handle opening existing repository
+  const handleOpenRepository = (repo: GitHubRepo) => {
+    // Find the existing repository and navigate to its page
+    const existingRepo = existingRepositories.find(existing => 
+      existing.full_name.toLowerCase() === repo.full_name.toLowerCase()
+    );
+    if (existingRepo) {
+      // Select this repository in the context
+      selectRepository(existingRepo);
+      // Navigate to dashboard with the selected repository
+      router.push('/dashboard');
+    }
+  };
 
   // Credit checking functions
   const checkCreditsForRepo = useCallback(async (repo: GitHubRepo) => {
@@ -104,8 +118,18 @@ export default function CreateRepositoryPage() {
       setIsCheckingCredits(false);
     }
   }, [userData?.credits, checkedRepos]);
-
   const checkCreditsForUrl = useCallback(async (repoData: GitHubRepo) => {
+    // Check if repository already exists
+    const isExisting = existingRepositories.some(existing => 
+      existing.full_name.toLowerCase() === repoData.full_name.toLowerCase()
+    );
+    
+    // Skip credit checking for existing repositories
+    if (isExisting) {
+      setCreditCheck(null);
+      return null;
+    }
+    
     setCreditCheck(null);
     setIsCheckingCredits(true);
     
@@ -140,11 +164,10 @@ export default function CreateRepositoryPage() {
         isEstimate: true
       };
       setCreditCheck(fallbackResult);
-      return fallbackResult;
-    } finally {
+      return fallbackResult;    } finally {
       setIsCheckingCredits(false);
     }
-  }, [userData?.credits]);
+  }, [userData?.credits, existingRepositories]);
 
   // GitHub URL validation
   const validateGitHubUrl = useCallback(async (url: string) => {
@@ -269,8 +292,7 @@ export default function CreateRepositoryPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+        },        body: JSON.stringify({
           name: repo.name,
           fullName: repo.full_name,
           owner: repo.owner.login,
@@ -278,14 +300,19 @@ export default function CreateRepositoryPage() {
           description: repo.description,
           language: repo.language,
           stars: repo.stargazers_count,
-          forks: repo.forks_count || repo.watchers_count,
+          forks: repo.forks_count || 0,
+          watchers_count: repo.watchers_count || 0,
+          avatar_url: repo.owner.avatar_url || '',
           isPrivate: repo.private,
+          creditsNeeded: actualCreditsNeeded,
         }),
-      });
-
-      if (response.ok) {
+      });      if (response.ok) {
         const result = await response.json();
-        router.push(`/repositories/${result.repository.id}`);
+        // Add the repository to context and select it
+        const newRepo = addRepositoryFromData(result);
+        selectRepository(newRepo);
+        // Navigate to dashboard with the selected repository
+        router.push('/dashboard');
       } else {
         const error = await response.json();
         setValidationError(error.error || 'Failed to add repository');
@@ -302,13 +329,32 @@ export default function CreateRepositoryPage() {
     repo.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (repo.description && repo.description.toLowerCase().includes(searchTerm.toLowerCase()))
   );
-
   if (userLoading) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-slate-600 dark:text-slate-400">Loading...</p>
+          {/* Professional loading indicator */}
+          <div className="relative mx-auto mb-6 w-16 h-16">
+            <div className="absolute inset-0 border-[3px] border-slate-200 dark:border-slate-700 rounded-full"></div>
+            <div className="absolute inset-0 border-[3px] border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+            
+            {/* Inner pulsing circle */}
+            <div className="absolute inset-3 bg-emerald-500/20 rounded-full animate-pulse"></div>
+            
+            {/* Repository icon */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <CodeBracketIcon className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+              Initializing GitTLDR
+            </h3>
+            <p className="text-slate-600 dark:text-slate-400">
+              Preparing your workspace for repository analysis...
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -363,8 +409,7 @@ export default function CreateRepositoryPage() {
           <TabNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
 
           {/* Tab Content */}
-          <div className="space-y-8">
-            {activeTab === 'url' ? (
+          <div className="space-y-8">            {activeTab === 'url' ? (
               <URLTab
                 githubUrl={githubUrl}
                 setGithubUrl={setGithubUrl}
@@ -376,9 +421,10 @@ export default function CreateRepositoryPage() {
                 checkCreditsForUrl={checkCreditsForUrl}
                 handleAddRepository={handleAddRepository}
                 isAdding={isAdding}
+                existingRepositories={existingRepositories}
+                onOpenRepository={handleOpenRepository}
               />
-            ) : (
-              <BrowseTab
+            ) : (<BrowseTab
                 searchTerm={searchTerm}
                 setSearchTerm={setSearchTerm}
                 publicOnly={publicOnly}
@@ -391,6 +437,8 @@ export default function CreateRepositoryPage() {
                 isCheckingCredits={isCheckingCredits}
                 isAdding={isAdding}
                 setActiveTab={setActiveTab}
+                existingRepositories={existingRepositories}
+                onOpenRepository={handleOpenRepository}
               />
             )}
           </div>

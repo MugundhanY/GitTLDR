@@ -90,11 +90,10 @@ export function Header({ selectedRepo, onRepoChange, repositories = [] }: Header
                         <div className="flex items-center space-x-3">
                           <div className={`w-3 h-3 rounded-full ${repo.private ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
                           <div>
-                            <div className="font-medium text-white">{repo.name}</div>
-                            <div className="text-sm text-gray-400 flex items-center space-x-3">
+                            <div className="font-medium text-white">{repo.name}</div>                            <div className="text-sm text-gray-400 flex items-center space-x-3">
                               <span>{repo.language}</span>
                               <span>⭐ {repo.stars}</span>
-                              <span>🔍 {repo.issues} issues</span>
+                              <span>{repo.issues} issues</span>
                             </div>
                           </div>
                         </div>

@@ -28,7 +28,8 @@ interface RepositoryContextType {
   error: string | null;
   selectRepository: (repository: Repository) => void;
   refreshRepositories: () => Promise<void>;
-  addRepository: (repoUrl: string) => Promise<void>;
+  addRepository: (repoUrl: string) => Promise<Repository>;
+  addRepositoryFromData: (repoData: any) => Repository;
 }
 
 const RepositoryContext = createContext<RepositoryContextType | undefined>(undefined);
@@ -55,7 +56,6 @@ export const RepositoryProvider: React.FC<RepositoryProviderProps> = ({ children
   useEffect(() => {
     refreshRepositories();
   }, []);
-
   // Load selected repository from localStorage on mount
   useEffect(() => {
     const savedRepoId = localStorage.getItem('selectedRepositoryId');
@@ -63,25 +63,51 @@ export const RepositoryProvider: React.FC<RepositoryProviderProps> = ({ children
       const repo = repositories.find(r => r.id === savedRepoId);
       if (repo) {
         setSelectedRepository(repo);
+        return;
       }
-    } else if (repositories.length > 0 && !selectedRepository) {
-      // Auto-select first repository if none selected
-      setSelectedRepository(repositories[0]);
     }
-  }, [repositories]);
-
+    
+    // Auto-select first repository if none selected and repositories are available
+    if (repositories.length > 0 && !selectedRepository) {
+      const firstRepo = repositories[0];
+      setSelectedRepository(firstRepo);
+      localStorage.setItem('selectedRepositoryId', firstRepo.id);
+    }
+  }, [repositories, selectedRepository]);
   const refreshRepositories = async () => {
     try {
       setIsLoading(true);
       setError(null);
       
-      // TODO: Replace with actual API call
       const response = await fetch('/api/repositories');
       if (!response.ok) {
         throw new Error('Failed to fetch repositories');
       }
-        const data = await response.json();
-      setRepositories(data.repositories || []);
+      
+      const data = await response.json();
+      const apiRepositories = data.repositories || [];
+      
+      // Transform API data to match Repository interface
+      const repositories: Repository[] = apiRepositories.map((repo: any) => ({
+        id: repo.id,
+        name: repo.name,
+        full_name: repo.fullName,
+        private: repo.isPrivate,
+        language: repo.language,
+        description: repo.description,
+        html_url: repo.url,
+        stargazers_count: repo.stars || 0,
+        open_issues_count: 0, // Not available from our API
+        default_branch: 'main', // Default value
+        created_at: repo.createdAt,
+        updated_at: repo.updatedAt,
+        owner: {
+          login: repo.owner,
+          avatar_url: 'https://github.com/github.png' // Default avatar
+        }
+      }));
+      
+      setRepositories(repositories);
     } catch (err) {
       // For now, use mock data if API fails
       console.warn('Failed to fetch repositories, using mock data:', err);
@@ -143,7 +169,6 @@ export const RepositoryProvider: React.FC<RepositoryProviderProps> = ({ children
     setSelectedRepository(repository);
     localStorage.setItem('selectedRepositoryId', repository.id);
   };
-
   const addRepository = async (repoUrl: string) => {
     try {
       setError(null);
@@ -162,15 +187,49 @@ export const RepositoryProvider: React.FC<RepositoryProviderProps> = ({ children
       }
       
       const newRepo = await response.json();
+      
+      // Add to repositories list
       setRepositories(prev => [...prev, newRepo]);
+      
+      // Always select the newly added repository
       setSelectedRepository(newRepo);
       localStorage.setItem('selectedRepositoryId', newRepo.id);
+      
+      return newRepo;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add repository');
       throw err;
-    }
-  };
+    }  };
 
+  const addRepositoryFromData = (repoData: any): Repository => {
+    // Convert repository data from API response to our Repository format
+    const newRepo: Repository = {
+      id: repoData.repository?.id || repoData.id,
+      name: repoData.repository?.name || repoData.name,
+      full_name: repoData.repository?.fullName || repoData.fullName || repoData.full_name,
+      private: repoData.repository?.isPrivate || repoData.isPrivate || repoData.private || false,
+      language: repoData.repository?.language || repoData.language,
+      description: repoData.repository?.description || repoData.description,
+      html_url: repoData.repository?.url || repoData.url || repoData.html_url,
+      stargazers_count: repoData.repository?.stars || repoData.stars || repoData.stargazers_count || 0,
+      open_issues_count: repoData.repository?.openIssues || repoData.openIssues || repoData.open_issues_count || 0,
+      created_at: repoData.repository?.createdAt || repoData.createdAt || repoData.created_at,
+      updated_at: repoData.repository?.updatedAt || repoData.updatedAt || repoData.updated_at,
+      owner: {
+        login: repoData.repository?.owner || repoData.owner?.login || repoData.owner || 'unknown',
+        avatar_url: repoData.owner?.avatar_url || 'https://github.com/github.png'
+      }
+    };
+    
+    // Add to repositories list
+    setRepositories(prev => [...prev, newRepo]);
+    
+    // Always select the newly added repository
+    setSelectedRepository(newRepo);
+    localStorage.setItem('selectedRepositoryId', newRepo.id);
+    
+    return newRepo;
+  };
   const value: RepositoryContextType = {
     selectedRepository,
     repositories,
@@ -179,6 +238,7 @@ export const RepositoryProvider: React.FC<RepositoryProviderProps> = ({ children
     selectRepository,
     refreshRepositories,
     addRepository,
+    addRepositoryFromData,
   };
 
   return (

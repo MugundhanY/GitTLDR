@@ -20,7 +20,9 @@ export default function RepositoryItem({
   checkCreditsForRepo, 
   checkedRepos, 
   isCheckingCredits,
-  isAdding 
+  isAdding,
+  isExisting = false,
+  onOpenRepository
 }: RepositoryItemProps) {
   const [localChecking, setLocalChecking] = useState(false);
   const repoKey = `${repo.owner.login}/${repo.name}`;
@@ -54,7 +56,18 @@ export default function RepositoryItem({
       <div className="absolute inset-0 bg-gradient-to-br from-white via-blue-50/30 to-emerald-50/30 dark:from-slate-800 dark:via-slate-800/95 dark:to-slate-800/90 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
       <div className="absolute inset-0 bg-gradient-to-r from-transparent via-emerald-50/20 to-transparent dark:via-emerald-900/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
       
-      <div className="relative bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm rounded-xl border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-600 transition-all duration-300 shadow-sm hover:shadow-lg group-hover:transform group-hover:scale-[1.02]">
+      <div className={`relative bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm rounded-xl border transition-all duration-300 shadow-sm hover:shadow-lg group-hover:transform group-hover:scale-[1.02] ${
+        isExisting 
+          ? 'border-emerald-200 dark:border-emerald-700 hover:border-emerald-300 dark:hover:border-emerald-600 bg-gradient-to-r from-emerald-50/50 to-transparent dark:from-emerald-900/20 dark:to-transparent'
+          : 'border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-600'
+      }`}>
+        {/* Existing repository badge */}
+        {isExisting && (
+          <div className="absolute top-3 right-3 flex items-center space-x-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-2 py-1 rounded-full text-xs font-medium">
+            <CheckCircleIcon className="w-3 h-3" />
+            <span>Added</span>
+          </div>
+        )}
         <div className="p-6">
           <div className="flex items-start space-x-4">
             {/* Enhanced Avatar */}
@@ -199,21 +212,32 @@ export default function RepositoryItem({
                     </div>
                   )}
                 </div>
-              )}
-
-              {/* Enhanced Action Buttons */}
+              )}              {/* Enhanced Action Buttons */}
               <div className="flex justify-end space-x-3">
-                {!creditCheck ? (
+                {isExisting ? (
+                  /* Existing Repository - Show Open Button */
                   <button
+                    onClick={() => onOpenRepository?.(repo)}
+                    className="group relative overflow-hidden px-4 py-2 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-medium rounded-lg transition-all duration-300 shadow-sm hover:shadow-md transform hover:scale-105 text-sm"
+                  >
+                    {/* Shimmer effect */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
+                    
+                    <div className="relative flex items-center space-x-2">
+                      <CheckCircleIcon className="w-4 h-4" />
+                      <span>Open Repository</span>
+                    </div>
+                  </button>
+                ) : !creditCheck ? (<button
                     onClick={handleCheckCredits}
-                    disabled={isCheckingCredits || localChecking}
+                    disabled={localChecking}
                     className="group relative overflow-hidden px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-400 disabled:to-slate-500 text-white font-medium rounded-lg transition-all duration-300 disabled:cursor-not-allowed shadow-sm hover:shadow-md transform hover:scale-105 text-sm"
                   >
                     {/* Shimmer effect */}
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
                     
                     <div className="relative flex items-center space-x-2">
-                      {(isCheckingCredits || localChecking) ? (
+                      {localChecking ? (
                         <>
                           <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
                           <span>Checking...</span>

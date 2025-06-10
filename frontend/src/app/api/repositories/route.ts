@@ -19,7 +19,8 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       );
     }
-      const body = await request.json();
+
+    const body = await request.json();
     const { 
       repoUrl, 
       name, 
@@ -30,7 +31,10 @@ export async function POST(request: NextRequest) {
       language, 
       stars, 
       forks, 
-      isPrivate 
+      watchers_count,
+      avatar_url,
+      isPrivate,
+      creditsNeeded 
     } = body;
 
     // Support both old format (repoUrl) and new format (detailed repo data)
@@ -60,7 +64,41 @@ export async function POST(request: NextRequest) {
       repoName = repoName || extractedName;
       repoOwner = repoOwner || extractedOwner;
       repoFullName = repoFullName || `${extractedOwner}/${extractedName}`;
-    }    // Save repository to database using Prisma
+    }    // Check if user has enough credits (if credits are needed)
+    const credits = creditsNeeded || 0;
+    if (credits > 0) {
+      const userCredits = user.credits || 0;
+      if (userCredits < credits) {
+        return NextResponse.json(
+          { error: `Insufficient credits. You need ${credits} credits to add this repository.` },
+          { status: 400 }
+        );
+      }
+
+      // Deduct credits from user and create transaction record
+      await prisma.$transaction([
+        // Deduct credits from user
+        prisma.user.update({
+          where: { id: user.id },
+          data: {
+            credits: {
+              decrement: credits
+            }
+          }
+        }),
+        // Create transaction record
+        prisma.transaction.create({
+          data: {
+            type: 'USAGE',
+            credits: -credits,
+            description: `Repository analysis: ${repoFullName}`,
+            userId: user.id
+          }
+        })
+      ]);
+    }
+
+    // Save repository to database using Prisma
     const repository = await prisma.repository.create({
       data: {
         name: repoName,
@@ -73,6 +111,8 @@ export async function POST(request: NextRequest) {
         language: language || '',
         stars: stars || 0,
         forks: forks || 0,
+        watchersCount: watchers_count || 0,
+        avatarUrl: avatar_url || '',
         isPrivate: isPrivate || false
       }
     });
@@ -82,7 +122,8 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-      },      body: JSON.stringify({
+      },
+      body: JSON.stringify({
         repositoryId: repository.id,
         userId: user.id,
         repoUrl: repositoryUrl,
@@ -99,7 +140,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       repository,
       jobId: workerResult.jobId,
-      status: 'processing'
+      status: 'processing',
+      creditsDeducted: credits
     });
 
   } catch (error) {

@@ -8,7 +8,6 @@ export interface GitHubRepo {
   stargazers_count: number;
   watchers_count: number;
   forks_count?: number;
-  open_issues_count?: number;
   language: string | null;
   default_branch: string;
   updated_at: string;
@@ -36,6 +35,8 @@ export interface RepositoryItemProps {
   checkedRepos: Map<string, CreditCheck>;
   isCheckingCredits: boolean;
   isAdding: boolean;
+  isExisting?: boolean;
+  onOpenRepository?: (repo: GitHubRepo) => void;
 }
 
 export type TabType = 'url' | 'browse';

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useRepository } from '@/contexts/RepositoryContext';
@@ -18,20 +18,121 @@ import {
   ArrowTrendingDownIcon,
   PlayIcon,
   DocumentTextIcon,
-  ChatBubbleLeftRightIcon,
-  VideoCameraIcon,
-  CogIcon,
   SparklesIcon,
-  BoltIcon,
-  BeakerIcon,
   LockClosedIcon,
   GlobeAltIcon
 } from '@heroicons/react/24/outline';
 
+interface DashboardStats {
+  name: string;
+  value: number;
+  icon: string;
+  change: string;
+  changeType: 'positive' | 'negative' | 'neutral';
+  trend: 'up' | 'down' | 'stable';
+}
+
+interface RecentActivity {
+  id: string;
+  type: 'commit' | 'issue' | 'pr' | 'release';
+  title: string;
+  author: string;
+  email?: string;
+  time: string;
+  avatar: string;
+  description: string;
+  sha?: string;
+  filesChanged?: number;
+  hasAiSummary?: boolean;
+  summaryStatus?: string;
+  githubUsername?: string;
+}
+
+interface DashboardInsights {
+  size: string;
+  forks: number;
+  watchers: number;
+  files: number;
+  lastActivity: string;
+  language: string;
+  topics: string[];
+}
+
+interface DashboardData {
+  stats: DashboardStats[];
+  recentActivity: RecentActivity[];
+  insights: DashboardInsights;
+  repository: {
+    id: string;
+    name: string;
+    description?: string;
+    url: string;
+    processed: boolean;
+    embeddingStatus: string;
+  };
+}
+
 export default function DashboardPage() {
   const { selectedRepository, repositories, isLoading } = useRepository();
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
 
-  if (isLoading) {
+  // Fetch dashboard data when repository changes
+  useEffect(() => {
+    if (selectedRepository?.id) {
+      fetchDashboardData(selectedRepository.id);
+    }
+  }, [selectedRepository?.id]);
+
+  const fetchDashboardData = async (repositoryId: string) => {
+    setIsLoadingData(true);
+    setDataError(null);
+    
+    try {
+      const response = await fetch(`/api/dashboard/stats?repositoryId=${repositoryId}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch dashboard data');
+      }
+      
+      const data = await response.json();
+      setDashboardData(data);
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      setDataError('Failed to load dashboard data');
+      // Set fallback data
+      setDashboardData({
+        stats: [
+          { name: 'Stars', value: selectedRepository?.stargazers_count || 0, icon: 'StarIcon', change: '+0', changeType: 'neutral', trend: 'stable' },
+          { name: 'Issues', value: selectedRepository?.open_issues_count || 0, icon: 'ExclamationTriangleIcon', change: '+0', changeType: 'neutral', trend: 'stable' },
+          { name: 'Pull Requests', value: 0, icon: 'CodeBracketIcon', change: '+0', changeType: 'neutral', trend: 'stable' },
+          { name: 'Contributors', value: 1, icon: 'UsersIcon', change: '+0', changeType: 'neutral', trend: 'stable' }
+        ],
+        recentActivity: [],
+        insights: {
+          size: 'Unknown',
+          forks: 0,
+          watchers: selectedRepository?.stargazers_count || 0,
+          files: 0,
+          lastActivity: 'Unknown',
+          language: selectedRepository?.language || 'Unknown',
+          topics: []
+        },
+        repository: {
+          id: selectedRepository?.id || '',
+          name: selectedRepository?.name || '',
+          description: selectedRepository?.description,
+          url: selectedRepository?.html_url || '',
+          processed: false,
+          embeddingStatus: 'unknown'
+        }
+      });
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  if (isLoading || isLoadingData) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-full">
@@ -51,10 +152,12 @@ export default function DashboardPage() {
           <div className="text-center max-w-md mx-auto p-8">
             <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
               <CodeBracketIcon className="w-12 h-12 text-white" />
-            </div>            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Welcome to GitTLDR</h3>
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Welcome to GitTLDR</h3>
             <p className="text-gray-600 dark:text-gray-400 mb-6">
               Add your first repository to get started with AI-powered insights and code analysis.
-            </p>            <Link 
+            </p>
+            <Link 
               href="/repositories/create" 
               className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
             >
@@ -67,79 +170,75 @@ export default function DashboardPage() {
     );
   }
 
-  const stats = [
+  // Use dynamic data if available, otherwise fallback to static data
+  const stats = dashboardData?.stats || [
     {
       name: 'Stars',
-      value: selectedRepository.stargazers_count || 0,
-      icon: StarIcon,
-      change: '+12',
-      changeType: 'positive',
-      trend: 'up'
+      value: selectedRepository?.stargazers_count || 0,
+      icon: 'StarIcon',
+      change: '+0',
+      changeType: 'neutral' as const,
+      trend: 'stable' as const
     },
     {
       name: 'Issues',
-      value: selectedRepository.open_issues_count || 0,
-      icon: ExclamationTriangleIcon,
-      change: '-3',
-      changeType: 'positive',
-      trend: 'down'
+      value: selectedRepository?.open_issues_count || 0,
+      icon: 'ExclamationTriangleIcon',
+      change: '+0',
+      changeType: 'neutral' as const,
+      trend: 'stable' as const
     },
     {
       name: 'Pull Requests',
-      value: '8',
-      icon: CodeBracketIcon,
-      change: '+2',
-      changeType: 'positive',
-      trend: 'up'
+      value: 0,
+      icon: 'CodeBracketIcon',
+      change: '+0',
+      changeType: 'neutral' as const,
+      trend: 'stable' as const
     },
     {
       name: 'Contributors',
-      value: '24',
-      icon: UsersIcon,
-      change: '+5',
-      changeType: 'positive',
-      trend: 'up'
+      value: 1,
+      icon: 'UsersIcon',
+      change: '+0',
+      changeType: 'neutral' as const,
+      trend: 'stable' as const
     }
   ];
 
-  const recentActivity = [
+  const recentActivity = dashboardData?.recentActivity || [
     {
-      id: 1,
-      type: 'commit',
-      title: 'Fix authentication bug in login flow',
-      author: 'John Doe',
-      time: '2 hours ago',
-      avatar: '🚀',
-      description: 'Resolved issue with OAuth token refresh'
-    },
-    {
-      id: 2,
-      type: 'issue',
-      title: 'Add dark mode support',
-      author: 'Jane Smith',
-      time: '4 hours ago',
-      avatar: '🎨',
-      description: 'Feature request for theme switching'
-    },
-    {
-      id: 3,
-      type: 'pr',
-      title: 'Implement new dashboard design',
-      author: 'Mike Johnson',
-      time: '6 hours ago',
-      avatar: '✨',
-      description: 'Modern bento grid layout with animations'
-    },
-    {
-      id: 4,
-      type: 'release',
-      title: 'Released version 2.1.0',
-      author: 'Release Bot',
-      time: '1 day ago',
-      avatar: '🎉',
-      description: 'New features and bug fixes'
+      id: '1',
+      type: 'commit' as const,
+      title: 'Loading recent activity...',
+      author: 'System',
+      time: 'Just now',
+      avatar: 'SY',
+      description: 'Fetching latest updates from repository'
     }
   ];
+
+  const insights = dashboardData?.insights || {
+    size: 'Unknown',
+    forks: 0,
+    watchers: selectedRepository?.stargazers_count || 0,
+    files: 0,
+    lastActivity: 'Unknown',
+    language: selectedRepository?.language || 'Unknown',
+    topics: []
+  };
+
+  const getIconComponent = (iconName: string) => {
+    const iconMap: Record<string, any> = {
+      StarIcon,
+      ExclamationTriangleIcon,
+      CodeBracketIcon,
+      UsersIcon,
+      ChartBarIcon,
+      EyeIcon
+    };
+    return iconMap[iconName] || StarIcon;
+  };
 
   const quickActions = [
     {
@@ -200,53 +299,128 @@ export default function DashboardPage() {
   return (
     <DashboardLayout>
       <div className="p-6 space-y-6 max-w-7xl mx-auto">
-        {/* Repository Header */}
-        <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
-          <div className="flex items-start justify-between">
-            <div className="flex items-start space-x-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                <CodeBracketIcon className="w-8 h-8 text-white" />
+        {/* Enhanced Repository Header */}
+        <div className="relative overflow-hidden bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl rounded-3xl p-8 border border-gray-200/50 dark:border-gray-700/50 shadow-2xl">
+          {/* Background Patterns */}
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-50/80 via-purple-50/60 to-pink-50/80 dark:from-blue-900/20 dark:via-purple-900/20 dark:to-pink-900/20"></div>
+          
+          <div className="relative flex items-start justify-between">
+            <div className="flex items-start space-x-8">
+              {/* Repository Icon */}
+              <div className="relative group">
+                <div className="relative w-24 h-24 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-3xl flex items-center justify-center shadow-2xl ring-4 ring-white/70 dark:ring-gray-800/70 backdrop-blur-sm group-hover:scale-105 transition-transform duration-300">
+                  <CodeBracketIcon className="w-12 h-12 text-white drop-shadow-lg" />
+                </div>
+                
+                {/* Processing Status Indicator */}
+                {dashboardData?.repository.embeddingStatus && (
+                  <div className={`absolute -bottom-3 -right-3 w-8 h-8 rounded-full border-4 border-white dark:border-gray-800 flex items-center justify-center text-sm font-bold shadow-lg ${
+                    dashboardData.repository.embeddingStatus === 'COMPLETED' 
+                      ? 'bg-gradient-to-br from-green-400 to-emerald-500 text-white'
+                      : dashboardData.repository.embeddingStatus === 'PROCESSING'
+                      ? 'bg-gradient-to-br from-yellow-400 to-orange-500 text-white animate-spin'
+                      : dashboardData.repository.embeddingStatus === 'FAILED'
+                      ? 'bg-gradient-to-br from-red-400 to-pink-500 text-white'
+                      : 'bg-gradient-to-br from-gray-400 to-gray-500 text-white'
+                  }`}>
+                    {dashboardData.repository.embeddingStatus === 'COMPLETED' ? '✓' : 
+                     dashboardData.repository.embeddingStatus === 'PROCESSING' ? '⟳' : 
+                     dashboardData.repository.embeddingStatus === 'FAILED' ? '✗' : '○'}
+                  </div>
+                )}
               </div>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                  {selectedRepository.name}
-                </h1>
-                <p className="text-gray-600 dark:text-gray-400 mb-3">
-                  {selectedRepository.description || 'No description available'}
-                </p>
-                <div className="flex items-center space-x-4 text-sm">
+              
+              <div className="flex-1 pt-2">
+                {/* Repository Name and Description */}
+                <div className="mb-6">
+                  <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-800 to-purple-800 dark:from-white dark:via-blue-200 dark:to-purple-200 bg-clip-text text-transparent mb-3 leading-tight">
+                    {selectedRepository.name}
+                    {selectedRepository.private && (
+                      <span className="ml-3 inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700">
+                        <LockClosedIcon className="w-4 h-4 mr-1" />
+                        Private
+                      </span>
+                    )}
+                  </h1>
+                  <p className="text-lg text-gray-700 dark:text-gray-300 leading-relaxed max-w-3xl font-medium">
+                    {selectedRepository.description || 'No description available for this repository'}
+                  </p>
+                </div>
+                
+                {/* Metadata */}
+                <div className="flex flex-wrap items-center gap-4">
                   {selectedRepository.language && (
-                    <div className="flex items-center space-x-1">
-                      <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                      <span className="text-gray-700 dark:text-gray-300">{selectedRepository.language}</span>
+                    <div className="flex items-center space-x-3 px-4 py-2.5 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm rounded-2xl border border-gray-200/50 dark:border-gray-700/50 shadow-sm">
+                      <div className="w-4 h-4 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"></div>
+                      <span className="font-semibold text-gray-800 dark:text-gray-200">{selectedRepository.language}</span>
                     </div>
                   )}
-                  <div className="flex items-center space-x-1">
-                    {selectedRepository.private ? (
-                      <><LockClosedIcon className="w-4 h-4 text-amber-500" /><span className="text-amber-600 dark:text-amber-400">Private</span></>
-                    ) : (
-                      <><GlobeAltIcon className="w-4 h-4 text-green-500" /><span className="text-green-600 dark:text-green-400">Public</span></>
-                    )}
-                  </div>                  <div className="flex items-center space-x-1">
-                    <CalendarIcon className="w-4 h-4 text-gray-500" />
-                    <span className="text-gray-500 dark:text-gray-400">
-                      Updated {new Date(selectedRepository.updated_at || selectedRepository.created_at || Date.now()).toLocaleDateString()}
+                  
+                  {!selectedRepository.private && (
+                    <div className="flex items-center space-x-3 px-4 py-2.5 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 backdrop-blur-sm rounded-2xl border border-green-200/50 dark:border-green-700/50 shadow-sm">
+                      <GlobeAltIcon className="w-4 h-4 text-green-600 dark:text-green-400" />
+                      <span className="font-semibold text-green-700 dark:text-green-300">Public</span>
+                    </div>
+                  )}
+                  
+                  {(selectedRepository.stargazers_count || 0) > 0 && (
+                    <div className="flex items-center space-x-3 px-4 py-2.5 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm rounded-2xl border border-gray-200/50 dark:border-gray-700/50 shadow-sm">
+                      <StarIcon className="w-4 h-4 text-yellow-500 fill-yellow-400" />
+                      <span className="font-semibold text-gray-800 dark:text-gray-200">{(selectedRepository.stargazers_count || 0).toLocaleString()} stars</span>
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center space-x-3 px-4 py-2.5 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm rounded-2xl border border-gray-200/50 dark:border-gray-700/50 shadow-sm">
+                    <CalendarIcon className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                    <span className="font-medium text-gray-700 dark:text-gray-300">
+                      Updated {new Date(selectedRepository.updated_at || selectedRepository.created_at || Date.now()).toLocaleDateString('en-US', { 
+                        month: 'short', 
+                        day: 'numeric',
+                        year: new Date(selectedRepository.updated_at || selectedRepository.created_at || Date.now()).getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
+                      })}
                     </span>
                   </div>
                 </div>
               </div>
             </div>
-            <div className="flex space-x-3">
-              <button className="inline-flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                <StarIcon className="w-4 h-4 mr-2" />
-                Star
+            
+            {/* Action Buttons */}
+            <div className="flex space-x-4">
+              <button className="group relative overflow-hidden px-6 py-3 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm text-gray-700 dark:text-gray-300 rounded-2xl border border-gray-200/50 dark:border-gray-700/50 hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-300 hover:shadow-lg hover:scale-105">
+                <div className="relative flex items-center space-x-2">
+                  <StarIcon className="w-5 h-5" />
+                  <span className="font-semibold">Star</span>
+                </div>
               </button>
-              <button className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                <PlayIcon className="w-4 h-4 mr-2" />
-                View Code
-              </button>
+              
+              <Link 
+                href={selectedRepository.html_url || '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group relative overflow-hidden px-6 py-3 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 text-white rounded-2xl hover:from-blue-700 hover:via-purple-700 hover:to-pink-700 transition-all duration-300 shadow-xl hover:shadow-2xl transform hover:scale-105"
+              >
+                <div className="relative flex items-center space-x-2">
+                  <PlayIcon className="w-5 h-5" />
+                  <span className="font-semibold">View on GitHub</span>
+                </div>
+              </Link>
             </div>
           </div>
+          
+          {/* Processing Status Bar */}
+          {dashboardData?.repository.embeddingStatus === 'PROCESSING' && (
+            <div className="mt-8 p-6 bg-gradient-to-r from-blue-50/80 via-indigo-50/80 to-purple-50/80 dark:from-blue-900/30 dark:via-indigo-900/30 dark:to-purple-900/30 backdrop-blur-sm rounded-2xl border border-blue-200/50 dark:border-blue-700/50 shadow-lg">
+              <div className="flex items-center space-x-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-3 border-blue-600 border-t-transparent"></div>
+                <div className="flex-1">
+                  <h3 className="text-blue-900 dark:text-blue-100 font-bold text-lg">AI Processing in Progress</h3>
+                  <p className="text-blue-700 dark:text-blue-300 font-medium">
+                    Our advanced AI is analyzing your repository structure, generating summaries, and creating intelligent embeddings. This typically takes 2-10 minutes.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Bento Grid Layout */}
@@ -255,7 +429,7 @@ export default function DashboardPage() {
           <div className="lg:col-span-8">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               {stats.map((stat) => {
-                const Icon = stat.icon;
+                const Icon = getIconComponent(stat.icon);
                 return (
                   <div key={stat.name} className="bg-white dark:bg-gray-900 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-all duration-200 group">
                     <div className="flex items-center justify-between mb-4">
@@ -265,11 +439,15 @@ export default function DashboardPage() {
                       <div className="flex items-center space-x-1">
                         {stat.trend === 'up' ? (
                           <ArrowTrendingUpIcon className="w-4 h-4 text-green-500" />
-                        ) : (
+                        ) : stat.trend === 'down' ? (
                           <ArrowTrendingDownIcon className="w-4 h-4 text-red-500" />
+                        ) : (
+                          <div className="w-4 h-4 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
                         )}
                         <span className={`text-sm font-medium ${
-                          stat.changeType === 'positive' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                          stat.changeType === 'positive' ? 'text-green-600 dark:text-green-400' : 
+                          stat.changeType === 'negative' ? 'text-red-600 dark:text-red-400' :
+                          'text-gray-600 dark:text-gray-400'
                         }`}>
                           {stat.change}
                         </span>
@@ -284,35 +462,42 @@ export default function DashboardPage() {
               })}
             </div>
 
-            {/* Recent Activity - Large Card */}
+            {/* Recent Activity Card */}
             <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
               <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Activity</h3>
-                  <button className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium">
-                    View all
+                  {dataError && (
+                    <span className="text-sm text-amber-600 dark:text-amber-400">Using cached data</span>
+                  )}
+                  <button 
+                    onClick={() => selectedRepository && fetchDashboardData(selectedRepository.id)}
+                    className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium"
+                  >
+                    Refresh
                   </button>
                 </div>
               </div>
+              
               <div className="p-6">
                 <div className="space-y-4">
-                  {recentActivity.map((activity) => (
+                  {recentActivity.length > 0 ? recentActivity.map((activity) => (
                     <div key={activity.id} className="flex items-start space-x-4 p-4 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                      <div className="text-2xl">{activity.avatar}</div>
+                      <div className="flex-shrink-0">
+                        {getActivityIcon(activity.type)}
+                      </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-2 mb-1">
-                          {getActivityIcon(activity.type)}
-                          <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                            {activity.title}
-                          </p>
-                        </div>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">{activity.description}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-500">
-                          by {activity.author} • {activity.time}
-                        </p>
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-white">{activity.title}</h4>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{activity.description}</p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{activity.author} • {activity.time}</p>
                       </div>
                     </div>
-                  ))}
+                  )) : (
+                    <div className="text-center py-8">
+                      <ClockIcon className="h-8 w-8 text-gray-400 dark:text-gray-500 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500 dark:text-gray-400">No recent activity</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -351,17 +536,15 @@ export default function DashboardPage() {
             {/* Repository Insights */}
             <div className="bg-white dark:bg-gray-900 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Repository Insights</h3>
-              <div className="space-y-4">                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                   <div className="flex items-center space-x-2">
                     <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/20 rounded-lg flex items-center justify-center">
                       <ChartBarIcon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                     </div>
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Size</span>
                   </div>
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                    {/* Use a placeholder since size is not available in the Repository interface */}
-                    N/A
-                  </span>
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{insights.size}</span>
                 </div>
                 
                 <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
@@ -371,10 +554,7 @@ export default function DashboardPage() {
                     </div>
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Forks</span>
                   </div>
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                    {/* Use a placeholder since forks_count is not available */}
-                    N/A
-                  </span>
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{insights.forks}</span>
                 </div>
 
                 <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
@@ -384,10 +564,17 @@ export default function DashboardPage() {
                     </div>
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Watchers</span>
                   </div>
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                    {/* Use stargazers_count as a proxy for watchers */}
-                    {selectedRepository.stargazers_count || 0}
-                  </span>
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{insights.watchers}</span>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-8 h-8 bg-orange-100 dark:bg-orange-900/20 rounded-lg flex items-center justify-center">
+                      <DocumentTextIcon className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                    </div>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Files</span>
+                  </div>
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{insights.files}</span>
                 </div>
               </div>
             </div>
@@ -401,9 +588,12 @@ export default function DashboardPage() {
               <p className="text-purple-100 text-sm mb-4">
                 Unlock the power of AI to understand your codebase better with smart summaries and Q&A.
               </p>
-              <button className="w-full bg-white/20 hover:bg-white/30 text-white rounded-lg py-2 px-4 text-sm font-medium transition-colors">
+              <Link
+                href="/qna"
+                className="block w-full bg-white/20 hover:bg-white/30 text-white rounded-lg py-2 px-4 text-sm font-medium transition-colors text-center"
+              >
                 Explore AI Features
-              </button>
+              </Link>
             </div>
           </div>
         </div>

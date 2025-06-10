@@ -2,7 +2,12 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { 
+  ExclamationTriangleIcon, 
+  LightBulbIcon, 
+  RocketLaunchIcon, 
+  SparklesIcon 
+} from '@heroicons/react/24/outline';
 import { TabType } from './types';
 
 interface CreditWarningProps {
@@ -33,38 +38,39 @@ export default function CreditWarning({ credits, setActiveTab }: CreditWarningPr
             <div className="flex items-center space-x-3 mb-3">
               <h3 className="text-xl font-bold bg-gradient-to-r from-amber-800 via-orange-700 to-amber-800 dark:from-amber-200 dark:via-orange-200 dark:to-amber-200 bg-clip-text text-transparent">
                 Ready to Supercharge Your Coding?
-              </h3>
-              <div className="flex space-x-1">
-                <div className="w-2 h-2 bg-amber-400 rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                <div className="w-2 h-2 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+              </h3>              <div className="flex space-x-1">
+                <div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></div>
+                <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                <div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
               </div>
             </div>
-            
-            <p className="text-amber-900 dark:text-amber-100 mb-4 text-base leading-relaxed">
+              <p className="text-amber-900 dark:text-amber-100 mb-4 text-base leading-relaxed">
               You currently have <span className="font-bold text-orange-700 dark:text-orange-300">{credits} credits</span> remaining. 
               Each repository file requires 1 credit to unlock its AI-powered insights and summaries. 
-              <span className="block mt-2 text-amber-800 dark:text-amber-200">
-                💡 Get more credits to explore unlimited repositories and accelerate your development workflow!
+              <span className="flex items-center mt-2 text-amber-800 dark:text-amber-200">
+                <LightBulbIcon className="h-4 w-4 mr-2 text-amber-600 dark:text-amber-400" />
+                Get more credits to explore unlimited repositories and accelerate your development workflow!
               </span>
             </p>
             
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Link 
+            <div className="flex flex-col sm:flex-row gap-3">              <Link 
                 href="/billing"
                 className="group relative overflow-hidden px-6 py-3 bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-600 hover:from-emerald-700 hover:via-emerald-800 hover:to-teal-700 text-white font-semibold rounded-lg transition-all duration-300 transform hover:scale-105 hover:shadow-lg"
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
                 <div className="relative flex items-center space-x-2">
-                  <span>🚀 Get More Credits</span>
+                  <RocketLaunchIcon className="h-5 w-5" />
+                  <span>Get More Credits</span>
                 </div>
               </Link>
-              
-              <button
+                <button
                 onClick={() => setActiveTab('url')}
                 className="px-6 py-3 bg-white/80 dark:bg-slate-800/80 hover:bg-white dark:hover:bg-slate-700 text-amber-800 dark:text-amber-200 font-medium rounded-lg border-2 border-amber-300 dark:border-amber-600 hover:border-amber-400 dark:hover:border-amber-500 transition-all duration-200 backdrop-blur-sm"
               >
-                ✨ Explore Demo Mode
+                <div className="flex items-center space-x-2">
+                  <SparklesIcon className="h-4 w-4" />
+                  <span>Explore Demo Mode</span>
+                </div>
               </button>
             </div>
           </div>

@@ -35,7 +35,7 @@ export default function Sidebar({ selectedRepository }: SidebarProps) {
   const { stats } = useRepositoryStats(selectedRepository?.id);
 
   // Debug logging for credits
-  console.log('🔍 Sidebar Debug - Credits Data:', {
+  console.log('[SIDEBAR] Debug - Credits Data:', {
     billingCredits: billingData?.subscription?.credits,
     userCredits: userData?.credits,
     finalCredits: billingData?.subscription?.credits || userData?.credits || 0,

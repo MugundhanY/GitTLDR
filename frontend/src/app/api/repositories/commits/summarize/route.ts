@@ -42,13 +42,12 @@ export async function POST(request: NextRequest) {  try {
     });
 
     if (existingCommit?.summary && existingCommit.status === 'COMPLETED') {
-      await prisma.$disconnect();
-      return NextResponse.json({
+      await prisma.$disconnect();      return NextResponse.json({
         commit_id: existingCommit.id,
         commit_sha: commitSha,
         summary: existingCommit.summary,
         status: existingCommit.status,
-        generated_at: existingCommit.updatedAt.toISOString(),
+        generated_at: existingCommit.createdAt.toISOString(),
       });
     }
 
@@ -164,7 +163,7 @@ export async function POST(request: NextRequest) {  try {
       commit_sha: commitSha,
       summary: summary.summary,
       status: summary.status,
-      generated_at: summary.updatedAt.toISOString(),
+      generated_at: summary.createdAt.toISOString(),
     });
 
   } catch (error) {

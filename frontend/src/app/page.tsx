@@ -201,9 +201,8 @@ export default function Home() {
               <span className="text-2xl font-bold bg-gradient-to-r from-primary-400 to-secondary-400 bg-clip-text text-transparent">
                 GitTLDR
               </span>
-            </div>
-            <p className="text-neutral-400">
-              © 2025 GitTLDR. Built with ❤️ for developers.
+            </div>            <p className="text-neutral-400">
+              © 2025 GitTLDR. Built with passion for developers.
             </p>
           </div>
         </div>

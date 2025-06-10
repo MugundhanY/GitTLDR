@@ -40,14 +40,13 @@ export function useUserData() {  const [userData, setUserData] = useState<UserDa
         setIsLoading(true);
         setError(null);
 
-        // Fetch user data from API        console.log('🔍 Fetching user data from /api/user...');
-        const userResponse = await fetch('/api/user');
-        console.log('📡 User API response status:', userResponse.status);
+        // Fetch user data from API        console.log('[USER] Fetching user data from /api/user...');
+        const userResponse = await fetch('/api/user');        console.log('[API] User API response status:', userResponse.status);
         
         if (!userResponse.ok) {
-          console.log('❌ User API failed:', userResponse.status, userResponse.statusText);
+          console.log('[ERROR] User API failed:', userResponse.status, userResponse.statusText);
           if (userResponse.status === 401) {
-            console.log('🚨 Unauthorized - user needs to login');
+            console.log('[AUTH] Unauthorized - user needs to login');
             setUserData(null);
             setIsLoading(false);
             return;
@@ -75,7 +74,7 @@ export function useUserData() {  const [userData, setUserData] = useState<UserDa
         }
 
         // Fetch billing data which includes credits
-        console.log('🔍 Fetching billing data from /api/billing...');
+        console.log('[BILLING] Fetching billing data from /api/billing...');
         const billingResponse = await fetch('/api/billing');
         console.log('📡 Billing API response status:', billingResponse.status);
           if (billingResponse.ok) {
@@ -95,9 +94,8 @@ export function useUserData() {  const [userData, setUserData] = useState<UserDa
       } catch (err) {        console.error('💥 Error fetching user data:', err);
         setError(err instanceof Error ? err.message : 'Failed to fetch user data');
         setUserData(null);
-      } finally {
-        setIsLoading(false);
-        console.log('✅ User data fetch completed');
+      } finally {        setIsLoading(false);
+        console.log('[SUCCESS] User data fetch completed');
       }
     };
 

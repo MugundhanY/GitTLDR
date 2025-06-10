@@ -38,28 +38,30 @@ model User {
 }
 
 model Repository {
-  id               String             @id @default(cuid())
-  name             String
-  fullName         String             @map("full_name")
-  owner            String
-  url              String
-  description      String?
-  language         String?
-  stars            Int                @default(0)
-  forks            Int                @default(0)
-  isPrivate        Boolean            @default(false) @map("is_private")
-  processed        Boolean            @default(false)
-  summary          String?
-  embeddingStatus  RepositoryStatus   @default(PENDING) @map("embedding_status")
-  createdAt        DateTime           @default(now()) @map("created_at")
-  updatedAt        DateTime           @updatedAt @map("updated_at")
-  userId           String             @map("user_id")
-  fileCount        Int?               @map("file_count")
-  totalSize        Int?               @map("total_size")
-  commits          Commit[]
-  questions        Question[]
-  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  files            RepositoryFile[]
+  id              String           @id @default(cuid())
+  name            String
+  fullName        String           @map("full_name")
+  owner           String
+  url             String
+  description     String?
+  language        String?
+  stars           Int              @default(0)
+  forks           Int              @default(0)
+  isPrivate       Boolean          @default(false) @map("is_private")
+  processed       Boolean          @default(false)
+  summary         String?
+  embeddingStatus RepositoryStatus @default(PENDING) @map("embedding_status")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  userId          String           @map("user_id")
+  avatarUrl       String?          @map("avatar_url")
+  fileCount       Int?             @map("file_count")
+  totalSize       Int?             @map("total_size")
+  watchersCount   Int?             @map("watchers_count")
+  commits         Commit[]
+  questions       Question[]
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  files           RepositoryFile[]
 
   @@map("repositories")
 }
@@ -75,8 +77,8 @@ model RepositoryFile {
   createdAt    DateTime   @default(now()) @map("created_at")
   updatedAt    DateTime   @updatedAt @map("updated_at")
   repositoryId String     @map("repository_id")
-  fileUrl      String?    @map("file_url")
   fileKey      String?    @map("file_key")
+  fileUrl      String?    @map("file_url")
   repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
 
   @@unique([repositoryId, path])
@@ -92,11 +94,11 @@ model Commit {
   authorAvatar String?          @map("author_avatar")
   timestamp    DateTime
   url          String
-  summary      String?          // AI-generated summary
-  status       RepositoryStatus @default(PENDING) // Summary generation status
+  summary      String?
   filesChanged Int              @map("files_changed")
   createdAt    DateTime         @default(now()) @map("created_at")
   repositoryId String           @map("repository_id")
+  status       RepositoryStatus @default(PENDING)
   repository   Repository       @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
 
   @@map("commits")

@@ -4,14 +4,15 @@ import { getUserFromRequest } from '@/lib/auth';
 // GET /api/repositories/[id]/commits - Get commit history for a repository
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
-) {  try {
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
     const user = await getUserFromRequest(request);
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const repositoryId = params.id;
+    const { id: repositoryId } = await params;
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
     const perPage = Math.min(parseInt(searchParams.get('per_page') || '15'), 50); // Max 50 per page

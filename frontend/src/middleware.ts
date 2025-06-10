@@ -59,11 +59,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  try {
-    // Verify the token
-    console.log('🔍 Verifying token...');
+  try {    // Verify the token
+    console.log('[AUTH] Verifying token...');
     const decoded = await verifyToken(token);
-    console.log('✅ TOKEN VALID for user:', decoded.id);
+    console.log('[AUTH] TOKEN VALID for user:', decoded.id);
     
     // If token is valid, continue
     if (decoded) {

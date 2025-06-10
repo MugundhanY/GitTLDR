@@ -3,6 +3,7 @@
 import React from 'react';
 import { GlobeAltIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { GitHubRepo, CreditCheck } from './types';
+import { Repository } from '@/contexts/RepositoryContext';
 import RepositoryPreview from './RepositoryPreview';
 
 interface URLTabProps {
@@ -16,6 +17,8 @@ interface URLTabProps {
   isAdding: boolean;
   checkCreditsForUrl: (repo: GitHubRepo) => Promise<void>;
   handleAddRepository: (repo: GitHubRepo, creditsNeeded?: number) => Promise<void>;
+  existingRepositories: Repository[];
+  onOpenRepository: (repo: GitHubRepo) => void;
 }
 
 export default function URLTab({
@@ -28,8 +31,17 @@ export default function URLTab({
   isCheckingCredits,
   isAdding,
   checkCreditsForUrl,
-  handleAddRepository
+  handleAddRepository,
+  existingRepositories,
+  onOpenRepository
 }: URLTabProps) {
+  // Check if the repository is already existing
+  const isRepositoryExisting = (repo: GitHubRepo) => {
+    return existingRepositories.some(existing => 
+      existing.full_name.toLowerCase() === repo.full_name.toLowerCase()
+    );
+  };
+
   return (
     <div className="space-y-8">
       {/* Enhanced URL Input Card */}
@@ -125,9 +137,7 @@ export default function URLTab({
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Repository Preview */}
+      </div>      {/* Repository Preview */}
       {repoData && (
         <RepositoryPreview
           repoData={repoData}
@@ -136,6 +146,8 @@ export default function URLTab({
           isAdding={isAdding}
           checkCreditsForUrl={checkCreditsForUrl}
           handleAddRepository={handleAddRepository}
+          isExisting={isRepositoryExisting(repoData)}
+          onOpenRepository={onOpenRepository}
         />
       )}
     </div>

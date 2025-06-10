@@ -21,6 +21,8 @@ interface RepositoryPreviewProps {
   isAdding: boolean;
   checkCreditsForUrl: (repo: GitHubRepo) => Promise<void>;
   handleAddRepository: (repo: GitHubRepo, creditsNeeded?: number) => Promise<void>;
+  isExisting?: boolean;
+  onOpenRepository?: (repo: GitHubRepo) => void;
 }
 
 export default function RepositoryPreview({
@@ -29,7 +31,9 @@ export default function RepositoryPreview({
   isCheckingCredits,
   isAdding,
   checkCreditsForUrl,
-  handleAddRepository
+  handleAddRepository,
+  isExisting = false,
+  onOpenRepository
 }: RepositoryPreviewProps) {
   return (
     <div className="relative overflow-hidden">
@@ -37,8 +41,18 @@ export default function RepositoryPreview({
       <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/80 via-blue-50/60 to-teal-50/80 dark:from-emerald-900/20 dark:via-blue-900/15 dark:to-teal-900/20"></div>
       <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-bl from-emerald-200/30 to-transparent rounded-full blur-3xl animate-pulse"></div>
       <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-blue-200/30 to-transparent rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1.5s' }}></div>
-      
-      <div className="relative bg-white/80 dark:bg-slate-800/80 backdrop-blur-md rounded-xl border border-slate-200/60 dark:border-slate-700/60 shadow-xl">
+        <div className={`relative bg-white/80 dark:bg-slate-800/80 backdrop-blur-md rounded-xl border transition-all duration-300 shadow-xl ${
+        isExisting 
+          ? 'border-emerald-200 dark:border-emerald-700 bg-gradient-to-r from-emerald-50/50 to-transparent dark:from-emerald-900/20 dark:to-transparent'
+          : 'border-slate-200/60 dark:border-slate-700/60'
+      }`}>
+        {/* Existing repository badge */}
+        {isExisting && (
+          <div className="absolute top-4 right-4 flex items-center space-x-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-3 py-1.5 rounded-full text-sm font-medium z-10">
+            <CheckCircleIcon className="w-4 h-4" />
+            <span>Already Added</span>
+          </div>
+        )}
         <div className="px-8 py-6 border-b border-slate-200/60 dark:border-slate-700/60">
           <div className="flex items-center space-x-4">
             <div className="relative">
@@ -163,10 +177,8 @@ export default function RepositoryPreview({
                 </div>
               </div>
             </div>
-          </div>
-
-          {/* Enhanced Credit Information */}
-          {creditCheck && (
+          </div>          {/* Enhanced Credit Information */}
+          {!isExisting && creditCheck && (
             <div className={`mb-6 relative overflow-hidden rounded-xl border-2 transition-all duration-300 ${
               creditCheck.isEmpty 
                 ? 'bg-gradient-to-r from-blue-50 via-blue-100/50 to-blue-50 border-blue-300 dark:bg-gradient-to-r dark:from-blue-900/30 dark:via-blue-800/20 dark:to-blue-900/30 dark:border-blue-600'
@@ -195,7 +207,7 @@ export default function RepositoryPreview({
                     </div>
                     <div>
                       <h3 className="text-lg font-bold text-blue-800 dark:text-blue-200 mb-1">Repository is Empty!</h3>
-                      <p className="text-blue-700 dark:text-blue-300">This repository contains no files, so it's free to add. Perfect for exploring the interface!</p>
+                      <p className="text-blue-700 dark:text-blue-300">This repository contains no files, so it&apos;s free to add. Perfect for exploring the interface!</p>
                     </div>
                   </div>
                 ) : (
@@ -250,10 +262,23 @@ export default function RepositoryPreview({
               </div>
             </div>
           )}
-          
-          {/* Enhanced Action Buttons */}
+            {/* Enhanced Action Buttons */}
           <div className="flex justify-end space-x-4">
-            {!creditCheck ? (
+            {isExisting ? (
+              /* Existing Repository - Show Open Button */
+              <button
+                onClick={() => onOpenRepository?.(repoData)}
+                className="group relative overflow-hidden px-8 py-4 bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-600 hover:from-emerald-700 hover:via-emerald-800 hover:to-emerald-700 text-white font-semibold rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 min-w-[200px]"
+              >
+                {/* Shimmer effect */}
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
+                
+                <div className="relative flex items-center justify-center space-x-3">
+                  <CheckCircleIcon className="w-5 h-5" />
+                  <span>Open Repository</span>
+                </div>
+              </button>
+            ) : !creditCheck ? (
               <button
                 onClick={() => checkCreditsForUrl(repoData)}
                 disabled={isCheckingCredits}

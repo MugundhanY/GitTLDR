@@ -1,155 +1,184 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { useRepository } from '@/contexts/RepositoryContext'
-
-interface FileItem {
-  name: string
-  type: 'file' | 'dir'
-  path: string
-  size?: number
-  lastModified?: string
-  language?: string
-}
+import {
+  FileHeader,
+  FileSearchAndFilters,
+  FileStatistics,
+  FileBrowser,
+  FileContentViewer,
+  LanguageDistribution,
+  ErrorDisplay,
+  formatFileSize,
+  FileItem,
+  FileStats,
+  RepositoryInfo,
+  Breadcrumb
+} from '@/components/files'
 
 export default function FilesPage() {
   const { selectedRepository } = useRepository()
   const [files, setFiles] = useState<FileItem[]>([])
+  const [stats, setStats] = useState<FileStats>({
+    totalFiles: 0,
+    totalSize: 0,
+    totalDirectories: 0,
+    languages: []
+  })
+  const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([])
   const [currentPath, setCurrentPath] = useState('/')
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedLanguage, setSelectedLanguage] = useState('all')
+  const [selectedFile, setSelectedFile] = useState<FileItem | null>(null)
+  const [fileContent, setFileContent] = useState<string | null>(null)
+  const [isLoadingContent, setIsLoadingContent] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null)
 
-  useEffect(() => {
-    fetchFiles(currentPath)
-  }, [selectedRepository, currentPath])
-
-  const fetchFiles = async (path: string) => {
+  const fetchFiles = useCallback(async (path: string) => {
+    if (!selectedRepository) return
+    
     setIsLoading(true)
+    setError(null)
     try {
-      // Mock data for demonstration - replace with actual API call
-      const mockFiles: FileItem[] = [
-        {
-          name: 'src',
-          type: 'dir',
-          path: '/src',
-          lastModified: '2024-01-15T10:30:00Z'
-        },
-        {
-          name: 'components',
-          type: 'dir',
-          path: '/src/components',
-          lastModified: '2024-01-14T15:20:00Z'
-        },
-        {
-          name: 'utils',
-          type: 'dir',
-          path: '/src/utils',
-          lastModified: '2024-01-13T09:45:00Z'
-        },
-        {
-          name: 'package.json',
-          type: 'file',
-          path: '/package.json',
-          size: 1245,
-          language: 'json',
-          lastModified: '2024-01-16T11:00:00Z'
-        },
-        {
-          name: 'README.md',
-          type: 'file',
-          path: '/README.md',
-          size: 3420,
-          language: 'markdown',
-          lastModified: '2024-01-15T14:30:00Z'
-        },
-        {
-          name: 'index.tsx',
-          type: 'file',
-          path: '/src/index.tsx',
-          size: 2156,
-          language: 'typescript',
-          lastModified: '2024-01-14T16:45:00Z'
-        },
-        {
-          name: 'App.tsx',
-          type: 'file',
-          path: '/src/App.tsx',
-          size: 4567,
-          language: 'typescript',
-          lastModified: '2024-01-13T12:20:00Z'
-        },
-        {
-          name: '.gitignore',
-          type: 'file',
-          path: '/.gitignore',
-          size: 234,
-          lastModified: '2024-01-12T08:15:00Z'
-        }
-      ]
+      const params = new URLSearchParams({
+        path,
+        ...(searchQuery && { search: searchQuery }),
+        ...(selectedLanguage !== 'all' && { language: selectedLanguage })
+      })
       
-      setFiles(selectedRepository ? mockFiles : [])
+      const response = await fetch(`/api/repositories/${selectedRepository.id}/files?${params}`)
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(errorData.error || `HTTP ${response.status}`)
+      }
+      
+      const data = await response.json()
+      console.log('Files API response:', { 
+        files: data.files?.length || 0, 
+        stats: data.stats,
+        repository: data.repository 
+      })
+      
+      setFiles(data.files || [])
+      setStats(data.stats || { totalFiles: 0, totalSize: 0, totalDirectories: 0, languages: [] })
+      setBreadcrumbs(data.breadcrumbs || [])
+      setCurrentPath(data.currentPath || '/')
     } catch (error) {
       console.error('Error fetching files:', error)
+      setError(error instanceof Error ? error.message : 'Failed to fetch files')
       setFiles([])
+      setStats({ totalFiles: 0, totalSize: 0, totalDirectories: 0, languages: [] })
     } finally {
       setIsLoading(false)
     }
+  }, [selectedRepository, searchQuery, selectedLanguage])
+
+  useEffect(() => {
+    if (selectedRepository) {
+      fetchFiles(currentPath)
+      
+      // If no files found, set up periodic refresh to check for processing completion
+      const checkForFiles = () => {
+        if (files.length === 0 && !isLoading) {
+          console.log('No files found, checking again in 5 seconds...')
+          setTimeout(() => {
+            fetchFiles(currentPath)
+          }, 5000)
+        }
+      }
+      
+      // Initial check
+      setTimeout(checkForFiles, 1000)
+    }
+  }, [selectedRepository, currentPath, fetchFiles])
+  const fetchFileContent = async (file: FileItem) => {
+    if (!selectedRepository) return
+    
+    console.log('Fetching content for file:', { 
+      id: file.id, 
+      name: file.name, 
+      hasContent: file.hasContent,
+      type: file.type 
+    })
+    
+    setIsLoadingContent(true)
+    try {
+      const response = await fetch(`/api/repositories/${selectedRepository.id}/files/${file.id}/content`)
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('File content API error:', response.status, errorText)
+        throw new Error(`Failed to fetch file content: ${response.status}`)
+      }      const data = await response.json()
+      console.log('File content API response:', { 
+        hasContent: !!data.content, 
+        contentLength: data.content?.length || 0,
+        downloadUrl: data.file?.downloadUrl,
+        error: data.error,
+        message: data.message
+      })
+      
+      if (data.error) {
+        console.warn('File content error:', data.error, data.message)
+        setFileContent(null)
+      } else {
+        setFileContent(data.content)
+      }
+    } catch (error) {
+      console.error('Error fetching file content:', error)
+      setFileContent(null)
+    } finally {
+      setIsLoadingContent(false)
+    }
   }
 
-  const getFileIcon = (file: FileItem) => {
+  const handleFileClick = (file: FileItem) => {
     if (file.type === 'dir') {
-      return (
-        <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
-        </svg>
-      )
-    }
-
-    const extension = file.name.split('.').pop()?.toLowerCase()
-    switch (extension) {
-      case 'js':
-      case 'jsx':
-      case 'ts':
-      case 'tsx':
-        return (
-          <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-        )
-      case 'md':
-      case 'mdx':
-        return (
-          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-        )
-      case 'json':
-        return (
-          <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-        )
-      default:
-        return (
-          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-        )
+      setCurrentPath(file.path)
+      setSelectedFile(null)
+      setFileContent(null)
+    } else {
+      setSelectedFile(file)
+      fetchFileContent(file)
     }
   }
+  
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchQuery(value)
+    
+    // Clear existing timeout
+    if (searchTimeout) {
+      clearTimeout(searchTimeout)
+    }
+    
+    // Set new timeout for debounced search
+    const timeout = setTimeout(() => {
+      fetchFiles(currentPath)
+    }, 300)
+    
+    setSearchTimeout(timeout)
+  }, [searchTimeout, fetchFiles, currentPath])
+  
+  const handleLanguageChange = useCallback((language: string) => {
+    setSelectedLanguage(language)
+    fetchFiles(currentPath)
+  }, [fetchFiles, currentPath])
 
-  const formatFileSize = (bytes?: number) => {
-    if (!bytes) return ''
-    const sizes = ['B', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(1024))
-    return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`
+  const handleBreadcrumbClick = (path: string) => {
+    setCurrentPath(path)
+    setSelectedFile(null)
+    setFileContent(null)
   }
 
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return ''
-    return new Date(dateString).toLocaleDateString()
+  const handleRefresh = () => {
+    fetchFiles(currentPath)
+  }
+
+  const handleRetry = () => {
+    fetchFiles(currentPath)
   }
 
   const filteredFiles = files.filter(file => {
@@ -158,180 +187,91 @@ export default function FilesPage() {
     return matchesSearch && matchesLanguage
   })
 
-  const languages = Array.from(new Set(files.map(f => f.language).filter(Boolean)))
-
+  const availableLanguages = stats.languages.map(lang => lang.name).filter(Boolean)
   if (!selectedRepository) {
     return (
       <DashboardLayout>
-        <div className="text-center py-12">
-          <div className="w-16 h-16 bg-gray-800 rounded-xl flex items-center justify-center mx-auto mb-6">
-            <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
+        <div className="p-6 space-y-6 max-w-7xl mx-auto">
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="text-center">
+              <div className="w-24 h-24 mx-auto mb-8 p-6 bg-slate-100 dark:bg-slate-800 rounded-2xl">
+                <svg className="w-12 h-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
+                </svg>
+              </div>
+              <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Select a Repository</h3>
+              <p className="text-lg text-slate-600 dark:text-slate-400 max-w-md mx-auto">
+                Choose a repository from the dropdown above to explore its file structure and browse content.
+              </p>
+              <div className="mt-8 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl max-w-md mx-auto">
+                <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm font-medium">Tip</span>
+                </div>
+                <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-200">
+                  Use the repository selector in the top navigation to choose a repository and start exploring its files.
+                </p>
+              </div>
+            </div>
           </div>
-          <h3 className="text-xl font-semibold text-white mb-2">Select a Repository</h3>
-          <p className="text-gray-400">Choose a repository from the dropdown above to browse files.</p>
         </div>
       </DashboardLayout>
     )
   }
-
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        {/* Repository Header */}
-        <div className="border-b border-gray-800 pb-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
-              </svg>
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-white">Files</h1>
-              <p className="text-gray-400">{selectedRepository.full_name}</p>
-            </div>
-          </div>
-          <p className="text-gray-300">
-            Browse and explore the files in your repository. Use the search and filter options to find what you need.
-          </p>
-        </div>
+      <div className="p-6 space-y-6 max-w-7xl mx-auto">
+        {/* Header */}
+        <FileHeader selectedRepository={selectedRepository} />
 
         {/* Search and Filters */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1">
-            <div className="relative">
-              <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text"
-                placeholder="Search files..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <select
-              value={selectedLanguage}
-              onChange={(e) => setSelectedLanguage(e.target.value)}
-              className="px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Languages</option>
-              {languages.map(lang => (
-                <option key={lang} value={lang}>{lang}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+        <FileSearchAndFilters
+          searchQuery={searchQuery}
+          selectedLanguage={selectedLanguage}
+          availableLanguages={availableLanguages}
+          breadcrumbs={breadcrumbs}
+          onSearchChange={handleSearchChange}
+          onLanguageChange={handleLanguageChange}
+          onRefresh={handleRefresh}
+          onBreadcrumbClick={handleBreadcrumbClick}
+        />
 
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-sm text-gray-400">
-          <button
-            onClick={() => setCurrentPath('/')}
-            className="hover:text-white transition-colors"
-          >
-            {selectedRepository.name}
-          </button>
-          {currentPath !== '/' && (
-            <>
-              <span>/</span>
-              <span className="text-white">{currentPath.slice(1)}</span>
-            </>
-          )}
-        </div>
+        {/* Error Display */}
+        {error && (
+          <ErrorDisplay error={error} onRetry={handleRetry} />
+        )}
 
-        {/* Files List */}
-        <div className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-              <span className="ml-2 text-gray-400">Loading files...</span>
-            </div>
-          ) : filteredFiles.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 bg-gray-800 rounded-xl flex items-center justify-center mx-auto mb-6">
-                <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
-                </svg>
-              </div>
-              <h4 className="text-lg font-medium text-white mb-2">No files found</h4>
-              <p className="text-gray-400">Try adjusting your search criteria.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-700">
-              {filteredFiles.map((file) => (
-                <div key={file.path} className="flex items-center justify-between p-4 hover:bg-gray-800 transition-colors">
-                  <div className="flex items-center gap-3">
-                    {getFileIcon(file)}
-                    <div>
-                      <button
-                        onClick={() => file.type === 'dir' && setCurrentPath(file.path)}
-                        className="text-white hover:text-blue-400 transition-colors font-medium"
-                      >
-                        {file.name}
-                      </button>
-                      {file.language && (
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs px-2 py-1 bg-gray-700 text-gray-300 rounded">
-                            {file.language}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-6 text-sm text-gray-400">
-                    {file.size && (
-                      <span>{formatFileSize(file.size)}</span>
-                    )}
-                    <span>{formatDate(file.lastModified)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Statistics */}
+        <FileStatistics stats={stats} formatFileSize={formatFileSize} />
 
-        {/* File Statistics */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <span className="text-gray-300 font-medium">Total Files</span>
-            </div>
-            <div className="text-2xl font-bold text-white">
-              {files.filter(f => f.type === 'file').length}
-            </div>
+        {/* Main Content Area */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          {/* File Browser */}
+          <div className="xl:col-span-1">
+            <FileBrowser
+              files={files}
+              filteredFiles={filteredFiles}
+              selectedFile={selectedFile}
+              isLoading={isLoading}
+              currentPath={currentPath}
+              onFileClick={handleFileClick}
+            />
           </div>
 
-          <div className="bg-gray-900 border border-gray-700 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
-              </svg>
-              <span className="text-gray-300 font-medium">Directories</span>
-            </div>
-            <div className="text-2xl font-bold text-white">
-              {files.filter(f => f.type === 'dir').length}
-            </div>
-          </div>
-
-          <div className="bg-gray-900 border border-gray-700 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-              </svg>
-              <span className="text-gray-300 font-medium">Languages</span>
-            </div>
-            <div className="text-2xl font-bold text-white">
-              {languages.length}
-            </div>
+          {/* File Content Viewer */}
+          <div className="xl:col-span-2">
+            <FileContentViewer
+              selectedFile={selectedFile}
+              fileContent={fileContent}
+              isLoadingContent={isLoadingContent}
+            />
           </div>
         </div>
+
+        {/* Language Distribution */}
+        <LanguageDistribution stats={stats} />
       </div>
     </DashboardLayout>
   )
