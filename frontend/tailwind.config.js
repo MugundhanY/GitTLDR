@@ -135,10 +135,10 @@ module.exports = {
         'slide-right': 'slideRight 0.4s ease-out',
         'scale-in': 'scaleIn 0.3s ease-out',
         'bounce-gentle': 'bounceGentle 2s infinite',
-        'pulse-soft': 'pulseSoft 2s infinite',
-        'glow-pulse': 'glowPulse 2s ease-in-out infinite alternate',
+        'pulse-soft': 'pulseSoft 2s infinite',        'glow-pulse': 'glowPulse 2s ease-in-out infinite alternate',
         'float': 'float 3s ease-in-out infinite',
         'shimmer': 'shimmer 2s linear infinite',
+        'gradient-x': 'gradient-x 15s ease infinite',
       },
       keyframes: {
         fadeIn: {
@@ -184,10 +184,19 @@ module.exports = {
         float: {
           '0%, 100%': { transform: 'translateY(0px)' },
           '50%': { transform: 'translateY(-10px)' },
-        },
-        shimmer: {
+        },        shimmer: {
           '0%': { transform: 'translateX(-100%)' },
           '100%': { transform: 'translateX(100%)' },
+        },
+        'gradient-x': {
+          '0%, 100%': {
+            'background-size': '200% 200%',
+            'background-position': 'left center'
+          },
+          '50%': {
+            'background-size': '200% 200%',
+            'background-position': 'right center'
+          },
         },
       },
       backdropBlur: {

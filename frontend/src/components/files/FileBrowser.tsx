@@ -193,20 +193,20 @@ export default function FileBrowser({
       // Only call onFileClick for actual files
       onFileClick(node.file)
     }
-  }  // Tree node component
+  }  // Tree node component with enhanced animations
   const TreeNodeComponent = ({ node }: { node: TreeNode }) => {
     const isSelected = selectedFile?.id === node.file?.id || selectedFile?.path === node.path
     const isExpanded = node.type === 'dir' && expandedDirs.has(node.path)
 
     return (
-      <div key={node.path}>
+      <div key={node.path} className="animate-in fade-in slide-in-from-left duration-300" style={{ animationDelay: `${node.depth * 50}ms` }}>
         {/* Node Item */}
         <div
           onClick={() => handleItemClick(node)}
-          className={`group relative flex items-center gap-1 py-1 cursor-pointer transition-all duration-150 hover:bg-slate-100/80 dark:hover:bg-slate-700/50 ${
+          className={`group relative flex items-center gap-1 py-1 cursor-pointer transition-all duration-200 hover:bg-slate-100/80 dark:hover:bg-slate-700/50 hover:scale-[1.02] hover:shadow-sm rounded-md ${
             isSelected
-              ? 'bg-slate-200/60 dark:bg-slate-600/50 text-slate-900 dark:text-slate-100'
-              : 'text-slate-700 dark:text-slate-300'
+              ? 'bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 text-slate-900 dark:text-slate-100 shadow-sm border border-blue-200 dark:border-blue-700 scale-[1.02]'
+              : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
           }`}
           style={{ paddingLeft: `${4 + node.depth * 16}px` }}
         >
@@ -226,14 +226,12 @@ export default function FileBrowser({
                 style={{ left: `${4 + (node.depth - 1) * 16 + 8}px` }}
               />
             </div>
-          )}
-
-          {/* Expand/Collapse Icon for Directories */}
+          )}          {/* Expand/Collapse Icon for Directories */}
           {node.type === 'dir' ? (
-            <div className="flex-shrink-0 w-4 h-4 flex items-center justify-center relative z-10 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-colors duration-100">
+            <div className="flex-shrink-0 w-4 h-4 flex items-center justify-center relative z-10 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-all duration-200 hover:scale-110">
               <svg
-                className={`w-3 h-3 text-slate-600 dark:text-slate-400 transition-transform duration-150 ${
-                  isExpanded ? 'rotate-90' : 'rotate-0'
+                className={`w-3 h-3 text-slate-600 dark:text-slate-400 transition-all duration-200 ${
+                  isExpanded ? 'rotate-90 text-blue-600 dark:text-blue-400' : 'rotate-0'
                 }`}
                 fill="currentColor"
                 viewBox="0 0 24 24"
@@ -243,15 +241,13 @@ export default function FileBrowser({
             </div>
           ) : (
             <div className="flex-shrink-0 w-4 h-4"></div>
-          )}
-
-          {/* Icon */}
-          <div className="flex-shrink-0 mr-1">
+          )}          {/* Icon with enhanced animations */}
+          <div className="flex-shrink-0 mr-1 transition-all duration-200 group-hover:scale-110">
             {node.type === 'dir' ? (
               <svg
-                className={`w-4 h-4 ${
+                className={`w-4 h-4 transition-all duration-300 ${
                   isExpanded 
-                    ? 'text-blue-500 dark:text-blue-400' 
+                    ? 'text-blue-500 dark:text-blue-400 drop-shadow-sm' 
                     : 'text-yellow-600 dark:text-yellow-500'
                 }`}
                 fill="currentColor"
@@ -268,35 +264,50 @@ export default function FileBrowser({
                 {node.file && getFileIcon(node.file)}
               </div>
             )}
-          </div>          {/* File/Directory Name */}
+          </div>          {/* File/Directory Name with enhanced styling */}
           <span
-            className={`text-base flex-1 truncate font-normal ${
+            className={`text-base flex-1 truncate transition-all duration-200 ${
               isSelected 
-                ? 'text-slate-900 dark:text-slate-100 font-medium' 
-                : 'text-slate-700 dark:text-slate-300'
+                ? 'text-slate-900 dark:text-slate-100 font-semibold' 
+                : 'text-slate-700 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white font-normal'
             }`}
           >
             {node.name}
           </span>
 
-          {/* Directory file count */}
+          {/* Directory file count with animation */}
           {node.type === 'dir' && node.children.length > 0 && (
-            <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded mr-2">
+            <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded mr-2 transition-all duration-200 group-hover:bg-slate-200 dark:group-hover:bg-slate-600 animate-in fade-in delay-100">
               {node.children.length}
             </span>
-          )}          {/* File Size (for files only) - Smaller and less prominent */}
+          )}
+
+          {/* File Size (for files only) - Enhanced with color coding and animations */}
           {node.file && node.file.size && (
-            <span className="text-xs text-slate-400 dark:text-slate-500 opacity-60 group-hover:opacity-100 transition-opacity duration-200 mr-3">
+            <span className={`text-xs px-2 py-0.5 rounded-full transition-all duration-200 mr-2 animate-in fade-in delay-200 group-hover:scale-105 ${
+              node.file.size > 1000000 
+                ? 'text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50' // Large files (>1MB)
+                : node.file.size > 100000 
+                ? 'text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-900/30 hover:bg-amber-200 dark:hover:bg-amber-900/50' // Medium files (>100KB)
+                : 'text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50' // Small files
+            }`}>
               {formatFileSize(node.file.size)}
             </span>
           )}
-        </div>
 
-        {/* Children (if directory is expanded) */}
+          {/* File Language Badge with enhanced animations */}
+          {node.file && node.file.language && (
+            <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full mr-2 transition-all duration-200 group-hover:bg-slate-200 dark:group-hover:bg-slate-600 animate-in fade-in delay-300 group-hover:scale-105">
+              {node.file.language}
+            </span>
+          )}
+        </div>        {/* Children (if directory is expanded) */}
         {node.type === 'dir' && isExpanded && node.children.length > 0 && (
-          <div>
-            {node.children.map((child) => (
-              <TreeNodeComponent key={child.path} node={child} />
+          <div className="animate-in slide-in-from-top duration-300 ease-out">
+            {node.children.map((child, index) => (
+              <div key={child.path} style={{ animationDelay: `${index * 25}ms` }}>
+                <TreeNodeComponent node={child} />
+              </div>
             ))}
           </div>
         )}

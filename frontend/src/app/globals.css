@@ -455,3 +455,72 @@ body {
 .status-error::before {
   background-color: rgb(239, 68, 68);
 }
+
+/* Custom Toast Styles */
+.Toastify__toast-container {
+  z-index: 9999 !important;
+}
+
+.Toastify__toast {
+  border-radius: 0.75rem !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+.Toastify__toast--success {
+  background: rgba(16, 185, 129, 0.95) !important;
+  border: 1px solid rgba(16, 185, 129, 0.2) !important;
+  color: white !important;
+}
+
+.Toastify__toast--error {
+  background: rgba(239, 68, 68, 0.95) !important;
+  border: 1px solid rgba(239, 68, 68, 0.2) !important;
+  color: white !important;
+}
+
+.Toastify__toast--info {
+  background: rgba(59, 130, 246, 0.95) !important;
+  border: 1px solid rgba(59, 130, 246, 0.2) !important;
+  color: white !important;
+}
+
+.Toastify__toast--warning {
+  background: rgba(245, 158, 11, 0.95) !important;
+  border: 1px solid rgba(245, 158, 11, 0.2) !important;
+  color: white !important;
+}
+
+.Toastify__progress-bar {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.9)) !important;
+}
+
+/* Dark theme specific toast styles */
+.dark .Toastify__toast--success {
+  background: rgba(22, 163, 74, 0.95) !important;
+  border: 1px solid rgba(22, 163, 74, 0.3) !important;
+}
+
+.dark .Toastify__toast--error {
+  background: rgba(220, 38, 38, 0.95) !important;
+  border: 1px solid rgba(220, 38, 38, 0.3) !important;
+}
+
+.dark .Toastify__toast--info {
+  background: rgba(37, 99, 235, 0.95) !important;
+  border: 1px solid rgba(37, 99, 235, 0.3) !important;
+}
+
+.dark .Toastify__toast--warning {
+  background: rgba(217, 119, 6, 0.95) !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+}
+
+.Toastify__close-button {
+  color: rgba(255, 255, 255, 0.8) !important;
+  opacity: 0.8 !important;
+}
+
+.Toastify__close-button:hover {
+  opacity: 1 !important;
+}

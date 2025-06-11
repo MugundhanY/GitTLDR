@@ -6,6 +6,7 @@ export { default as FileBrowser } from './FileBrowser'
 export { default as FileContentViewer } from './FileContentViewer'
 export { default as LanguageDistribution } from './LanguageDistribution'
 export { default as ErrorDisplay } from './ErrorDisplay'
+export { default as QuickActions } from './QuickActions'
 
 // Utilities
 export * from './FileIconUtils'
