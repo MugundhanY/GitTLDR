@@ -86,8 +86,7 @@ export const RepositoryProvider: React.FC<RepositoryProviderProps> = ({ children
       
       const data = await response.json();
       const apiRepositories = data.repositories || [];
-      
-      // Transform API data to match Repository interface
+        // Transform API data to match Repository interface
       const repositories: Repository[] = apiRepositories.map((repo: any) => ({
         id: repo.id,
         name: repo.name,
@@ -103,7 +102,7 @@ export const RepositoryProvider: React.FC<RepositoryProviderProps> = ({ children
         updated_at: repo.updatedAt,
         owner: {
           login: repo.owner,
-          avatar_url: 'https://github.com/github.png' // Default avatar
+          avatar_url: repo.avatarUrl || 'https://github.com/github.png' // Use repository avatarUrl or fallback
         }
       }));
       

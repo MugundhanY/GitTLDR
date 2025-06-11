@@ -3,8 +3,9 @@
 import { FileItem } from './types'
 import { getLanguageForHighlighter } from './FileIconUtils'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { vscDarkPlus, prism } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useState } from 'react'
+import { useTheme } from '@/contexts/ThemeContext'
 
 interface FileContentViewerProps {
   selectedFile: FileItem | null
@@ -18,47 +19,25 @@ export default function FileContentViewer({
   isLoadingContent
 }: FileContentViewerProps) {
   const [viewMode, setViewMode] = useState<'split' | 'code' | 'summary'>('split')
-  const [isFlipped, setIsFlipped] = useState(false)
-  
+  const [splitOrientation, setSplitOrientation] = useState<'horizontal' | 'vertical'>('vertical')
+  const { actualTheme } = useTheme()
+  const isDarkMode = actualTheme === 'dark'
+
   if (!selectedFile) {
     return (
-      <div className="relative h-[600px] bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-        {/* Animated background pattern */}
-        <div className="absolute inset-0 opacity-30">
-          <div className="absolute top-0 left-0 w-full h-full">            {[...Array(20)].map((_, i) => (
-              <div
-                key={i}
-                className="absolute rounded-full bg-gradient-to-r from-emerald-200 to-blue-200 dark:from-emerald-800 dark:to-blue-800 animate-pulse"
-                style={{
-                  width: Math.random() * 100 + 20 + 'px',
-                  height: Math.random() * 100 + 20 + 'px',
-                  left: Math.random() * 100 + '%',
-                  top: Math.random() * 100 + '%',
-                  animationDelay: Math.random() * 5 + 's',
-                }}
-              />
-            ))}
+      <div className="h-full bg-white dark:bg-slate-900 flex items-center justify-center">
+        <div className="text-center max-w-sm">
+          <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-800 rounded-2xl flex items-center justify-center">
+            <svg className="w-10 h-10 text-slate-400 dark:text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
           </div>
-        </div>
-        
-        <div className="relative z-10 flex items-center justify-center h-full">
-          <div className="text-center max-w-md">
-            <div className="relative mb-8">
-              <div className="w-24 h-24 mx-auto bg-gradient-to-br from-violet-500 via-purple-500 to-pink-500 rounded-3xl flex items-center justify-center shadow-2xl">
-                <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9.5a2.5 2.5 0 00-2.5-2.5H15" />
-                </svg>
-              </div>
-              <div className="absolute -top-2 -right-2 w-6 h-6 bg-emerald-400 rounded-full animate-bounce"></div>
-              <div className="absolute -bottom-1 -left-1 w-4 h-4 bg-yellow-400 rounded-full animate-ping"></div>
-            </div>
-            <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-3">
-              Choose Your Adventure
-            </h3>
-            <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-              Select a file from the explorer to unlock its secrets and discover what lies within...
-            </p>
-          </div>
+          <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">
+            No File Selected
+          </h3>
+          <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
+            Select a file from the explorer to view its content and AI-powered insights
+          </p>
         </div>
       </div>
     )
@@ -66,180 +45,252 @@ export default function FileContentViewer({
 
   if (isLoadingContent) {
     return (
-      <div className="relative h-[600px] bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-center">
-            {/* Custom loading animation */}
-            <div className="relative mb-8">
-              <div className="w-16 h-16 mx-auto">
-                <div className="absolute inset-0 border-4 border-blue-200 dark:border-blue-800 rounded-full"></div>
-                <div className="absolute inset-0 border-4 border-transparent border-t-blue-500 rounded-full animate-spin"></div>
-                <div className="absolute inset-2 border-4 border-transparent border-t-purple-500 rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}></div>
-              </div>
-            </div>
-            <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-2">
-              Decoding {selectedFile.name}
-            </h3>
-            <p className="text-slate-600 dark:text-slate-400">
-              Analyzing file structure and content...
-            </p>
+      <div className="h-full bg-white dark:bg-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="relative w-16 h-16 mx-auto mb-6">
+            <div className="absolute inset-0 border-4 border-slate-200 dark:border-slate-700 rounded-full"></div>
+            <div className="absolute inset-0 border-4 border-transparent border-t-emerald-500 rounded-full animate-spin"></div>
           </div>
+          <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
+            Loading {selectedFile.name}
+          </h3>
+          <p className="text-slate-600 dark:text-slate-400 text-sm">
+            Reading file content...
+          </p>
         </div>
       </div>
     )
   }
 
-  const hasContent = !!fileContent
-  const hasSummary = !!selectedFile.summary
+  const language = getLanguageForHighlighter(selectedFile.language || 'text')
+  const hasContent = fileContent && fileContent.trim().length > 0
 
   return (
-    <div className="space-y-4">
-      {/* Unique Control Panel */}
-      <div className="bg-gradient-to-r from-slate-900 via-purple-900 to-slate-900 dark:from-slate-800 dark:via-purple-800 dark:to-slate-800 rounded-xl p-4 border border-slate-700">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+    <div className="h-full bg-white dark:bg-slate-900 flex flex-col">      {/* View Mode Tabs */}
+      <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
+        <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
+          <button
+            onClick={() => setViewMode('split')}
+            className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+              viewMode === 'split'
+                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
             <div className="flex items-center gap-2">
-              <div className={`w-3 h-3 rounded-full ${hasContent ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`}></div>
-              <span className="text-white text-sm font-medium">
-                {selectedFile.name}
-              </span>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+              </svg>
+              Split View
             </div>
-            {selectedFile.language && (
-              <span className="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs font-medium border border-purple-500/30">
-                {selectedFile.language}
-              </span>
-            )}
+          </button>
+          <button
+            onClick={() => setViewMode('code')}
+            className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+              viewMode === 'code'
+                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+              </svg>
+              Source Code
+            </div>
+          </button>
+          <button
+            onClick={() => setViewMode('summary')}
+            className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+              viewMode === 'summary'
+                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+              AI Summary
+            </div>
+          </button>
+        </div>
+
+        {/* Split Orientation Controls - Only show when in split mode */}
+        {viewMode === 'split' && (
+          <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
+            <button
+              onClick={() => setSplitOrientation('vertical')}
+              className={`px-3 py-2 text-sm font-medium rounded-md transition-all ${
+                splitOrientation === 'vertical'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+              title="Vertical Split"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setSplitOrientation('horizontal')}
+              className={`px-3 py-2 text-sm font-medium rounded-md transition-all ${
+                splitOrientation === 'horizontal'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+              title="Horizontal Split"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 9V5a2 2 0 012-2h6a2 2 0 012 2v4m-9 0h10M7 9v10a2 2 0 002 2h6a2 2 0 002-2V9" />
+              </svg>
+            </button>
           </div>
+        )}
+        
+        {/* File Actions */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full">
+            {fileContent ? `${fileContent.split('\n').length} lines` : 'No content'}
+          </span>
           
-          <div className="flex items-center gap-3">
-            {/* View Mode Selector */}
-            <div className="flex items-center bg-slate-800/50 rounded-lg p-1 border border-slate-600">
-              {[
-                { mode: 'split', icon: '⚡', label: 'Split View' },
-                { mode: 'code', icon: '🔧', label: 'Raw Code' },
-                { mode: 'summary', icon: '🧠', label: 'AI Summary' }
-              ].map(({ mode, icon, label }) => (
-                <button
-                  key={mode}
-                  onClick={() => setViewMode(mode as any)}
-                  className={`px-3 py-2 rounded-md text-xs font-medium transition-all duration-200 ${
-                    viewMode === mode
-                      ? 'bg-purple-500 text-white shadow-lg'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-700'
-                  }`}
-                  title={label}
-                >
-                  {icon} {label}
-                </button>
-              ))}
-            </div>
-
-            {/* Flip Button for Split View */}
-            {viewMode === 'split' && (
-              <button
-                onClick={() => setIsFlipped(!isFlipped)}
-                className="px-3 py-2 bg-emerald-500/20 text-emerald-300 rounded-lg text-xs font-medium border border-emerald-500/30 hover:bg-emerald-500/30 transition-all duration-200"
-              >
-                🔄 Flip
-              </button>
-            )}
-
-            {selectedFile?.downloadUrl && (
-              <a
-                href={selectedFile.downloadUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg text-xs font-medium shadow-lg hover:shadow-xl transition-all duration-200"
-              >
-                📥 Download
-              </a>
-            )}
-          </div>
+          <button className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+          </button>
+          
+          <button className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+          </button>
         </div>
       </div>
 
       {/* Content Area */}
-      <div className="h-[600px] overflow-hidden">
-        {viewMode === 'split' ? (
-          // Split View - Side by Side or Flipped
-          <div className={`h-full flex ${isFlipped ? 'flex-col' : 'flex-row'} gap-4`}>
-            {/* Code Panel */}
-            <div className={`${isFlipped ? 'h-1/2' : 'w-1/2'} flex flex-col`}>
-              <div className="bg-slate-800 text-white px-4 py-2 rounded-t-xl flex items-center gap-2 border-b border-slate-600">
-                <div className="flex gap-1">
-                  <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                  <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                </div>
-                <span className="text-sm font-mono">source_code.{selectedFile.language}</span>
+      <div className="flex-1 min-h-0">
+        {!hasContent ? (
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center max-w-md">
+              <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-amber-100 to-amber-200 dark:from-amber-900 dark:to-amber-800 rounded-xl flex items-center justify-center">
+                <svg className="w-8 h-8 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
               </div>
-              <div className="flex-1 bg-slate-900 rounded-b-xl overflow-hidden">
-                {hasContent ? (
-                  selectedFile.language && ['javascript', 'typescript', 'python', 'java', 'css', 'html', 'json', 'xml', 'yaml', 'markdown'].includes(selectedFile.language.toLowerCase()) ? (
-                    <SyntaxHighlighter
-                      language={getLanguageForHighlighter(selectedFile.language)}
-                      style={vscDarkPlus}
-                      customStyle={{
-                        margin: 0,
-                        height: '100%',
-                        fontSize: '13px',
-                        lineHeight: '1.4',
-                      }}
-                      showLineNumbers
-                      wrapLines
-                    >
-                      {fileContent}
-                    </SyntaxHighlighter>
-                  ) : (
-                    <div className="p-4 h-full overflow-auto">
-                      <pre className="text-sm text-green-400 whitespace-pre-wrap font-mono leading-relaxed">
-                        {fileContent}
-                      </pre>
-                    </div>
-                  )
-                ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center text-slate-400">
-                      <div className="w-12 h-12 mx-auto mb-3 opacity-50">
-                        📄
-                      </div>
-                      <p className="text-sm">No content available</p>
-                    </div>
-                  </div>
-                )}
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
+                Content Not Available
+              </h3>
+              <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
+                This file might be empty, binary, or too large to display. 
+                {selectedFile.size && selectedFile.size > 1000000 && 
+                  ' Large files are not shown for performance reasons.'
+                }
+              </p>
+            </div>
+          </div>
+        ) : viewMode === 'split' ? (
+          <div className="h-full flex">
+            {/* Code Panel */}
+            <div className="flex-1 border-r border-slate-200 dark:border-slate-700">
+              <div className="h-full overflow-auto">                <SyntaxHighlighter
+                  language={language}
+                  style={isDarkMode ? vscDarkPlus : prism}
+                  showLineNumbers={true}
+                  wrapLines={true}
+                  customStyle={{
+                    margin: 0,
+                    padding: '1rem',
+                    background: 'transparent',
+                    fontSize: '14px',
+                    lineHeight: '1.5'
+                  }}
+                  lineNumberStyle={{
+                    minWidth: '3em',
+                    paddingRight: '1em',
+                    color: isDarkMode ? '#64748b' : '#94a3b8',
+                    fontSize: '12px'
+                  }}
+                >
+                  {fileContent}
+                </SyntaxHighlighter>
               </div>
             </div>
-
+            
             {/* AI Summary Panel */}
-            <div className={`${isFlipped ? 'h-1/2' : 'w-1/2'} flex flex-col`}>
-              <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-t-xl flex items-center gap-2">
-                <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
-                  🧠
-                </div>
-                <span className="text-sm font-medium">AI Analysis</span>
-                <div className="ml-auto flex items-center gap-1">
-                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                  <span className="text-xs opacity-75">Live</span>
-                </div>
-              </div>
-              <div className="flex-1 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-b-xl overflow-hidden">
-                {hasSummary ? (
-                  <div className="p-4 h-full overflow-auto">
-                    <div className="prose prose-sm max-w-none">
-                      <div className="bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm rounded-lg p-4 border border-purple-200 dark:border-purple-800">
-                        <pre className="text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap font-sans text-sm">
-                          {selectedFile.summary}
-                        </pre>
+            <div className="w-80 bg-slate-50 dark:bg-slate-800 flex flex-col">
+              <div className="p-4 border-b border-slate-200 dark:border-slate-700">
+                <h3 className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                  <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                  AI Insights
+                </h3>
+              </div>              <div className="flex-1 p-4 overflow-auto">
+                {selectedFile?.summary ? (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+                      <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-3 flex items-center gap-2">
+                        <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        AI Summary
+                      </h4>
+                      <div className="text-sm text-blue-800 dark:text-blue-200 leading-relaxed whitespace-pre-wrap">
+                        {selectedFile.summary}
+                      </div>
+                    </div>
+                    
+                    <div className="grid gap-3">
+                      <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                        <h4 className="font-medium text-green-900 dark:text-green-100 mb-2 flex items-center gap-2">
+                          <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                          File Type
+                        </h4>
+                        <p className="text-sm text-green-800 dark:text-green-200">
+                          {selectedFile.language || 'Unknown'} • {fileContent ? `${fileContent.split('\n').length} lines` : 'No content'}
+                        </p>
+                      </div>
+                      
+                      <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                        <h4 className="font-medium text-purple-900 dark:text-purple-100 mb-2 flex items-center gap-2">
+                          <svg className="w-3 h-3 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Quick Info
+                        </h4>
+                        <div className="text-sm text-purple-800 dark:text-purple-200 space-y-1">
+                          <div>Size: {selectedFile.size ? `${(selectedFile.size / 1024).toFixed(1)} KB` : 'Unknown'}</div>
+                          <div>Path: <span className="font-mono text-xs">{selectedFile.path}</span></div>
+                        </div>
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center text-slate-500">
-                      <div className="w-12 h-12 mx-auto mb-3 opacity-50">
-                        🤖
+                  <div className="space-y-4">
+                    <div className="text-center py-8">
+                      <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-amber-100 to-amber-200 dark:from-amber-900 dark:to-amber-800 rounded-xl flex items-center justify-center">
+                        <svg className="w-8 h-8 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                        </svg>
                       </div>
-                      <p className="text-sm">AI summary processing...</p>
+                      <h4 className="font-semibold text-slate-900 dark:text-white mb-2">AI Analysis Coming Soon</h4>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">
+                        This file hasn't been analyzed yet. AI summaries will appear here once processing is complete.
+                      </p>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <h4 className="font-medium text-slate-900 dark:text-slate-100 mb-2">File Info</h4>
+                        <div className="text-sm text-slate-600 dark:text-slate-400 space-y-1">
+                          <div>Type: {selectedFile?.language || 'Unknown'}</div>
+                          <div>Lines: {fileContent ? fileContent.split('\n').length : 'Unknown'}</div>
+                          <div>Size: {selectedFile?.size ? `${(selectedFile.size / 1024).toFixed(1)} KB` : 'Unknown'}</div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -247,87 +298,97 @@ export default function FileContentViewer({
             </div>
           </div>
         ) : viewMode === 'code' ? (
-          // Code Only View
-          <div className="h-full bg-slate-900 rounded-xl overflow-hidden border border-slate-700">
-            <div className="bg-slate-800 text-white px-4 py-3 flex items-center gap-3 border-b border-slate-600">
-              <div className="flex gap-1">
-                <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-              </div>
-              <span className="text-sm font-mono flex-1">{selectedFile.name}</span>
-              <div className="text-xs bg-slate-700 px-2 py-1 rounded">
-                {fileContent?.split('\n').length || 0} lines
-              </div>
-            </div>
-            <div className="h-full">
-              {hasContent ? (
-                selectedFile.language && ['javascript', 'typescript', 'python', 'java', 'css', 'html', 'json', 'xml', 'yaml', 'markdown'].includes(selectedFile.language.toLowerCase()) ? (
-                  <SyntaxHighlighter
-                    language={getLanguageForHighlighter(selectedFile.language)}
-                    style={vscDarkPlus}
-                    customStyle={{
-                      margin: 0,
-                      height: 'calc(100% - 52px)',
-                      fontSize: '14px',
-                      lineHeight: '1.5',
-                    }}
-                    showLineNumbers
-                    wrapLines
-                  >
-                    {fileContent}
-                  </SyntaxHighlighter>
-                ) : (
-                  <div className="p-6 h-full overflow-auto">
-                    <pre className="text-sm text-green-400 whitespace-pre-wrap font-mono leading-relaxed">
-                      {fileContent}
-                    </pre>
-                  </div>
-                )
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center text-slate-400">
-                    <div className="text-4xl mb-4">📄</div>
-                    <p>No content available</p>
-                  </div>
-                </div>
-              )}
-            </div>
+          <div className="h-full overflow-auto">            <SyntaxHighlighter
+              language={language}
+              style={isDarkMode ? vscDarkPlus : prism}
+              showLineNumbers={true}
+              wrapLines={true}
+              customStyle={{
+                margin: 0,
+                padding: '1.5rem',
+                background: 'transparent',
+                fontSize: '14px',
+                lineHeight: '1.6',
+                height: '100%'
+              }}
+              lineNumberStyle={{
+                minWidth: '3em',
+                paddingRight: '1em',
+                color: isDarkMode ? '#64748b' : '#94a3b8',
+                fontSize: '12px'
+              }}
+            >
+              {fileContent}
+            </SyntaxHighlighter>
           </div>
         ) : (
-          // Summary Only View
-          <div className="h-full bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl overflow-hidden border border-purple-200 dark:border-purple-800">
-            <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-3 flex items-center gap-3">
-              <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-                🧠
+          <div className="h-full p-6 overflow-auto">
+            <div className="max-w-4xl mx-auto space-y-6">
+              <div className="text-center">
+                <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-purple-100 to-purple-200 dark:from-purple-900 dark:to-purple-800 rounded-xl flex items-center justify-center">
+                  <svg className="w-8 h-8 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
+                  AI-Powered Analysis
+                </h2>
+                <p className="text-slate-600 dark:text-slate-400">
+                  Comprehensive insights for {selectedFile.name}
+                </p>
               </div>
-              <div className="flex-1">
-                <h3 className="font-semibold">{selectedFile.name}</h3>
-                <p className="text-xs opacity-75">AI-Generated Analysis</p>
-              </div>
-              <div className="flex items-center gap-2 text-xs bg-white/20 px-3 py-1 rounded-full">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                Ready
-              </div>
-            </div>
-            <div className="p-6 h-full overflow-auto">
-              {hasSummary ? (
-                <div className="max-w-none">
-                  <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-xl p-6 border border-purple-200 dark:border-purple-700 shadow-lg">
-                    <pre className="text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap font-sans">
-                      {selectedFile.summary}
-                    </pre>
+              
+              <div className="grid gap-6">
+                <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">File Overview</h3>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-slate-500 dark:text-slate-400">Type:</span>
+                      <span className="ml-2 font-medium text-slate-900 dark:text-white">{selectedFile.language || 'Unknown'}</span>
+                    </div>                    <div>
+                      <span className="text-slate-500 dark:text-slate-400">Lines:</span>
+                      <span className="ml-2 font-medium text-slate-900 dark:text-white">{fileContent ? fileContent.split('\n').length : 'Unknown'}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 dark:text-slate-400">Size:</span>
+                      <span className="ml-2 font-medium text-slate-900 dark:text-white">{fileContent ? `${(fileContent.length / 1024).toFixed(1)} KB` : (selectedFile.size ? `${(selectedFile.size / 1024).toFixed(1)} KB` : 'Unknown')}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 dark:text-slate-400">Path:</span>
+                      <span className="ml-2 font-medium text-slate-900 dark:text-white text-xs">{selectedFile.path}</span>
+                    </div>
                   </div>
                 </div>
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center text-slate-500">
-                    <div className="text-4xl mb-4">🤖</div>
-                    <h3 className="font-semibold mb-2">AI Analysis In Progress</h3>
-                    <p className="text-sm">The AI is currently analyzing this file...</p>
-                  </div>
+                  <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                    AI Summary
+                  </h3>
+                  {selectedFile?.summary ? (
+                    <div className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                      <div className="prose prose-slate dark:prose-invert max-w-none">
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                          {selectedFile.summary}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <div className="w-12 h-12 mx-auto mb-4 bg-gradient-to-br from-amber-100 to-amber-200 dark:from-amber-900 dark:to-amber-800 rounded-lg flex items-center justify-center">
+                        <svg className="w-6 h-6 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <h4 className="font-semibold text-slate-900 dark:text-white mb-2">AI Analysis Pending</h4>
+                      <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
+                        This file is still being processed. AI-powered analysis and summary will appear here once complete.
+                      </p>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           </div>
         )}

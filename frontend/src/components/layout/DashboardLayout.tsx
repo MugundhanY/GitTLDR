@@ -14,7 +14,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const { selectedRepository } = useRepository();
   return (
     <AuthGuard requireAuth={true}>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-white transition-colors duration-200">
+      <div className="min-h-screen text-gray-900 dark:text-white transition-colors duration-200">
         {/* Header */}
         <Header />
         
@@ -24,7 +24,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
           <Sidebar selectedRepository={selectedRepository} />
           
           {/* Main Content */}
-          <main className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-950">
+          <main className="flex-1 overflow-auto">
             <div className="h-full">
               {children}
             </div>

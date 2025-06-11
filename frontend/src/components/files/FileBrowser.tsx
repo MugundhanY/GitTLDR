@@ -1,7 +1,8 @@
 'use client'
 
+import { useState } from 'react'
 import { FileItem } from './types'
-import { getFileIcon, formatFileSize, formatDate } from './FileIconUtils'
+import { getFileIcon, formatFileSize } from './FileIconUtils'
 
 interface FileBrowserProps {
   files: FileItem[]
@@ -12,12 +13,13 @@ interface FileBrowserProps {
   onFileClick: (file: FileItem) => void
 }
 
-interface FolderNode {
+interface TreeNode {
   name: string
   path: string
   type: 'file' | 'dir'
-  children: Map<string, FolderNode>
+  children: TreeNode[]
   file?: FileItem
+  depth: number
 }
 
 export default function FileBrowser({
@@ -27,219 +29,304 @@ export default function FileBrowser({
   isLoading,
   currentPath,
   onFileClick
-}: FileBrowserProps) {  // Build folder structure from file paths
-  const buildFolderStructure = (files: FileItem[]): FolderNode[] => {
-    const root = new Map<string, FolderNode>()
+}: FileBrowserProps) {  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set([
+    'src', 'app', 'components', 'lib', 'utils', 'pages', 'public', 'docs',
+    'api', 'auth', 'dashboard', 'repositories', 'files', 'meetings', 'qna'
+  ]))
+  // Build tree structure from files
+  const buildTree = (files: FileItem[]): TreeNode[] => {
+    console.log('Building tree from files:', files.map(f => ({ name: f.name, path: f.path, type: f.type })))
     
+    if (!files || files.length === 0) {
+      console.log('No files provided to buildTree')
+      return []
+    }
+    
+    const nodeMap = new Map<string, TreeNode>()    // First pass: create all nodes
     for (const file of files) {
-      // Handle paths - split by '/' and filter empty parts
-      const pathParts = file.path.split('/').filter(Boolean)
+      // Clean up path - more careful path processing
+      let cleanPath = file.path
       
-      // If path is empty or no parts, treat as root file with the file name
-      if (pathParts.length === 0) {
-        const fileName = file.name
-        root.set(fileName, {
-          name: fileName,
-          path: fileName,
-          type: 'file',
-          children: new Map(),
-          file: file
-        })
-        continue
+      // Remove repository prefixes but preserve directory structure
+      if (cleanPath.includes('/files/')) {
+        const filesIndex = cleanPath.indexOf('/files/')
+        cleanPath = cleanPath.substring(filesIndex + 7) // Remove everything up to and including '/files/'
       }
       
-      // If path has only one part and it matches the filename, it's a root file
-      if (pathParts.length === 1 && pathParts[0] === file.name) {
-        root.set(file.name, {
+      // Convert Windows-style backslashes to forward slashes
+      cleanPath = cleanPath.replace(/\\/g, '/')
+      
+      // Remove leading slash if present
+      cleanPath = cleanPath.startsWith('/') ? cleanPath.slice(1) : cleanPath
+      
+      // If cleanPath is empty or just the filename, treat as root level
+      if (!cleanPath || cleanPath === file.name) {
+        cleanPath = file.name
+      }
+        const pathParts = cleanPath.split('/').filter(Boolean)
+      console.log(`Processing ${file.name}: originalPath="${file.path}", cleanPath="${cleanPath}", pathParts=`, pathParts)
+
+      // Handle root files (files at the root level)
+      if (pathParts.length === 1 && file.type === 'file') {
+        const rootPath = file.name
+        nodeMap.set(rootPath, {
           name: file.name,
-          path: file.path,
+          path: rootPath,
           type: 'file',
-          children: new Map(),
-          file: file
+          children: [],
+          file: file,
+          depth: 0,
         })
         continue
       }
 
-      // Build nested structure for files in subdirectories
-      let currentLevel = root
-      let builtPath = ''
-      
-      for (let i = 0; i < pathParts.length; i++) {
-        const part = pathParts[i]
-        builtPath = builtPath ? `${builtPath}/${part}` : part
-        
-        if (!currentLevel.has(part)) {
-          const isLastPart = i === pathParts.length - 1
-          currentLevel.set(part, {
+      // For files, use all path parts except the last one as directories
+      // For directories, use all path parts
+      const dirParts = file.type === 'dir' ? pathParts : pathParts.slice(0, -1)
+      const fileName = file.type === 'file' ? pathParts[pathParts.length - 1] : null
+
+      // Create all directory nodes in the path
+      let currentPathBuild = ''
+      for (let i = 0; i < dirParts.length; i++) {
+        const part = dirParts[i]
+        currentPathBuild = currentPathBuild ? `${currentPathBuild}/${part}` : part
+        const depth = i
+
+        if (!nodeMap.has(currentPathBuild)) {
+          nodeMap.set(currentPathBuild, {
             name: part,
-            path: builtPath,
-            type: isLastPart ? 'file' : 'dir',
-            children: new Map(),
-            file: isLastPart ? file : undefined
+            path: currentPathBuild,
+            type: 'dir',
+            children: [],
+            file: undefined,
+            depth: depth,
           })
         }
-        
-        if (i < pathParts.length - 1) {
-          currentLevel = currentLevel.get(part)!.children
+      }
+
+      // If this is a file, create the file node
+      if (file.type === 'file' && fileName) {
+        const filePath = dirParts.length > 0 ? `${currentPathBuild}/${fileName}` : fileName
+        if (!nodeMap.has(filePath)) {
+          nodeMap.set(filePath, {
+            name: fileName,
+            path: filePath,
+            type: 'file',
+            children: [],
+            file: file,
+            depth: dirParts.length,
+          })
         }
       }
     }
-    
-    // Convert to array and sort (directories first, then files)
-    return Array.from(root.values()).sort((a, b) => {
-      if (a.type !== b.type) {
-        return a.type === 'dir' ? -1 : 1
-      }
-      return a.name.localeCompare(b.name)
+
+    // Second pass: build parent-child relationships
+    const rootNodes: TreeNode[] = []
+
+    // Sort entries by path depth to ensure parents are processed first
+    const sortedEntries = Array.from(nodeMap.entries()).sort((a, b) => {
+      const depthA = a[0].split('/').length
+      const depthB = b[0].split('/').length
+      return depthA - depthB
     })
-  }
-  // Get files to display based on current path
-  const getDisplayFiles = (): FolderNode[] => {
-    // Always show the complete folder structure, but we'll navigate through it
-    const folderStructure = buildFolderStructure(filteredFiles)
-    
-    // If we're at root, return the root structure
-    if (currentPath === '/' || currentPath === '') {
-      return folderStructure
-    }
-    
-    // Navigate to the current path in the folder structure
-    const pathParts = currentPath.split('/').filter(Boolean)
-    let currentNodes = folderStructure
-    
-    for (const part of pathParts) {
-      const foundNode = currentNodes.find(node => node.name === part)
-      if (foundNode && foundNode.type === 'dir') {
-        currentNodes = Array.from(foundNode.children.values()).sort((a, b) => {
-          if (a.type !== b.type) {
-            return a.type === 'dir' ? -1 : 1
-          }
-          return a.name.localeCompare(b.name)
-        })
+
+    for (const [path, node] of sortedEntries) {
+      const pathParts = path.split('/')
+
+      if (pathParts.length === 1) {
+        // Root level node
+        rootNodes.push(node)
       } else {
-        // Path not found, return empty
-        return []
+        // Find parent and add as child
+        const parentPath = pathParts.slice(0, -1).join('/')
+        const parent = nodeMap.get(parentPath)
+        if (parent && !parent.children.some((child) => child.path === node.path)) {
+          parent.children.push(node)
+          // Update child depth
+          node.depth = parent.depth + 1
+        }
       }
     }
-    
-    return currentNodes
+
+    // Recursive sort function
+    const sortNodes = (nodes: TreeNode[]): TreeNode[] => {
+      const sorted = nodes.sort((a, b) => {
+        // Directories first, then files
+        if (a.type !== b.type) {
+          return a.type === 'dir' ? -1 : 1
+        }
+        // Alphabetical within same type
+        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+      })
+
+      // Recursively sort children
+      sorted.forEach((node) => {
+        if (node.children.length > 0) {
+          node.children = sortNodes(node.children)
+        }
+      })
+
+      return sorted
+    }
+
+    const result = sortNodes(rootNodes)
+    console.log('Built tree structure:', result)
+    return result
   }
 
-  const displayFiles = getDisplayFiles()
+  const tree = buildTree(filteredFiles)
 
-  const handleItemClick = (node: FolderNode) => {
+  const toggleDirectory = (path: string) => {
+    const newExpanded = new Set(expandedDirs)
+    if (newExpanded.has(path)) {
+      newExpanded.delete(path)
+    } else {
+      newExpanded.add(path)
+    }
+    setExpandedDirs(newExpanded)
+  }
+  const handleItemClick = (node: TreeNode) => {
     if (node.type === 'dir') {
-      // Create a virtual directory FileItem
-      const dirItem: FileItem = {
-        id: `dir_${node.path}`,
-        name: node.name,
-        path: node.path,
-        type: 'dir'
-      }
-      onFileClick(dirItem)    } else if (node.file) {
+      // Only toggle directory expansion, don't trigger file loading
+      toggleDirectory(node.path)
+    } else if (node.file) {
+      // Only call onFileClick for actual files
       onFileClick(node.file)
     }
-  }
-  
-  return (
-    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-      <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
-        <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-3">
-          <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center">
-            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
-          </div>
-          File Browser
-        </h3>
-        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-          {filteredFiles.length} of {files.length} items
-        </p>
-      </div>
-      
-      <div className="max-h-[600px] overflow-y-auto">        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-16">
-            <div className="relative mb-6">
-              <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
-              <div className="absolute inset-0 w-12 h-12 border-4 border-transparent border-b-teal-500 rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}></div>
+  }  // Tree node component
+  const TreeNodeComponent = ({ node }: { node: TreeNode }) => {
+    const isSelected = selectedFile?.id === node.file?.id || selectedFile?.path === node.path
+    const isExpanded = node.type === 'dir' && expandedDirs.has(node.path)
+
+    return (
+      <div key={node.path}>
+        {/* Node Item */}
+        <div
+          onClick={() => handleItemClick(node)}
+          className={`group relative flex items-center gap-1 py-1 cursor-pointer transition-all duration-150 hover:bg-slate-100/80 dark:hover:bg-slate-700/50 ${
+            isSelected
+              ? 'bg-slate-200/60 dark:bg-slate-600/50 text-slate-900 dark:text-slate-100'
+              : 'text-slate-700 dark:text-slate-300'
+          }`}
+          style={{ paddingLeft: `${4 + node.depth * 16}px` }}
+        >
+          {/* Tree connecting lines */}
+          {node.depth > 0 && (
+            <div className="absolute left-0 top-0 bottom-0 pointer-events-none">
+              {Array.from({ length: node.depth }, (_, i) => (
+                <div
+                  key={i}
+                  className="absolute top-0 bottom-0 w-px bg-slate-300/60 dark:bg-slate-600/60"
+                  style={{ left: `${4 + i * 16 + 8}px` }}
+                />
+              ))}
+              {/* Horizontal line to this item */}
+              <div
+                className="absolute top-1/2 w-2 h-px bg-slate-300/60 dark:bg-slate-600/60"
+                style={{ left: `${4 + (node.depth - 1) * 16 + 8}px` }}
+              />
             </div>
-            <p className="text-lg font-medium text-slate-700 dark:text-slate-300 mb-2">Loading files...</p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Fetching repository structure</p>
+          )}
+
+          {/* Expand/Collapse Icon for Directories */}
+          {node.type === 'dir' ? (
+            <div className="flex-shrink-0 w-4 h-4 flex items-center justify-center relative z-10 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-colors duration-100">
+              <svg
+                className={`w-3 h-3 text-slate-600 dark:text-slate-400 transition-transform duration-150 ${
+                  isExpanded ? 'rotate-90' : 'rotate-0'
+                }`}
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path d="M8.59 16.58L13.17 12L8.59 7.41L10 6L16 12L10 18L8.59 16.58Z"/>
+              </svg>
+            </div>
+          ) : (
+            <div className="flex-shrink-0 w-4 h-4"></div>
+          )}
+
+          {/* Icon */}
+          <div className="flex-shrink-0 mr-1">
+            {node.type === 'dir' ? (
+              <svg
+                className={`w-4 h-4 ${
+                  isExpanded 
+                    ? 'text-blue-500 dark:text-blue-400' 
+                    : 'text-yellow-600 dark:text-yellow-500'
+                }`}
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                {isExpanded ? (
+                  <path d="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z" />
+                ) : (
+                  <path d="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z" />
+                )}
+              </svg>
+            ) : (
+              <div className="w-4 h-4 flex items-center justify-center">
+                {node.file && getFileIcon(node.file)}
+              </div>
+            )}
+          </div>          {/* File/Directory Name */}
+          <span
+            className={`text-base flex-1 truncate font-normal ${
+              isSelected 
+                ? 'text-slate-900 dark:text-slate-100 font-medium' 
+                : 'text-slate-700 dark:text-slate-300'
+            }`}
+          >
+            {node.name}
+          </span>
+
+          {/* Directory file count */}
+          {node.type === 'dir' && node.children.length > 0 && (
+            <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded mr-2">
+              {node.children.length}
+            </span>
+          )}          {/* File Size (for files only) - Smaller and less prominent */}
+          {node.file && node.file.size && (
+            <span className="text-xs text-slate-400 dark:text-slate-500 opacity-60 group-hover:opacity-100 transition-opacity duration-200 mr-3">
+              {formatFileSize(node.file.size)}
+            </span>
+          )}
+        </div>
+
+        {/* Children (if directory is expanded) */}
+        {node.type === 'dir' && isExpanded && node.children.length > 0 && (
+          <div>
+            {node.children.map((child) => (
+              <TreeNodeComponent key={child.path} node={child} />
+            ))}
           </div>
-        ) : filteredFiles.length === 0 ? (          <div className="text-center py-12">
-            <div className="w-16 h-16 mx-auto mb-4 p-3 bg-slate-100 dark:bg-slate-700 rounded-full">
-              <svg className="w-10 h-10 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        )}
+      </div>
+    )}
+    return (
+    <div className="h-full flex flex-col bg-white dark:bg-slate-900">
+      {/* Content */}
+      <div className="flex-1 overflow-auto">
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-16">
+            <div className="relative">
+              <div className="w-8 h-8 border-2 border-slate-300 dark:border-slate-600 border-t-blue-500 dark:border-t-blue-400 rounded-full animate-spin"></div>
+            </div>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mt-3">Loading files...</p>
+          </div>
+        ) : filteredFiles.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center mb-4">
+              <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
               </svg>
             </div>
-            <h4 className="text-lg font-medium text-slate-900 dark:text-white mb-2">
-              {files.length === 0 ? 'Repository files are being processed' : 'No files match your filters'}
-            </h4>
-            <p className="text-slate-600 dark:text-slate-400 mb-4">
-              {files.length === 0 
-                ? 'Files are being analyzed and will appear here once processing is complete.' 
-                : 'Try adjusting your search or filters to see more results.'
-              }
-            </p>
-            {files.length === 0 && (
-              <div className="inline-flex items-center px-4 py-2 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
-                <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-emerald-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <span className="text-sm text-emerald-700 dark:text-emerald-300">Processing in progress...</span>
-              </div>
-            )}
-          </div>) : (          <div className="divide-y divide-slate-200 dark:divide-slate-700">
-            {displayFiles.map((node) => (
-              <div 
-                key={node.path}
-                className={`p-4 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer transition-colors ${
-                  selectedFile?.id === node.file?.id 
-                    ? 'bg-emerald-50 dark:bg-emerald-900/20 border-r-4 border-emerald-500' 
-                    : ''
-                }`}
-                onClick={() => handleItemClick(node)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    {node.type === 'dir' ? (
-                      <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
-                      </svg>
-                    ) : (
-                      node.file && getFileIcon(node.file)
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-slate-900 dark:text-white truncate hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">
-                        {node.name}
-                        {node.type === 'dir' && <span className="text-slate-500 ml-1">/</span>}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        {node.file?.language && (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200">
-                            {node.file.language}
-                          </span>
-                        )}
-                        {node.file?.hasContent && (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300">
-                            ✓ Content
-                          </span>
-                        )}
-                        {node.type === 'dir' && (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300">
-                            📁 Folder
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right text-xs text-slate-500 dark:text-slate-400 ml-2">
-                    {node.file?.size && <div>{formatFileSize(node.file.size)}</div>}
-                    {node.file?.lastModified && <div className="mt-1">{formatDate(node.file.lastModified)}</div>}
-                  </div>
-                </div>
-              </div>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-1">No files found</p>
+            <p className="text-xs text-slate-500 dark:text-slate-500">Try adjusting your search or filters</p>
+          </div>
+        ) : (
+          <div className="py-1">
+            {tree.map((node) => (
+              <TreeNodeComponent key={node.path} node={node} />
             ))}
           </div>
         )}

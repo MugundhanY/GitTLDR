@@ -181,9 +181,7 @@ export async function GET(request: NextRequest) {
       orderBy: {
         createdAt: 'desc'
       }
-    });
-
-    // Transform the data to include file count
+    });    // Transform the data to include file count
     const repositoriesWithFileCount = repositories.map(repo => ({
       id: repo.id,
       name: repo.name,
@@ -199,6 +197,7 @@ export async function GET(request: NextRequest) {
       status: repo.embeddingStatus,
       summary: repo.summary,
       fileCount: repo.files.length,
+      avatarUrl: repo.avatarUrl,
       createdAt: repo.createdAt,
       updatedAt: repo.updatedAt
     }));
