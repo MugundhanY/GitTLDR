@@ -13,13 +13,12 @@ export async function GET(
     const user = await getUserFromRequest(request);
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { id: repositoryId } = await params;
+    }    const { id: repositoryId } = await params;
     const { searchParams } = new URL(request.url);
     const path = searchParams.get('path') || '/';
     const search = searchParams.get('search') || '';
     const language = searchParams.get('language') || '';
+    const searchInSummaries = searchParams.get('searchInSummaries') === 'true';
 
     // Verify repository ownership
     const repository = await prisma.repository.findFirst({
@@ -47,11 +46,18 @@ export async function GET(
     // Build where conditions for file filtering
     const whereConditions: any = {
       repositoryId,
-    };
-
-    // Add search filter if provided
+    };    // Add search filter if provided
     if (search) {
-      whereConditions.name = { contains: search, mode: 'insensitive' };
+      if (searchInSummaries) {
+        // Search in both name and summary when explicitly requested
+        whereConditions.OR = [
+          { name: { contains: search, mode: 'insensitive' } },
+          { summary: { contains: search, mode: 'insensitive' } }
+        ];
+      } else {
+        // Default: only search in filename
+        whereConditions.name = { contains: search, mode: 'insensitive' };
+      }
     }
 
     // Add language filter if provided

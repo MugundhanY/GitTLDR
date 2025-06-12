@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { FileItem } from './types'
 
 interface FileSearchAndFiltersProps {
@@ -11,8 +11,17 @@ interface FileSearchAndFiltersProps {
   onSearchChange: (value: string) => void
   onLanguageChange: (language: string) => void
   onSearchClear?: () => void
-  onAdvancedFiltersApply?: (filteredFiles: FileItem[]) => void
+  onAdvancedFiltersApply?: () => void
   onAdvancedFiltersClear?: () => void
+  onSearchModeChange?: (mode: 'normal' | 'regex' | 'exact', caseSensitive: boolean, searchInContent: boolean) => void
+  onFileFiltersChange?: (filters: { minFileSize?: string, maxFileSize?: string, selectedExtensions?: string[] }) => void
+  // Add props to receive state from parent instead of managing locally
+  searchMode?: 'normal' | 'regex' | 'exact'
+  caseSensitive?: boolean
+  searchInContent?: boolean
+  minFileSize?: string
+  maxFileSize?: string
+  selectedExtensions?: string[]
 }
 
 export default function FileSearchAndFilters({
@@ -24,16 +33,78 @@ export default function FileSearchAndFilters({
   onLanguageChange,
   onSearchClear,
   onAdvancedFiltersApply,
-  onAdvancedFiltersClear
+  onAdvancedFiltersClear,
+  onSearchModeChange,
+  onFileFiltersChange,
+  searchMode: parentSearchMode = 'normal',
+  caseSensitive: parentCaseSensitive = false,
+  searchInContent: parentSearchInContent = false,
+  minFileSize: parentMinFileSize = '',
+  maxFileSize: parentMaxFileSize = '',
+  selectedExtensions: parentSelectedExtensions = []
 }: FileSearchAndFiltersProps) {
-    const [isAdvancedOpen, setIsAdvancedOpen] = useState(false)
-  const [searchMode, setSearchMode] = useState<'normal' | 'regex' | 'exact'>('normal')
-  const [caseSensitive, setCaseSensitive] = useState(false)
-  const [searchInContent, setSearchInContent] = useState(false)
-  const [minFileSize, setMinFileSize] = useState('')
-  const [maxFileSize, setMaxFileSize] = useState('')
-  const [selectedExtensions, setSelectedExtensions] = useState<string[]>([])
-    const handleClearSearch = () => {
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false)
+  
+  // Use parent state if available, otherwise use local state
+  const [localSearchMode, setLocalSearchMode] = useState<'normal' | 'regex' | 'exact'>('normal')
+  const [localCaseSensitive, setLocalCaseSensitive] = useState(false)
+  const [localSearchInContent, setLocalSearchInContent] = useState(false)
+  
+  // Use parent state if provided, otherwise use local state
+  const searchMode = parentSearchMode
+  const caseSensitive = parentCaseSensitive
+  const searchInContent = parentSearchInContent
+  
+  // Use parent state for file filters
+  const minFileSize = parentMinFileSize
+  const maxFileSize = parentMaxFileSize
+  const selectedExtensions = parentSelectedExtensions
+    // Update search mode and notify parent
+  const handleSearchModeChange = (mode: 'normal' | 'regex' | 'exact') => {
+    setLocalSearchMode(mode)
+    if (onSearchModeChange) {
+      onSearchModeChange(mode, caseSensitive, searchInContent)
+    }
+  }
+  
+  const handleCaseSensitiveChange = (checked: boolean) => {
+    setLocalCaseSensitive(checked)
+    if (onSearchModeChange) {
+      onSearchModeChange(searchMode, checked, searchInContent)
+    }
+  }
+  
+  const handleSearchInContentChange = (checked: boolean) => {
+    setLocalSearchInContent(checked)
+    if (onSearchModeChange) {
+      onSearchModeChange(searchMode, caseSensitive, checked)
+    }
+  }
+
+  // File filter handlers
+  const handleMinFileSizeChange = (value: string) => {
+    if (onFileFiltersChange) {
+      onFileFiltersChange({ minFileSize: value })
+    }
+  }
+
+  const handleMaxFileSizeChange = (value: string) => {
+    if (onFileFiltersChange) {
+      onFileFiltersChange({ maxFileSize: value })
+    }
+  }
+
+  const handleToggleExtension = (ext: string) => {
+    const newExtensions = selectedExtensions.includes(ext) 
+      ? selectedExtensions.filter(e => e !== ext)
+      : [...selectedExtensions, ext]
+    
+    if (onFileFiltersChange) {
+      onFileFiltersChange({ selectedExtensions: newExtensions })
+    }
+  }
+  
+  const handleClearSearch = () => {
     if (onSearchClear) {
       onSearchClear() // Use the optimized clear function if provided
     } else {
@@ -56,89 +127,47 @@ export default function FileSearchAndFilters({
     if (!sizeStr) return 0
     const num = parseFloat(sizeStr)
     const unit = sizeStr.toLowerCase().slice(-2)
-    
-    switch (unit) {
+      switch (unit) {
       case 'kb': return num * 1024
       case 'mb': return num * 1024 * 1024
       case 'gb': return num * 1024 * 1024 * 1024
       default: return num
     }
   }
-
+  
   const performAdvancedSearch = () => {
-    let filtered = files
-
-    // Apply search query
-    if (searchQuery.trim()) {
-      filtered = filtered.filter(file => {
-        let searchTarget = file.name
-        if (searchInContent && file.summary) {
-          searchTarget += ' ' + file.summary
-        }
-
-        if (!caseSensitive) {
-          searchTarget = searchTarget.toLowerCase()
-        }
-
-        const query = caseSensitive ? searchQuery : searchQuery.toLowerCase()
-
-        switch (searchMode) {
-          case 'regex':
-            try {
-              const regex = new RegExp(query, caseSensitive ? 'g' : 'gi')
-              return regex.test(searchTarget)
-            } catch {
-              return false
-            }
-          case 'exact':
-            return searchTarget.includes(query)
-          default:
-            return searchTarget.includes(query)
-        }
-      })
-    }
-
-    // Apply file size filters
-    if (minFileSize) {
-      const minBytes = parseFileSize(minFileSize)
-      filtered = filtered.filter(file => (file.size || 0) >= minBytes)
-    }
-
-    if (maxFileSize) {
-      const maxBytes = parseFileSize(maxFileSize)
-      filtered = filtered.filter(file => (file.size || 0) <= maxBytes)
-    }    // Apply extension filters
-    if (selectedExtensions.length > 0) {
-      filtered = filtered.filter(file => {
-        if (file.type === 'dir') return true
-        const ext = file.name.split('.').pop()?.toLowerCase()
-        return ext && selectedExtensions.includes(ext)
-      })
-    }
-
+    // Just trigger the parent to enable advanced search mode
     if (onAdvancedFiltersApply) {
-      onAdvancedFiltersApply(filtered)
+      onAdvancedFiltersApply()
     }
     setIsAdvancedOpen(false)
   }
+  
   const resetAdvancedFilters = () => {
-    setSearchMode('normal')
-    setCaseSensitive(false)
-    setSearchInContent(false)
-    setMinFileSize('')
-    setMaxFileSize('')
-    setSelectedExtensions([])
+    // Reset search mode and options
+    if (onSearchModeChange) {
+      onSearchModeChange('normal', false, false)
+    }
+    
+    // Reset file filters
+    if (onFileFiltersChange) {
+      onFileFiltersChange({ 
+        minFileSize: '',
+        maxFileSize: '',
+        selectedExtensions: [] 
+      })
+    }
+    
+    // Call the parent's clear function to reset all advanced filter state
     if (onAdvancedFiltersClear) {
       onAdvancedFiltersClear()
     }
-    setIsAdvancedOpen(false)  }
+    
+    setIsAdvancedOpen(false)
+  }
   
   const toggleExtension = (ext: string) => {
-    setSelectedExtensions(prev => 
-      prev.includes(ext) 
-        ? prev.filter(e => e !== ext)
-        : [...prev, ext]
-    )
+    handleToggleExtension(ext)
   }
 
   return (
@@ -148,7 +177,7 @@ export default function FileSearchAndFilters({
         <div className="relative flex-1 group">
           <input
             type="text"
-            placeholder={`Search files and folders... ${searchMode === 'regex' ? '(Regex mode)' : searchMode === 'exact' ? '(Exact match)' : ''}`}
+            placeholder={`Search files and folders${searchInContent ? ' + summaries' : ''}... ${searchMode === 'regex' ? '(Regex mode)' : searchMode === 'exact' ? '(Exact match)' : ''}`}
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             className="w-full h-9 pl-10 pr-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 shadow-sm focus:shadow-lg hover:shadow-md"
@@ -216,10 +245,9 @@ export default function FileSearchAndFilters({
                 { value: 'normal', label: 'Normal' },
                 { value: 'regex', label: 'Regex' },
                 { value: 'exact', label: 'Exact' }
-              ].map((mode, index) => (
-                <button
+              ].map((mode, index) => (                <button
                   key={mode.value}
-                  onClick={() => setSearchMode(mode.value as any)}
+                  onClick={() => handleSearchModeChange(mode.value as any)}
                   className={`px-3 py-1 text-sm rounded-md transition-all duration-200 hover:scale-105 transform ${
                     searchMode === mode.value
                       ? 'bg-emerald-500 text-white shadow-md'
@@ -234,12 +262,11 @@ export default function FileSearchAndFilters({
           </div>
 
           {/* Search Options */}
-          <div className="flex gap-4 animate-in slide-in-from-left duration-400 delay-200">
-            <label className="flex items-center hover:bg-slate-100 dark:hover:bg-slate-700 p-2 rounded-md transition-colors duration-200">
+          <div className="flex gap-4 animate-in slide-in-from-left duration-400 delay-200">            <label className="flex items-center hover:bg-slate-100 dark:hover:bg-slate-700 p-2 rounded-md transition-colors duration-200">
               <input
                 type="checkbox"
                 checked={caseSensitive}
-                onChange={(e) => setCaseSensitive(e.target.checked)}
+                onChange={(e) => handleCaseSensitiveChange(e.target.checked)}
                 className="rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500 transition-all duration-200"
               />
               <span className="ml-2 text-sm text-slate-700 dark:text-slate-300">Case sensitive</span>
@@ -248,7 +275,7 @@ export default function FileSearchAndFilters({
               <input
                 type="checkbox"
                 checked={searchInContent}
-                onChange={(e) => setSearchInContent(e.target.checked)}
+                onChange={(e) => handleSearchInContentChange(e.target.checked)}
                 className="rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500 transition-all duration-200"
               />
               <span className="ml-2 text-sm text-slate-700 dark:text-slate-300">Search in summaries</span>
@@ -260,11 +287,10 @@ export default function FileSearchAndFilters({
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Min Size
-              </label>
-              <input
+              </label>              <input
                 type="text"
                 value={minFileSize}
-                onChange={(e) => setMinFileSize(e.target.value)}
+                onChange={(e) => handleMinFileSizeChange(e.target.value)}
                 placeholder="e.g., 1KB, 10MB"
                 className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all duration-200 hover:shadow-sm focus:shadow-md"
               />
@@ -272,11 +298,10 @@ export default function FileSearchAndFilters({
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Max Size
-              </label>
-              <input
+              </label>              <input
                 type="text"
                 value={maxFileSize}
-                onChange={(e) => setMaxFileSize(e.target.value)}
+                onChange={(e) => handleMaxFileSizeChange(e.target.value)}
                 placeholder="e.g., 1MB, 100MB"
                 className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all duration-200 hover:shadow-sm focus:shadow-md"
               />
