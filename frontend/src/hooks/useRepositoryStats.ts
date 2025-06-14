@@ -24,10 +24,21 @@ export function useRepositoryStats(repositoryId?: string) {
   const [stats, setStats] = useState<RepositoryStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
+  const [cache, setCache] = useState<Map<string, { data: RepositoryStats; timestamp: number }>>(new Map());
+
+  // Cache duration: 5 minutes
+  const CACHE_DURATION = 5 * 60 * 1000;  useEffect(() => {
     const fetchStats = async () => {
       if (!repositoryId) {
         setStats(null);
+        setIsLoading(false);
+        return;
+      }
+
+      // Check cache first
+      const cached = cache.get(repositoryId);
+      if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        setStats(cached.data);
         setIsLoading(false);
         return;
       }
@@ -39,19 +50,26 @@ export function useRepositoryStats(repositoryId?: string) {
         const response = await fetch(`/api/repositories/${repositoryId}/stats`);
         if (response.ok) {
           const data = await response.json();
-          setStats({
+          const newStats = {
             totalFiles: data.totalFiles,
             totalQuestions: 0, // We don't track Q&A in this endpoint yet
             recentActivity: data.recentActivity
-          });
-        } else {
+          };
+          
+          setStats(newStats);
+          
+          // Cache the result
+          setCache(prev => new Map(prev).set(repositoryId, {
+            data: newStats,
+            timestamp: Date.now()
+          }));        } else {
           // If API fails, use mock data
-          setStats({
+          const mockStats = {
             totalFiles: 156,
-            totalQuestions: 23,
-            recentActivity: [              {
+            totalQuestions: 23,            recentActivity: [
+              {
                 id: '1',
-                type: 'question',
+                type: 'question' as const,
                 title: 'How does authentication work?',
                 description: 'Asked about the login flow implementation',
                 timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
@@ -60,7 +78,7 @@ export function useRepositoryStats(repositoryId?: string) {
               },
               {
                 id: '2',
-                type: 'commit',
+                type: 'commit' as const,
                 title: 'Fixed authentication bug',
                 description: 'Resolved OAuth token refresh issue',
                 timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
@@ -69,18 +87,26 @@ export function useRepositoryStats(repositoryId?: string) {
                 authorAvatar: 'https://github.com/github.png',
                 sha: 'abc123',
                 filesChanged: 3,
-                aiSummaryStatus: 'completed'
+                aiSummaryStatus: 'completed' as const
               },
               {
                 id: '3',
-                type: 'file_added',
+                type: 'file_added' as const,
                 title: 'Added new component',
                 description: 'UserProfile.tsx was processed',
                 timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-                aiSummaryStatus: 'pending'
+                aiSummaryStatus: 'pending' as const
               }
             ]
-          });
+          };
+          
+          setStats(mockStats);
+          
+          // Cache the mock data
+          setCache(prev => new Map(prev).set(repositoryId, {
+            data: mockStats,
+            timestamp: Date.now()
+          }));
         }
 
       } catch (err) {

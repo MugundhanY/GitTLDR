@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Image from 'next/image'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { useRepository } from '@/contexts/RepositoryContext'
+import { useSidebar } from '@/contexts/SidebarContext'
 import {
   FileSearchAndFilters,
   FileBrowser,
@@ -146,6 +147,7 @@ const AnimatedHeaderStats = ({ stats }: { stats: FileStats }) => {
 
 export default function FilesPage() {
   const { selectedRepository } = useRepository()
+  const { isCollapsed } = useSidebar()
   const [files, setFiles] = useState<FileItem[]>([])
   const [stats, setStats] = useState<FileStats>({
     totalFiles: 0,
@@ -580,10 +582,11 @@ export default function FilesPage() {
       <div className="fixed inset-0 w-screen h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 -z-50 animate-gradient-x"></div>
       
       <DashboardLayout>
-        <div className="min-h-screen relative z-0">
-          {/* Header */}
+        <div className="min-h-screen relative z-0">          {/* Header */}
           <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-700/50 animate-in slide-in-from-top duration-700">
-            <div className="max-w-7xl mx-auto px-8 py-6">
+            <div className={`mx-auto px-8 py-6 transition-all duration-300 ${
+              isCollapsed ? 'max-w-none' : 'max-w-7xl'
+            }`}>
               <div className="flex items-center justify-between">                <div className="flex items-center gap-6">
                   <div className="relative group">
                     {selectedRepository.owner?.avatar_url ? (
@@ -621,10 +624,10 @@ export default function FilesPage() {
                 </button>
               </div>
             </div>
-          </div>
-
-          {/* Main Content */}
-          <div className="max-w-7xl mx-auto p-8">            <div className="grid grid-cols-12 gap-6 auto-rows-max">              {/* Search & Controls */}
+          </div>          {/* Main Content */}
+          <div className={`mx-auto p-8 transition-all duration-300 ${
+            isCollapsed ? 'max-w-none' : 'max-w-7xl'
+          }`}>            <div className="grid grid-cols-12 gap-6 auto-rows-max">              {/* Search & Controls */}
               <div className="col-span-12 animate-in fade-in slide-in-from-bottom duration-500 delay-100">
         <div className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl p-4 hover:shadow-2xl transition-shadow duration-300">                  <FileSearchAndFilters
                     searchQuery={searchQuery}
@@ -647,7 +650,9 @@ export default function FilesPage() {
                   />
                 </div>
               </div>              {/* File Explorer */}
-              <div className="col-span-4 animate-in fade-in slide-in-from-left duration-600 delay-200">
+              <div className={`animate-in fade-in slide-in-from-left duration-600 delay-200 ${
+                isCollapsed ? 'col-span-4' : 'col-span-4'
+              }`}>
                 <div className="h-[110vh] bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden hover:shadow-2xl transition-shadow duration-300">
                   <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4">
                     <div className="flex items-center gap-3">
@@ -674,7 +679,9 @@ export default function FilesPage() {
                   </div>
                 </div>
               </div>              {/* File Content Viewer */}
-              <div className="col-span-8 animate-in fade-in slide-in-from-right duration-600 delay-300">
+              <div className={`animate-in fade-in slide-in-from-right duration-600 delay-300 ${
+                isCollapsed ? 'col-span-8' : 'col-span-8'
+              }`}>
                 <div className="h-[110vh] bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden hover:shadow-2xl transition-shadow duration-300">
                   <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4">
                     <div className="flex items-center gap-3">

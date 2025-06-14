@@ -15,9 +15,10 @@ export interface Repository {
   default_branch?: string;
   created_at?: string;
   updated_at?: string;
+  avatarUrl?: string; // Repository avatar from the database
   owner?: {
     login: string;
-    avatar_url: string;
+    avatar_url: string; // Owner avatar from GitHub API
   };
 }
 
