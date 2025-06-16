@@ -201,11 +201,11 @@ module.exports = {
       },
       backdropBlur: {
         xs: '2px',
-      },
-      transitionTimingFunction: {
+      },      transitionTimingFunction: {
         'bounce-gentle': 'cubic-bezier(0.68, -0.55, 0.265, 1.55)',
-      },
-    },
+      },    },
   },
-  plugins: [],
+  plugins: [
+    // @tailwindcss/line-clamp is now built into Tailwind CSS
+  ],
 }

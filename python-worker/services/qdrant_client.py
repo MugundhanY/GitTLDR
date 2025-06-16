@@ -162,8 +162,7 @@ class QuadrantVectorClient:
             # Store point
             self.client.upsert(
                 collection_name=self.settings.collection_name,
-                points=[point]
-            )
+                points=[point]            )
             
             logger.debug("Stored embedding", point_id=point_id, metadata_keys=list(metadata.keys()))
             return point_id
@@ -176,7 +175,7 @@ class QuadrantVectorClient:
         self,
         query_embedding: List[float],
         limit: int = 10,
-        score_threshold: float = 0.7,
+        score_threshold: float = 0.3,
         filter_conditions: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """Search for similar embeddings."""
@@ -251,7 +250,6 @@ class QuadrantVectorClient:
         except Exception as e:
             logger.error("Failed to delete embeddings", error=str(e))
             raise
-            
     async def get_collection_info(self) -> Dict[str, Any]:
         """Get collection information."""
         if not self.client:
@@ -260,7 +258,7 @@ class QuadrantVectorClient:
         try:
             info = self.client.get_collection(self.settings.collection_name)
             return {
-                "name": info.config.name,
+                "name": self.settings.collection_name,
                 "points_count": info.points_count,
                 "segments_count": info.segments_count,
                 "vector_size": info.config.params.vectors.size,
@@ -306,15 +304,14 @@ class QuadrantVectorClient:
         else:
             # New style call - use provided metadata
             final_metadata = metadata
-            
         return await self.store_embedding(embedding, final_metadata, point_id)
-
+    
     async def search_similar_in_repo(
         self,
         query_embedding: List[float],
         repo_id: str,
         limit: int = 10,
-        score_threshold: float = 0.7
+        score_threshold: float = 0.3
     ) -> List[Dict[str, Any]]:
         """Search for similar embeddings within a specific repository."""
         filter_conditions = {'repo_id': repo_id}

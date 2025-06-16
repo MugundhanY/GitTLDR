@@ -52,11 +52,15 @@ export async function POST(request: NextRequest) {
 }
 
 // GET /api/qna - Get Q&A history for a repository
-export async function GET(request: NextRequest) {
-  try {
+export async function GET(request: NextRequest) {  try {
     const { searchParams } = new URL(request.url);
     const repositoryId = searchParams.get('repositoryId');
     const userId = searchParams.get('userId');
+    const favoritesOnly = searchParams.get('favoritesOnly') === 'true';
+    const category = searchParams.get('category');
+    const tags = searchParams.get('tags')?.split(',').filter(Boolean);
+    const minConfidence = searchParams.get('minConfidence');
+    const maxConfidence = searchParams.get('maxConfidence');
 
     if (!repositoryId || !userId) {
       return NextResponse.json(
@@ -65,31 +69,165 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // TODO: Fetch Q&A history from database using Prisma
-    // For now, return mock data
-    const qnaHistory = [
-      {
-        id: '1',
-        question: 'What does this repository do?',
-        answer: 'This repository is a GitTLDR application that provides AI-powered summaries and Q&A for GitHub repositories.',
-        createdAt: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
-        status: 'completed'
-      },
-      {
-        id: '2',
-        question: 'How do I set up the development environment?',
-        answer: 'To set up the development environment, follow these steps: 1. Clone the repository, 2. Install dependencies with npm install, 3. Set up environment variables, 4. Run npm run dev.',
-        createdAt: new Date(Date.now() - 1800000).toISOString(), // 30 minutes ago
-        status: 'completed'
-      }
-    ];
+    // Build where clause with filters
+    const whereClause: any = {
+      repositoryId,
+      userId,
+    };
 
-    return NextResponse.json({ qnaHistory });
+    if (favoritesOnly) {
+      whereClause.isFavorite = true;
+    }
+
+    if (category) {
+      whereClause.category = category;
+    }    if (tags && tags.length > 0) {
+      whereClause.tags = {
+        hasEvery: tags
+      };
+    }
+
+    // Confidence level filtering
+    if (minConfidence !== null || maxConfidence !== null) {
+      whereClause.confidenceScore = {};
+      
+      if (minConfidence !== null) {
+        const minConf = parseFloat(minConfidence);
+        if (!isNaN(minConf)) {
+          whereClause.confidenceScore.gte = minConf;
+        }
+      }
+      
+      if (maxConfidence !== null) {
+        const maxConf = parseFloat(maxConfidence);
+        if (!isNaN(maxConf)) {
+          whereClause.confidenceScore.lte = maxConf;
+        }
+      }
+    }
+
+    // Fetch Q&A history from database using Prisma
+    const questions = await prisma.question.findMany({
+      where: whereClause,
+      include: {
+        repository: {
+          select: {
+            name: true
+          }
+        }
+      },
+      orderBy: [
+        { confidenceScore: 'desc' }, // Order by confidence first
+        { createdAt: 'desc' }
+      ],
+      take: 100 // Increased limit for better history access
+    });
+
+    // Transform questions for frontend
+    const qnaHistory = questions.map(question => ({
+      id: question.id,
+      query: question.query,
+      answer: question.answer,
+      createdAt: question.createdAt.toISOString(),
+      updatedAt: question.updatedAt.toISOString(),
+      status: 'completed', // All stored questions are completed
+      repositoryId: question.repositoryId,
+      repositoryName: question.repository?.name || '',
+      confidence: question.confidenceScore,
+      relevantFiles: question.relevantFiles as string[],
+      isFavorite: question.isFavorite,
+      tags: question.tags,
+      category: question.category,
+      notes: question.notes
+    }));
+
+    await prisma.$disconnect();
+    return NextResponse.json({ questions: qnaHistory });
 
   } catch (error) {
     console.error('Error fetching Q&A history:', error);
+    await prisma.$disconnect();
     return NextResponse.json(
       { error: 'Failed to fetch Q&A history' },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH /api/qna - Update question metadata (favorite, tags, notes, etc.)
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { questionId, isFavorite, tags, category, notes, userId } = body;
+
+    if (!questionId || !userId) {
+      return NextResponse.json(
+        { error: 'Question ID and user ID are required' },
+        { status: 400 }
+      );
+    }
+
+    // Verify the question belongs to the user
+    const existingQuestion = await prisma.question.findFirst({
+      where: {
+        id: questionId,
+        userId: userId,
+      }
+    });
+
+    if (!existingQuestion) {
+      return NextResponse.json(
+        { error: 'Question not found or access denied' },
+        { status: 404 }
+      );
+    }
+
+    // Update the question
+    const updatedQuestion = await prisma.question.update({
+      where: {
+        id: questionId,
+      },
+      data: {
+        ...(isFavorite !== undefined && { isFavorite }),
+        ...(tags !== undefined && { tags }),
+        ...(category !== undefined && { category }),
+        ...(notes !== undefined && { notes }),
+        updatedAt: new Date(),
+      },
+      include: {
+        repository: {
+          select: {
+            name: true
+          }
+        }
+      }
+    });
+
+    const response = {
+      id: updatedQuestion.id,
+      query: updatedQuestion.query,
+      answer: updatedQuestion.answer,
+      createdAt: updatedQuestion.createdAt.toISOString(),
+      updatedAt: updatedQuestion.updatedAt.toISOString(),
+      status: 'completed',
+      repositoryId: updatedQuestion.repositoryId,
+      repositoryName: updatedQuestion.repository?.name || '',
+      confidence: updatedQuestion.confidenceScore,
+      relevantFiles: updatedQuestion.relevantFiles as string[],
+      isFavorite: updatedQuestion.isFavorite,
+      tags: updatedQuestion.tags,
+      category: updatedQuestion.category,
+      notes: updatedQuestion.notes
+    };
+
+    await prisma.$disconnect();
+    return NextResponse.json({ question: response });
+
+  } catch (error) {
+    console.error('Error updating question:', error);
+    await prisma.$disconnect();
+    return NextResponse.json(
+      { error: 'Failed to update question' },
       { status: 500 }
     );
   }

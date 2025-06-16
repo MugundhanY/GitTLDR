@@ -47,6 +47,11 @@ export async function GET(
             timestamp: 'desc'
           },
           take: 10
+        },
+        questions: {
+          select: {
+            id: true,
+          }
         }
       }
     });
@@ -57,10 +62,9 @@ export async function GET(
         { error: 'Repository not found' },
         { status: 404 }
       );
-    }
-
-    // Calculate statistics
+    }    // Calculate statistics
     const totalFiles = repository.files.length;
+    const totalQuestions = repository.questions.length;
     const totalSize = repository.files.reduce((sum, file) => sum + (file.size || 0), 0);
     
     // Language distribution
@@ -103,10 +107,9 @@ export async function GET(
         hasAiSummary: !!commit.summary,
         summaryStatus: commit.status
       };
-    });
-
-    const stats = {
+    });    const stats = {
       totalFiles,
+      totalQuestions,
       totalSize,
       languages,
       recentActivity,

@@ -118,10 +118,17 @@ export class ResultProcessor {
       await redis.lpush('result_queue', JSON.stringify(result));
     }
   }
-
   private async handleQnAResult(result: any) {
-    // Handle Q&A results (placeholder for now)
-    console.log(`📋 Q&A result processed: ${result.query}`);
+    console.log(`📋 Processing Q&A result for question: ${result.question_id}`);
+    
+    try {
+      // Store Q&A result in database
+      await this.storeQnAResult(result);
+    } catch (error) {
+      console.error('Error handling Q&A result:', error);
+      // Put back in queue for retry
+      await redis.lpush('qna_results', JSON.stringify(result));
+    }
   }
 
   private async processCommitSummaryResults() {
@@ -189,10 +196,28 @@ export class ResultProcessor {
       console.error('Error processing QnA results:', error);
     }
   }
-
   private async storeQnAResult(result: any) {
     try {
-      // Create question record
+      // Ensure user exists or create a default one
+      let userId = result.user_id;
+      let user = await prisma.user.findUnique({
+        where: { id: userId }
+      });
+
+      if (!user) {
+        console.log(`User ${userId} not found, creating default user...`);
+        user = await prisma.user.create({
+          data: {
+            id: userId,
+            email: 'demo@example.com',
+            name: 'Demo User',
+            githubId: `github-${userId}`,
+            githubLogin: `user-${userId}`
+          }
+        });
+        console.log(`Created default user: ${user.id}`);
+      }      // Create question record
+      const now = new Date();
       const question = await prisma.question.create({
         data: {
           id: result.question_id,
@@ -200,12 +225,16 @@ export class ResultProcessor {
           answer: result.answer,
           confidenceScore: result.confidence || 0.5,
           relevantFiles: result.relevant_files || [],
-          userId: result.user_id,
+          userId: user.id,
           repositoryId: result.repository_id,
+          createdAt: now,
+          // Add AI-generated categorization data
+          category: result.category || null,
+          tags: result.tags || [],
         }
       });
 
-      console.log(`✅ Stored QnA result: ${question.id}`);
+      console.log(`✅ Stored QnA result with category '${result.category}': ${question.id}`);
 
     } catch (error) {
       console.error(`❌ Failed to store QnA result:`, error);

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
+import { useQnA } from '@/contexts/QnAContext'
 
 interface Repository {
   id: string
@@ -29,12 +30,15 @@ interface Question {
   answer?: string
   createdAt: string
   status: 'pending' | 'completed' | 'failed'
+  confidence?: number
+  relevantFiles?: string[]
 }
 
 export default function RepositoryPage() {
   const params = useParams()
   const router = useRouter()
   const repositoryId = params.id as string
+  const { incrementQuestionCount } = useQnA()
   
   const [repository, setRepository] = useState<Repository | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
@@ -56,10 +60,9 @@ export default function RepositoryPage() {
       setIsLoading(false)
     }
   }, [repositoryId, router])
-
   const fetchQuestions = useCallback(async () => {
     try {
-      const response = await fetch(`/api/qna?repositoryId=${repositoryId}`)
+      const response = await fetch(`/api/qna?repositoryId=${repositoryId}&userId=1`) // Mock user ID
       if (response.ok) {
         const data = await response.json()
         setQuestions(data.questions || [])
@@ -85,8 +88,7 @@ export default function RepositoryPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+        },        body: JSON.stringify({
           repositoryId: repository.id,
           question: newQuestion.trim(),
           userId: '1' // Mock user ID
@@ -95,8 +97,26 @@ export default function RepositoryPage() {
 
       if (response.ok) {
         const data = await response.json()
-        setQuestions([data.question, ...questions])
+        console.log('Question submitted:', data) // Debug log
+        
+        // Create a pending question object to show in the UI
+        const pendingQuestion: Question = {
+          id: data.questionId,
+          query: newQuestion.trim(),
+          answer: undefined,
+          createdAt: new Date().toISOString(),
+          status: 'pending'
+        }
+          setQuestions([pendingQuestion, ...questions])
         setNewQuestion('')
+        
+        // Immediately increment the question count for sidebar update
+        incrementQuestionCount()
+        
+        // Refresh questions after a delay to get the answer
+        setTimeout(() => {
+          fetchQuestions()
+        }, 5000) // Check for answer after 5 seconds
       } else {
         throw new Error('Failed to ask question')
       }
@@ -364,10 +384,31 @@ export default function RepositoryPage() {
                           {question.status}
                         </span>
                       </div>
-                      
-                      {question.answer ? (
+                        {question.answer ? (
                         <div className="bg-neutral-50 rounded-lg p-4 mt-3">
-                          <p className="text-neutral-700 leading-relaxed whitespace-pre-wrap">{question.answer}</p>
+                          <div className="flex items-center gap-2 mb-2">
+                            <p className="text-neutral-700 leading-relaxed whitespace-pre-wrap flex-1">{question.answer}</p>
+                            {question.confidence && (
+                              <span className="text-xs text-neutral-500 bg-neutral-200 px-2 py-1 rounded">
+                                {Math.round(question.confidence * 100)}% confidence
+                              </span>
+                            )}
+                          </div>
+                          {question.relevantFiles && question.relevantFiles.length > 0 && (
+                            <div className="border-t border-neutral-200 pt-3 mt-3">
+                              <h6 className="text-xs font-medium text-neutral-600 mb-2">Related Files:</h6>
+                              <div className="flex flex-wrap gap-1">
+                                {question.relevantFiles.map((filePath, index) => (
+                                  <span 
+                                    key={index}
+                                    className="text-xs bg-neutral-200 text-neutral-600 px-2 py-1 rounded"
+                                  >
+                                    {filePath.split('/').pop() || filePath}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ) : question.status === 'pending' ? (
                         <div className="bg-neutral-50 rounded-lg p-4 mt-3 flex items-center gap-2">

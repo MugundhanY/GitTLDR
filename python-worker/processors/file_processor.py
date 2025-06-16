@@ -595,11 +595,10 @@ class FileProcessor:
             embeddings_failed = 0
             
             for file_data in files:
-                try:
-                    # Skip empty files or very large files
+                try:                    # Skip empty files or very large files, but allow short meaningful files
                     content = file_data.get('content', '')
-                    if not content or len(content) > 100000:  # 100KB limit
-                        task_logger.debug(f"Skipping embedding for {file_data['path']}: empty or too large")
+                    if not content or len(content.strip()) < 1 or len(content) > 100000:  # 100KB limit
+                        task_logger.debug(f"Skipping embedding for {file_data['path']}: empty, too short, or too large")
                         continue
                     
                     # Generate embedding using Gemini
@@ -655,11 +654,24 @@ class FileProcessor:
                     # Skip empty files, very large files, or binary files
                     content = file_data.get('content', '')
                     file_path = file_data.get('path', '')
-                    file_ext = file_data.get('extension', '').lower()
-                    
-                    # Skip files that don't need summaries
-                    if not content or len(content.strip()) < 50:
+                    file_ext = file_data.get('extension', '').lower()                    # Skip files that don't need summaries
+                    if not content or len(content.strip()) < 3:  # Lowered from 10 to 3 characters
                         task_logger.debug(f"Skipping summary for {file_path}: too short or empty")
+                        continue
+                    
+                    # Lower threshold for important config/documentation files
+                    is_important_file = any(file_path.lower().endswith(ext) for ext in [
+                        '.md', '.txt', '.json', '.yml', '.yaml', '.toml', '.ini', '.conf', 
+                        '.cfg', '.env', '.gitignore', 'dockerfile', 'makefile', 'readme', 'license'
+                    ]) or any(name in file_path.lower() for name in [
+                        'readme', 'license', 'changelog', 'contributing', 'dockerfile', 'makefile'
+                    ])
+                    
+                    # For important files, process even very short content (3+ chars)
+                    # For code files, require at least 10 characters
+                    min_length = 3 if is_important_file else 10
+                    if len(content.strip()) < min_length:
+                        task_logger.debug(f"Skipping summary for {file_path}: too short")
                         continue
                     
                     if len(content) > 50000:  # 50KB limit for summarization

@@ -12,34 +12,43 @@ interface AuthGuardProps {
 export default function AuthGuard({ children, requireAuth = true }: AuthGuardProps) {
   const { userData, isLoading } = useUserData();
   const router = useRouter();
-  const [isChecking, setIsChecking] = useState(true);
+  const [hasRedirected, setHasRedirected] = useState(false);
 
   useEffect(() => {
-    if (!isLoading) {
-      if (requireAuth && !userData) {
-        // User is not authenticated, redirect to login
-        console.log('🚨 AuthGuard: User not authenticated, redirecting to /auth');
-        router.push('/auth');
-        return;
-      }
-      setIsChecking(false);
+    // Only redirect if we're sure the user is not authenticated
+    if (!isLoading && requireAuth && !userData && !hasRedirected) {
+      console.log('🚨 AuthGuard: User not authenticated, redirecting to /auth');
+      setHasRedirected(true);
+      router.push('/auth');
     }
-  }, [userData, isLoading, requireAuth, router]);
+  }, [userData, isLoading, requireAuth, router, hasRedirected]);
 
-  // Show loading state while checking authentication
-  if (isLoading || isChecking) {
+  // Show optimistic loading only for a short time
+  if (isLoading && !hasRedirected) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto mb-4"></div>
-          <p className="text-slate-600 dark:text-slate-400">Checking authentication...</p>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600 mx-auto mb-3"></div>
+          <p className="text-slate-600 dark:text-slate-400 text-sm">Loading...</p>
         </div>
       </div>
     );
   }
 
-  // If authentication is required and user is not authenticated, don't render children
-  if (requireAuth && !userData) {
+  // If authentication is required and user is not authenticated, show loading until redirect
+  if (requireAuth && !userData && !hasRedirected) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600 mx-auto mb-3"></div>
+          <p className="text-slate-600 dark:text-slate-400 text-sm">Authenticating...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If we've redirected, don't render anything
+  if (hasRedirected) {
     return null;
   }
 

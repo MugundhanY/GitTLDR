@@ -16,6 +16,7 @@ export interface Repository {
   created_at?: string;
   updated_at?: string;
   avatarUrl?: string; // Repository avatar from the database
+  embeddingStatus?: 'pending' | 'processing' | 'completed' | 'failed';
   owner?: {
     login: string;
     avatar_url: string; // Owner avatar from GitHub API

@@ -284,9 +284,9 @@ class GeminiClient:
                         **circuit_status
                     )
                     raise e
-        
-        # This shouldn't be reached, but just in case
-        raise Exception("Maximum retries exceeded")    
+          # This shouldn't be reached, but just in case
+        raise Exception("Maximum retries exceeded")
+    
     async def answer_question(self, question: str, context: str, files_content: List[str]) -> Dict[str, Any]:
         """Answer question based on repository context with comprehensive retry logic."""
         self._ensure_configured()
@@ -300,10 +300,20 @@ class GeminiClient:
         max_retries = 5  # Increased for better resilience
         base_delay = 1
         
+        # Debug logging for Q&A context
+        logger.info(f"Q&A Debug - Files content count: {len(files_content)}")
+        for i, content in enumerate(files_content):
+            content_preview = content[:200] + "..." if len(content) > 200 else content
+            logger.info(f"Q&A Debug - File {i+1} preview: {content_preview}")
+        
         for attempt in range(max_retries):
             try:
                 # Prepare context from files
                 combined_context = self._prepare_qa_context(context, files_content)
+                
+                # Debug logging for combined context
+                context_preview = combined_context[:500] + "..." if len(combined_context) > 500 else combined_context
+                logger.info(f"Q&A Debug - Combined context preview: {context_preview}")
                 
                 # Build Q&A prompt
                 prompt = self._build_qa_prompt(question, combined_context)
@@ -511,23 +521,35 @@ Content to summarize:
 {text}
 
 Provide a clear, structured summary in 2-3 paragraphs:
-"""
-
+""" 
     def _build_qa_prompt(self, question: str, context: str) -> str:
         """Build prompt for Q&A."""
         return f"""
-You are an expert code analyst helping developers understand a repository. 
-Answer the following question based on the provided repository context.
+You are an expert software engineer and code analyst with deep understanding of software architecture, design patterns, and development practices.
 
-Be specific, accurate, and reference relevant files or code sections when possible.
-If you're unsure about something, say so rather than guessing.
+Your goal is to provide comprehensive, accurate answers about code repositories by:
+1. Analyzing the actual code structure and implementation details
+2. Understanding relationships between files and components
+3. Explaining architectural decisions and design patterns
+4. Providing specific code references and examples
+5. Going beyond surface-level documentation to explain how things actually work
+
+IMPORTANT GUIDELINES:
+- Focus on the actual code implementation, not just README files
+- Explain the "why" and "how", not just the "what"
+- Reference specific files, functions, classes, and code sections
+- Identify design patterns, architectural choices, and dependencies
+- If analyzing configuration files, explain their purpose and impact
+- For folder/directory questions, analyze the actual contents and structure
+- Use technical accuracy and provide actionable insights
+- If you find conflicting information, prioritize actual code over documentation
 
 Repository Context:
 {context}
 
 Question: {question}
 
-Answer:
+Provide a comprehensive, technical answer that demonstrates deep understanding of the codebase:
 """
 
     def _prepare_qa_context(self, repo_info: str, files_content: List[str]) -> str:
@@ -576,12 +598,177 @@ Answer:
         if not self._configured:
             if self.settings.gemini_api_key == "your-gemini-api-key":
                 raise ValueError("Please set a valid GEMINI_API_KEY in your environment variables")
-            
             genai.configure(api_key=self.settings.gemini_api_key)
             # Use Gemini 2.0 Flash Lite which is faster and has better rate limits
             self.text_model = genai.GenerativeModel('gemini-2.0-flash-lite')
             logger.info("Initialized Gemini 2.0 Flash Lite model for text generation")
             self._configured = True
+
+    async def categorize_question(self, question: str, repository_context: str = "") -> Dict[str, Any]:
+        """Categorize a question using AI to determine its type and relevant tags."""
+        self._ensure_configured()
+        
+        # Check circuit breaker
+        if self.rate_limit_manager.is_circuit_breaker_open():
+            circuit_status = self.rate_limit_manager.get_circuit_breaker_status()
+            logger.warning("Circuit breaker is open, skipping categorization", **circuit_status)
+            # Return default categorization when circuit breaker is open
+            return {
+                "category": "general",
+                "tags": ["question"],
+                "confidence": 0.3
+            }
+        
+        max_retries = 3  # Fewer retries for categorization since it's not critical
+        base_delay = 1
+        
+        for attempt in range(max_retries):
+            try:
+                # Build categorization prompt
+                prompt = self._build_categorization_prompt(question, repository_context)
+                
+                # Generate categorization
+                response = await self.text_model.generate_content_async(
+                    prompt,
+                    safety_settings=self.safety_settings,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.1,  # Low temperature for consistent categorization
+                        top_p=0.8,
+                        max_output_tokens=200,  # Short response needed
+                    )
+                )
+                
+                categorization_text = response.text.strip()
+                
+                # Parse the AI response to extract category and tags
+                result = self._parse_categorization_response(categorization_text)
+                
+                # Record success
+                self.rate_limit_manager.record_success()
+                
+                logger.debug("Generated categorization", question_length=len(question), 
+                           category=result.get('category'), tags=result.get('tags'))
+                
+                return result
+                
+            except Exception as e:
+                error_str = str(e)
+                
+                # Record failure
+                self.rate_limit_manager.record_failure()
+                
+                # Check if we should retry
+                if self.rate_limit_manager.should_retry(error_str, attempt, max_retries):
+                    retry_delay = self.rate_limit_manager.get_retry_delay(error_str, attempt, base_delay)
+                    
+                    logger.warning(
+                        f"Categorization failed, retrying in {retry_delay}s", 
+                        attempt=attempt + 1, 
+                        max_retries=max_retries,
+                        error=error_str[:100]
+                    )
+                    
+                    await asyncio.sleep(retry_delay)
+                    continue
+                else:
+                    # Not retryable or max retries reached - return default categorization
+                    logger.warning("Failed to categorize question, using default", error=error_str)
+                    return {
+                        "category": "general",
+                        "tags": ["question"],
+                        "confidence": 0.2
+                    }
+        
+        # Fallback categorization
+        return {
+            "category": "general",
+            "tags": ["question"],
+            "confidence": 0.1
+        }
+
+    def _build_categorization_prompt(self, question: str, repository_context: str) -> str:
+        """Build prompt for question categorization."""
+        return f"""
+You are an expert at categorizing programming and software development questions. 
+
+Your task is to analyze the question and provide:
+1. A category (one word)
+2. Relevant tags (2-4 words)
+3. A confidence score (0.0-1.0)
+
+Categories to choose from:
+- architecture: Questions about system design, patterns, structure
+- implementation: How to implement specific features or functionality  
+- debugging: Issues, errors, troubleshooting problems
+- documentation: Questions about README, setup, usage instructions
+- configuration: Settings, environment, deployment, build processes
+- performance: Optimization, speed, efficiency concerns
+- security: Authentication, authorization, vulnerabilities
+- api: API endpoints, integration, external services
+- database: Data models, queries, migrations, schema
+- testing: Unit tests, integration tests, test setup
+- deployment: Hosting, CI/CD, production concerns
+- general: General questions that don't fit other categories
+
+Repository Context: {repository_context}
+
+Question: {question}
+
+Response format (exactly):
+Category: [category]
+Tags: [tag1, tag2, tag3]
+Confidence: [0.0-1.0]
+
+Analyze the question and respond:
+"""
+
+    def _parse_categorization_response(self, response_text: str) -> Dict[str, Any]:
+        """Parse the AI categorization response."""
+        try:
+            lines = response_text.strip().split('\n')
+            result = {
+                "category": "general",
+                "tags": ["question"],
+                "confidence": 0.5
+            }
+            
+            for line in lines:
+                line = line.strip()
+                if line.startswith('Category:'):
+                    category = line.split(':', 1)[1].strip().lower()
+                    # Validate category
+                    valid_categories = {
+                        'architecture', 'implementation', 'debugging', 'documentation',
+                        'configuration', 'performance', 'security', 'api', 'database',
+                        'testing', 'deployment', 'general'
+                    }
+                    if category in valid_categories:
+                        result["category"] = category
+                        
+                elif line.startswith('Tags:'):
+                    tags_str = line.split(':', 1)[1].strip()
+                    # Parse tags - handle both comma-separated and square bracket format
+                    tags_str = tags_str.strip('[]')
+                    tags = [tag.strip().lower() for tag in tags_str.split(',') if tag.strip()]
+                    # Limit to 4 tags and filter out empty ones
+                    result["tags"] = tags[:4] if tags else ["question"]
+                    
+                elif line.startswith('Confidence:'):
+                    try:
+                        confidence = float(line.split(':', 1)[1].strip())
+                        result["confidence"] = max(0.0, min(1.0, confidence))  # Clamp to 0-1
+                    except (ValueError, IndexError):
+                        pass  # Keep default confidence
+                        
+            return result
+            
+        except Exception as e:
+            logger.warning(f"Failed to parse categorization response: {e}")
+            return {
+                "category": "general",
+                "tags": ["question"],
+                "confidence": 0.3
+            }
 
 
 # Global Gemini client instance

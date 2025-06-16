@@ -4,6 +4,7 @@ import './globals.css'
 import { RepositoryProvider } from '@/contexts/RepositoryContext'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { SidebarProvider } from '@/contexts/SidebarContext'
+import { QnAProvider } from '@/contexts/QnAContext'
 import { ToastContainer } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import '../styles/toast.css'
@@ -55,23 +56,24 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={inter.className}>
-        <ThemeProvider>
+      <body className={inter.className}>        <ThemeProvider>
           <SidebarProvider>
             <RepositoryProvider>
-              <div id="root">{children}</div>
-              <ToastContainer
-                position="bottom-right"
-                autoClose={3000}
-                hideProgressBar={false}
-                newestOnTop={false}
-                closeOnClick
-                rtl={false}
-                pauseOnFocusLoss
-                draggable
-                pauseOnHover
-                theme="light"
-              />
+              <QnAProvider>
+                <div id="root">{children}</div>
+                <ToastContainer
+                  position="bottom-right"
+                  autoClose={3000}
+                  hideProgressBar={false}
+                  newestOnTop={false}
+                  closeOnClick
+                  rtl={false}
+                  pauseOnFocusLoss
+                  draggable
+                  pauseOnHover
+                  theme="light"
+                />
+              </QnAProvider>
             </RepositoryProvider>
           </SidebarProvider>
         </ThemeProvider>

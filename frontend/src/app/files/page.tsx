@@ -101,7 +101,20 @@ const useAnimatedCounter = (end: number, duration: number = 1000, delay: number 
 // Animated Header Stats Component
 const AnimatedHeaderStats = ({ stats }: { stats: FileStats }) => {
   const filesCounter = useAnimatedCounter(stats.totalFiles, 1200, 100)
+  const sizeCounter = useAnimatedCounter(stats.totalSize, 1000, 200)
   const languagesCounter = useAnimatedCounter(stats.languages.length, 800, 300)
+
+  // Helper function to format animated size counter
+  const formatAnimatedSize = (bytes: number) => {
+    if (bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    const size = bytes / Math.pow(k, i)
+    
+    // For animation, we want to show incremental values
+    return `${size.toFixed(i > 0 ? 1 : 0)} ${sizes[i]}`
+  }
 
   return (
     <div className="flex items-center gap-6 text-sm text-slate-600 dark:text-slate-400 mt-1">
@@ -118,14 +131,17 @@ const AnimatedHeaderStats = ({ stats }: { stats: FileStats }) => {
           {filesCounter.count.toLocaleString()} files
         </span>
       </span>
-      <span className="flex items-center gap-2 transition-all duration-300 hover:text-blue-600 dark:hover:text-blue-400 hover:scale-105 cursor-pointer">
+      <span 
+        ref={sizeCounter.ref}
+        className="flex items-center gap-2 transition-all duration-300 hover:text-blue-600 dark:hover:text-blue-400 hover:scale-105 cursor-pointer"
+      >
         <div className={`w-2 h-2 bg-blue-500 rounded-full transition-all duration-500 ${
-          filesCounter.isVisible ? 'animate-pulse scale-100' : 'scale-0'
+          sizeCounter.isVisible ? 'animate-pulse scale-100' : 'scale-0'
         }`} style={{ transitionDelay: '200ms' }}></div>
         <span className={`transition-all duration-500 ${
-          filesCounter.isVisible ? 'opacity-100 transform translate-y-0' : 'opacity-0 transform translate-y-2'
+          sizeCounter.isVisible ? 'opacity-100 transform translate-y-0' : 'opacity-0 transform translate-y-2'
         }`} style={{ transitionDelay: '200ms' }}>
-          {formatFileSize(stats.totalSize)}
+          {formatAnimatedSize(sizeCounter.count)}
         </span>
       </span>
       <span 
@@ -582,12 +598,11 @@ export default function FilesPage() {
       <div className="fixed inset-0 w-screen h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 -z-50 animate-gradient-x"></div>
       
       <DashboardLayout>
-        <div className="min-h-screen relative z-0">          {/* Header */}
-          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-700/50 animate-in slide-in-from-top duration-700">
-            <div className={`mx-auto px-8 py-6 transition-all duration-300 ${
+        <div className="min-h-screen relative z-0">          {/* Header */}          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-700/50 animate-in slide-in-from-top duration-700">
+            <div className={`mx-auto px-8 py-[30px] transition-all duration-300 ${
               isCollapsed ? 'max-w-none' : 'max-w-7xl'
             }`}>
-              <div className="flex items-center justify-between">                <div className="flex items-center gap-6">
+              <div className="flex items-center justify-between"><div className="flex items-center gap-6">
                   <div className="relative group">
                     {selectedRepository.owner?.avatar_url ? (
                       <Image
@@ -595,10 +610,10 @@ export default function FilesPage() {
                         alt={`${selectedRepository.name} avatar`}
                         width={48}
                         height={48}
-                        className="w-12 h-12 rounded-2xl object-cover shadow-lg border-2 border-white/20 transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in duration-500"
+                        className="w-12 h-12 rounded-2xl object-cover shadow-lg border-2 border-white/20 transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in"
                       />
                     ) : (
-                      <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in duration-500">
+                      <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in">
                         <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2 2z" />
                         </svg>
@@ -615,7 +630,7 @@ export default function FilesPage() {
                 </div>
                   <button
                   onClick={handleRefresh}
-                  className="group flex items-center gap-3 px-6 py-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all duration-200 animate-in slide-in-from-right duration-700 delay-300"
+                  className="group flex items-center gap-3 px-6 py-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all duration-200 animate-in slide-in-from-right"
                 >
                   <svg className="w-4 h-4 text-slate-600 dark:text-slate-300 group-hover:rotate-180 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -724,9 +739,8 @@ export default function FilesPage() {
                 </div>
               </div>              {/* Language Distribution */}
               {stats.languages.length > 0 && (
-                <div className="col-span-12 animate-in fade-in slide-in-from-bottom duration-700 delay-400">
-                  <div className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl hover:shadow-2xl transition-shadow duration-300">
-                    <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4">
+                <div className="col-span-12 animate-in fade-in slide-in-from-bottom duration-700 delay-400">                  <div className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl hover:shadow-2xl transition-shadow duration-300">
+                    <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4 rounded-t-2xl">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center animate-pulse">
                           <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -736,7 +750,7 @@ export default function FilesPage() {
                         <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Language Distribution</h2>
                       </div>
                     </div>
-                    <div className="p-6">
+                    <div className="p-6 rounded-b-2xl">
                       <LanguageDistribution stats={stats} />
                     </div>
                   </div>

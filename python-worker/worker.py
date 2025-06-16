@@ -143,8 +143,11 @@ class GitTLDRWorker:
             
         elif task_type == "summarize_commit":
             return await self.processors["summarization"].summarize_commit(task_data, logger)
-            
         elif task_type == "answer_question":
+            return await self.processors["embedding"].answer_question(task_data, logger)
+            
+        elif task_type == "qna":
+            # Q&A task - same as answer_question but with different interface
             return await self.processors["embedding"].answer_question(task_data, logger)
             
         elif task_type == "process_meeting":

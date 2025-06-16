@@ -7,6 +7,7 @@ redis
 b2sdk
 python-dotenv
 pydantic-settings
+asyncpg
 
 # Optional dependencies for better performance
 torch

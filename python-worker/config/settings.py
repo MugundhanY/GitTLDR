@@ -11,10 +11,10 @@ class Settings(BaseSettings):
     # API Keys (optional for development)
     gemini_api_key: str = "your-gemini-api-key"
     qdrant_api_key: Optional[str] = None
-    
-    # Service URLs
+      # Service URLs
     redis_url: str = "redis://localhost:6379"
     qdrant_url: str = "http://localhost:6333"
+    database_url: str = "postgresql://user:password@localhost:5432/gittldr"
     
     # Queue Configuration
     queue_name: str = "gittldr_tasks"

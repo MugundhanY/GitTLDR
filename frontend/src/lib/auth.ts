@@ -108,13 +108,29 @@ export async function createToken(user: { id: string; email?: string; username?:
   return token;
 }
 
+// Simple in-memory cache for verified tokens
+const tokenCache = new Map<string, { payload: JwtPayload; timestamp: number }>();
+const TOKEN_CACHE_TTL = 60000; // 1 minute
+
 /**
- * Verify a JWT token
+ * Verify a JWT token with caching
  * @param token JWT token to verify
  * @returns Decoded token payload
  */
 export async function verifyToken(token: string): Promise<JwtPayload> {
   try {
+    // Check cache first
+    const cached = tokenCache.get(token);
+    if (cached && (Date.now() - cached.timestamp) < TOKEN_CACHE_TTL) {
+      // Still need to check expiration from cached payload
+      const now = Math.floor(Date.now() / 1000);
+      if (cached.payload.exp && cached.payload.exp < now) {
+        tokenCache.delete(token);
+        throw new Error('Token expired');
+      }
+      return cached.payload;
+    }
+
     const parts = token.split('.');
     
     if (parts.length !== 3) {
@@ -142,8 +158,16 @@ export async function verifyToken(token: string): Promise<JwtPayload> {
       throw new Error('Token expired');
     }
 
-        return payload;
+    // Cache the verified token
+    tokenCache.set(token, {
+      payload,
+      timestamp: Date.now()
+    });
+
+    return payload;
   } catch (error) {
+    // Remove from cache if verification fails
+    tokenCache.delete(token);
     throw new Error('Token verification failed');
   }
 }

@@ -19,6 +19,58 @@ export async function GET(
     const search = searchParams.get('search') || '';
     const language = searchParams.get('language') || '';
     const searchInSummaries = searchParams.get('searchInSummaries') === 'true';
+    const getContent = searchParams.get('content') === 'true';    // If requesting content for a specific file
+    if (getContent && path !== '/') {
+      // Find the specific file
+      const file = await prisma.repositoryFile.findFirst({
+        where: {
+          repositoryId,
+          path: path
+        },
+        select: {
+          id: true,
+          path: true,
+          name: true,
+          type: true,
+          size: true,
+          language: true,
+          fileUrl: true,
+          fileKey: true
+        }
+      });
+
+      if (!file) {
+        await prisma.$disconnect();
+        return NextResponse.json({ error: 'File not found' }, { status: 404 });
+      }
+
+      // Try to fetch content from external storage
+      let content = 'File content not available';
+      
+      if (file.fileUrl) {
+        try {
+          const response = await fetch(file.fileUrl);
+          if (response.ok) {
+            content = await response.text();
+          }
+        } catch (error) {
+          console.error('Error fetching file content from URL:', error);
+        }
+      }
+
+      // Return file with content
+      const response = {
+        path: file.path,
+        name: file.name,
+        content: content,
+        language: file.language || 'text',
+        size: file.size || 0,
+        type: file.type || 'file'
+      };
+
+      await prisma.$disconnect();
+      return NextResponse.json(response);
+    }
 
     // Verify repository ownership
     const repository = await prisma.repository.findFirst({

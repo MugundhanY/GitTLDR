@@ -29,10 +29,9 @@ class FileRetrievalService:
         except Exception as e:
             logger.warning(f"B2 storage not available, will use fallback: {str(e)}")
             self.b2_storage = None
-    
-    async def get_repository_files(self, repo_id: str) -> List[Dict[str, Any]]:
+      async def get_repository_files(self, repo_id: str) -> List[Dict[str, Any]]:
         """
-        Get all files for a repository from Redis file metadata.
+        Get all files for a repository from Redis file metadata with smart fallback.
         
         Args:
             repo_id: Repository ID
@@ -40,39 +39,117 @@ class FileRetrievalService:
         Returns:
             List of file metadata
         """
-        try:            # Check if we have repository file data
+        try:
+            # Check if we have repository file data
             repo_files_key = f"repo_files:{repo_id}"
             repo_files_data = await redis_client.hgetall(repo_files_key)
+            
+            file_list = []
             
             if not repo_files_data or not repo_files_data.get('file_paths'):
                 logger.warning(f"No file metadata found in Redis for repository {repo_id}")
                 
-                # Fallback: Try to list files directly from B2 storage
-                if self.b2_storage:
+                # Fallback 1: Try to find files by searching all file keys for this repo_id
+                logger.info(f"Searching for files using pattern: file:{repo_id}:*")
+                file_keys = await redis_client.keys(f"file:{repo_id}:*")
+                
+                if file_keys:
+                    logger.info(f"Found {len(file_keys)} files directly for repo {repo_id}")
+                    for file_key in file_keys:
+                        try:
+                            file_metadata = await redis_client.hgetall(file_key)
+                            if file_metadata:
+                                # Extract path from key
+                                path = file_key.split(':', 2)[2]  # Remove "file:{repo_id}:"
+                                
+                                file_dict = {
+                                    'id': f"redis_{repo_id}_{path}",
+                                    'path': file_metadata.get('path', path),
+                                    'name': file_metadata.get('name', path.split('\\')[-1].split('/')[-1]),
+                                    'type': file_metadata.get('type', 'file'),
+                                    'size': int(file_metadata.get('size', 0)),
+                                    'language': file_metadata.get('language', ''),
+                                    'file_url': file_metadata.get('file_url'),
+                                    'file_key': file_metadata.get('file_key'),
+                                    'content': file_metadata.get('content')
+                                }
+                                file_list.append(file_dict)
+                        except Exception as e:
+                            logger.warning(f"Error processing file key {file_key}: {str(e)}")
+                
+                # Fallback 2: Try to list files directly from B2 storage
+                if not file_list and self.b2_storage:
                     logger.info(f"Attempting to retrieve file list from B2 for repository {repo_id}")
-                    b2_files = await self.b2_storage.list_repository_files(repo_id)
+                    try:
+                        b2_files = await self.b2_storage.list_repository_files(repo_id)
+                        
+                        # Convert B2 file list to expected format
+                        for b2_file in b2_files:
+                            file_dict = {
+                                'id': f"b2_{repo_id}_{b2_file['file_path']}",
+                                'path': b2_file['file_path'],
+                                'name': b2_file['file_path'].split('/')[-1],
+                                'type': 'file',
+                                'size': b2_file['size'],
+                                'language': self._detect_language_from_path(b2_file['file_path']),
+                                'file_url': f"b2://{b2_file['file_key']}",
+                                'file_key': b2_file['file_key'],
+                                'content': None  # Will be loaded on demand from B2
+                            }
+                            file_list.append(file_dict)
+                        
+                        logger.info(f"Retrieved {len(file_list)} files from B2 for repository {repo_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to get files from B2: {str(e)}")
+                
+                # Fallback 3: If still no files, search across ALL repositories for similar content
+                # This is useful when the same repository exists under multiple IDs
+                if not file_list:
+                    logger.info(f"Searching across all repositories for any repository files")
                     
-                    # Convert B2 file list to expected format
-                    file_list = []
-                    for b2_file in b2_files:
-                        file_dict = {
-                            'id': f"b2_{repo_id}_{b2_file['file_path']}",
-                            'path': b2_file['file_path'],
-                            'name': b2_file['file_path'].split('/')[-1],
-                            'type': 'file',
-                            'size': b2_file['size'],
-                            'language': self._detect_language_from_path(b2_file['file_path']),
-                            'file_url': f"b2://{b2_file['file_key']}",
-                            'file_key': b2_file['file_key'],
-                            'content': None  # Will be loaded on demand from B2
-                        }
-                        file_list.append(file_dict)
-                    
-                    logger.info(f"Retrieved {len(file_list)} files from B2 for repository {repo_id}")
-                    return file_list
-                else:
-                    logger.error(f"No file data available for repository {repo_id} (no Redis data, no B2 storage)")
+                    # Get all repo_files keys
+                    all_repo_files_keys = await redis_client.keys("repo_files:*")
+                    for repo_key in all_repo_files_keys:
+                        try:
+                            other_repo_data = await redis_client.hgetall(repo_key)
+                            if other_repo_data and other_repo_data.get('file_paths'):
+                                # Try to parse and see if it has vosk or similar files
+                                file_paths = json.loads(other_repo_data['file_paths'])
+                                if any('vosk' in path.lower() or 'model.conf' in path.lower() for path in file_paths):
+                                    logger.info(f"Found potential matching repository: {repo_key}")
+                                    other_repo_id = repo_key.split(':')[1]
+                                    
+                                    # Use this repository's files
+                                    for file_path in file_paths[:50]:  # Limit to avoid too many files
+                                        file_key = f"file:{other_repo_id}:{file_path}"
+                                        file_metadata = await redis_client.hgetall(file_key)
+                                        
+                                        if file_metadata:
+                                            file_dict = {
+                                                'id': f"redis_{other_repo_id}_{file_path}",
+                                                'path': file_metadata.get('path', file_path),
+                                                'name': file_metadata.get('name', file_path.split('\\')[-1].split('/')[-1]),
+                                                'type': file_metadata.get('type', 'file'),
+                                                'size': int(file_metadata.get('size', 0)),
+                                                'language': file_metadata.get('language', ''),
+                                                'file_url': file_metadata.get('file_url'),
+                                                'file_key': file_metadata.get('file_key'),
+                                                'content': file_metadata.get('content')
+                                            }
+                                            file_list.append(file_dict)
+                                    
+                                    if file_list:
+                                        logger.info(f"Using files from repository {other_repo_id} as fallback")
+                                        break
+                        except Exception as e:
+                            logger.debug(f"Error checking repository {repo_key}: {str(e)}")
+                            continue
+                
+                if not file_list:
+                    logger.error(f"No file data available for repository {repo_id} (no Redis data, no B2 storage, no fallback)")
                     return []
+                    
+                return file_list
             
             # Parse file paths from Redis and retrieve individual file metadata
             try:
@@ -81,7 +158,6 @@ class FileRetrievalService:
                 logger.error(f"Invalid file_paths data in Redis for repository {repo_id}")
                 return []
             
-            file_list = []            
             for file_path in file_paths:
                 file_key = f"file:{repo_id}:{file_path}"
                 file_metadata = await redis_client.hgetall(file_key)
@@ -91,7 +167,7 @@ class FileRetrievalService:
                     file_dict = {
                         'id': f"redis_{repo_id}_{file_path}",
                         'path': file_metadata.get('path', file_path),
-                        'name': file_metadata.get('name', file_path.split('/')[-1]),
+                        'name': file_metadata.get('name', file_path.split('\\')[-1].split('/')[-1]),
                         'type': file_metadata.get('type', 'file'),
                         'size': int(file_metadata.get('size', 0)),
                         'language': file_metadata.get('language', ''),
@@ -147,56 +223,109 @@ class FileRetrievalService:
             'dockerfile': 'dockerfile'        }
         
         return language_map.get(extension, 'unknown')
-    
-    async def get_file_content(self, repo_id: str, file_path: str) -> Optional[str]:
+      async def get_file_content(self, repo_id: str, file_path: str) -> Optional[str]:
         """
-        Get file content from Redis metadata, B2 storage, or fallback content.
+        Get content of a specific file with smart fallback for multiple repository IDs.
         
         Args:
             repo_id: Repository ID
-            file_path: File path within the repository
+            file_path: Path to the file
             
         Returns:
-            File content as string or None if not available
+            File content as string, or None if not found
         """
         try:
-            # Try to get file metadata from Redis first
+            # First try to get from Redis metadata with the given repo_id
             file_key = f"file:{repo_id}:{file_path}"
-            file_metadata = await self.redis_client.hgetall(file_key)
+            file_metadata = await redis_client.hgetall(file_key)
             
             if file_metadata:
-                # Check if we have fallback content stored in Redis
+                # Check if content is stored directly in Redis
                 if file_metadata.get('content'):
-                    logger.debug(f"Retrieved content from Redis metadata: {file_path}")
+                    logger.debug(f"Retrieved file content from Redis: {file_path}")
                     return file_metadata['content']
                 
-                # Try B2 storage if we have a file key
+                # Try to get from B2 storage using file_key
                 if self.b2_storage and file_metadata.get('file_key'):
                     try:
-                        content = await self.b2_storage.download_file_content(file_metadata['file_key'])
-                        logger.debug(f"Retrieved content from B2 for file: {file_path}")
+                        content = await self.b2_storage.download_file_content(
+                            file_key=file_metadata['file_key']
+                        )
+                        logger.debug(f"Retrieved file content from B2: {file_path}")
                         return content
                     except Exception as e:
-                        logger.warning(f"Failed to retrieve file from B2: {file_path} - {str(e)}")
+                        logger.warning(f"Failed to get content from B2 for {file_path}: {str(e)}")
             
-            # Fallback: try to list and find file in B2 directly
-            if self.b2_storage:
+            # Fallback 1: Try alternative path formats with the same repo_id
+            alternative_paths = [
+                file_path.replace('/', '\\'),
+                file_path.replace('\\', '/'),
+                file_path.lstrip('/\\'),
+                '/' + file_path.lstrip('/\\')
+            ]
+            
+            for alt_path in alternative_paths:
+                if alt_path != file_path:
+                    alt_file_key = f"file:{repo_id}:{alt_path}"
+                    alt_metadata = await redis_client.hgetall(alt_file_key)
+                    
+                    if alt_metadata and alt_metadata.get('content'):
+                        logger.debug(f"Retrieved file content from Redis using alternative path: {alt_path}")
+                        return alt_metadata['content']
+            
+            # Fallback 2: Search across ALL repository IDs for this file path
+            # This handles the case where the same repository exists under multiple IDs
+            logger.info(f"Searching across all repositories for file: {file_path}")
+            
+            # Get all file keys that match this path pattern
+            all_file_keys = await redis_client.keys(f"file:*:{file_path}")
+            
+            # Also try alternative path formats across all repos
+            for alt_path in alternative_paths:
+                alt_keys = await redis_client.keys(f"file:*:{alt_path}")
+                all_file_keys.extend(alt_keys)
+            
+            # Remove duplicates
+            all_file_keys = list(set(all_file_keys))
+            
+            logger.debug(f"Found {len(all_file_keys)} potential matches for {file_path}")
+            
+            # Try each key to find one with content
+            for key in all_file_keys:
                 try:
-                    b2_key = f"repositories/{repo_id}/files/{file_path}"
-                    content = await self.b2_storage.download_file_content(b2_key)
-                    logger.debug(f"Retrieved content from B2 fallback: {file_path}")
-                    return content
+                    metadata = await redis_client.hgetall(key)
+                    if metadata and metadata.get('content'):
+                        logger.info(f"Found file content in different repository: {key}")
+                        return metadata['content']
                 except Exception as e:
-                    logger.debug(f"B2 fallback failed for file: {file_path} - {str(e)}")
+                    logger.debug(f"Error checking key {key}: {str(e)}")
+                    continue
             
-            # No content available
-            logger.warning(f"No content available for file: {file_path}")
+            # If still no content found, try B2 storage with any available file_key
+            for key in all_file_keys:
+                try:
+                    metadata = await redis_client.hgetall(key)
+                    if metadata and metadata.get('file_key') and self.b2_storage:
+                        try:
+                            content = await self.b2_storage.download_file_content(
+                                file_key=metadata['file_key']
+                            )
+                            logger.info(f"Retrieved file content from B2 using different repository: {key}")
+                            return content
+                        except Exception as e:
+                            logger.debug(f"Failed to get B2 content for {key}: {str(e)}")
+                            continue
+                except Exception as e:
+                    logger.debug(f"Error checking B2 for key {key}: {str(e)}")
+                    continue
+            
+            logger.warning(f"File content not found anywhere: {file_path}")
             return None
             
         except Exception as e:
-            logger.error(f"Error retrieving file content: {file_path} - {str(e)}")
+            logger.error(f"Error retrieving file content for {file_path}: {str(e)}")
             return None
-    
+
     async def get_files_for_context(self, repo_id: str, max_files: int = 50, 
                                    file_types: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """
@@ -379,3 +508,44 @@ class FileRetrievalService:
                 'last_updated': None,
                 'error': str(e)
             }
+    
+    async def get_files_for_qa_context(self, repository_id: str, similar_results: List[Dict[str, Any]], max_files: int = 5) -> List[Dict[str, Any]]:
+        """
+        Get files for Q&A context based on similarity search results.
+        
+        Args:
+            repository_id: Repository ID
+            similar_results: Results from vector similarity search
+            max_files: Maximum number of files to retrieve
+            
+        Returns:
+            List of files with content for Q&A context
+        """
+        try:
+            files_with_content = []
+            
+            # Extract file paths from similarity results
+            relevant_file_paths = []
+            for result in similar_results[:max_files]:
+                metadata = result.get("metadata", {})
+                file_path = metadata.get("file_path")
+                if file_path:
+                    relevant_file_paths.append(file_path)
+            
+            # Get content for each relevant file
+            for file_path in relevant_file_paths:
+                content = await self.get_file_content(repository_id, file_path)
+                if content:
+                    files_with_content.append({
+                        "file_path": file_path,
+                        "content": content,
+                        "name": file_path.split('/')[-1],
+                        "language": self._detect_language_from_path(file_path)
+                    })
+            
+            logger.info(f"Retrieved {len(files_with_content)} files for Q&A context from {len(similar_results)} similar results")
+            return files_with_content
+            
+        except Exception as e:
+            logger.error(f"Failed to get files for Q&A context: {str(e)}")
+            return []

@@ -54,6 +54,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ 
       subscription: null,
       invoices: []
+    }, {
+      headers: {
+        'Cache-Control': 'private, max-age=600, stale-while-revalidate=1200',
+        'ETag': `"billing-mock-${Date.now()}"`
+      }
     });
 
   } catch (error) {

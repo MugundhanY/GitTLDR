@@ -108,7 +108,12 @@ model Question {
   answer          String
   confidenceScore Float      @map("confidence_score")
   relevantFiles   Json       @map("relevant_files")
+  isFavorite      Boolean    @default(false) @map("is_favorite")
+  tags            String[]   @default([])
+  category        String?
+  notes           String?
   createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
   userId          String     @map("user_id")
   repositoryId    String     @map("repository_id")
   repository      Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)

@@ -7,39 +7,46 @@ const prisma = new PrismaClient();
 // GET /api/user - Get current user data
 export async function GET(request: NextRequest) {
   try {
-    // Get authenticated user
-    const user = await getUserFromRequest(request);
+    // Get authenticated user with minimal data first (from token cache)
+    const tokenUser = await getUserFromRequest(request, false);
     
-    if (!user) {
+    if (!tokenUser) {
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
       );
-    }    // Fetch user data from database
-    const userData = await prisma.user.findUnique({
-      where: {
-        id: user.id
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        avatarUrl: true,
-        githubLogin: true,
-        credits: true,
-        createdAt: true,
-        updatedAt: true
-      }
-    });
-
-    if (!userData) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
     }
 
-    return NextResponse.json({ user: userData });
+    // Try to get full user data (this will use cache if available)
+    const fullUser = await getUserFromRequest(request, true);
+    
+    if (!fullUser) {
+      // If full user not found in DB, create minimal response from token
+      return NextResponse.json({ 
+        user: {
+          id: tokenUser.id,
+          name: tokenUser.username || 'User',
+          email: tokenUser.email || '',
+          avatarUrl: null,
+          githubLogin: tokenUser.githubLogin,
+          credits: tokenUser.credits || 0,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }
+      }, {
+        headers: {
+          'Cache-Control': 'private, max-age=300, stale-while-revalidate=600',
+          'ETag': `"${tokenUser.id}-${Date.now()}"`
+        }
+      });
+    }
+
+    return NextResponse.json({ user: fullUser }, {
+      headers: {
+        'Cache-Control': 'private, max-age=300, stale-while-revalidate=600',
+        'ETag': `"${fullUser.id}-${fullUser.updatedAt.getTime()}"`
+      }
+    });
 
   } catch (error) {
     console.error('Error fetching user data:', error);
