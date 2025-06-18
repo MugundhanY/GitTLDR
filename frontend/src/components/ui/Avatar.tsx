@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { CodeBracketIcon } from '@heroicons/react/24/outline';
 
 interface AvatarProps {
@@ -27,12 +27,22 @@ export default function Avatar({ src, alt, size = 'md', className = '' }: Avatar
   };
 
   const handleImageError = () => {
+    console.log('Avatar image failed to load:', src);
     setImageError(true);
   };
 
   const handleImageLoad = () => {
+    console.log('Avatar image loaded successfully:', src);
     setImageLoaded(true);
   };
+
+  // Reset states when src changes
+  React.useEffect(() => {
+    if (src) {
+      setImageError(false);
+      setImageLoaded(false);
+    }
+  }, [src]);
 
   // Show fallback if no src, image error, or image hasn't loaded yet
   const showFallback = !src || imageError || !imageLoaded;
@@ -46,6 +56,7 @@ export default function Avatar({ src, alt, size = 'md', className = '' }: Avatar
           className={`${sizeClasses[size]} rounded-lg object-cover ${imageLoaded ? 'opacity-100' : 'opacity-0'} transition-opacity duration-200`}
           onError={handleImageError}
           onLoad={handleImageLoad}
+          loading="lazy"
         />
       )}
       

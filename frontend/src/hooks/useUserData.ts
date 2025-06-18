@@ -77,8 +77,7 @@ export function useUserData() {
 
         const userResult = await userResponse.json();
         console.log('✅ User API response data:', userResult);          
-        
-        if (userResult && userResult.user && userResult.user.id) {
+          if (userResult && userResult.user && userResult.user.id) {
           const user = {
             id: userResult.user.id,
             name: userResult.user.name || 'Unknown User',
@@ -88,7 +87,13 @@ export function useUserData() {
             credits: userResult.user.credits || 0
           };
           
-          console.log('👤 Setting user data:', user);
+          console.log('👤 Setting user data:', {
+            name: user.name,
+            email: user.email,
+            avatarUrl: user.avatarUrl ? 'present' : 'missing',
+            githubLogin: user.githubLogin,
+            credits: user.credits
+          });
           setUserData(user);
           
           // Cache user data for 5 minutes
@@ -97,7 +102,7 @@ export function useUserData() {
           // Fetch billing data in background (non-blocking)
           fetchBillingData();
         } else {
-          console.log('⚠️ Invalid user data format');
+          console.log('⚠️ Invalid user data format received:', userResult);
           setUserData(null);
           clientCache.delete(CACHE_KEYS.USER_DATA);
         }
@@ -155,8 +160,7 @@ export function useUserData() {
 
     fetchUserData();
   }, [userData]); // Only depend on userData to prevent unnecessary refetches
-
-  const refetch = async () => {
+  const refetch = async (forceRefresh: boolean = false) => {
     try {
       setIsLoading(true);
       setError(null);
@@ -165,10 +169,23 @@ export function useUserData() {
       clientCache.delete(CACHE_KEYS.USER_DATA);
       clientCache.delete(CACHE_KEYS.BILLING_DATA);
       
-      // Fetch user data from API
-      const userResponse = await fetch('/api/user');
+      console.log('🔄 Refetching user data', forceRefresh ? '(forced refresh)' : '');
+      
+      // Use refresh endpoint if forcing refresh, otherwise use regular endpoint
+      const userEndpoint = forceRefresh ? '/api/user/refresh' : '/api/user';
+      const userMethod = forceRefresh ? 'POST' : 'GET';
+      
+      const userResponse = await fetch(userEndpoint, {
+        method: userMethod,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
       if (userResponse.ok) {
-        const userResult = await userResponse.json();        
+        const userResult = await userResponse.json();
+        console.log('✅ Refetch user result:', userResult);
+        
         if (userResult && userResult.user && userResult.user.id) {
           const user = {
             id: userResult.user.id,
@@ -180,11 +197,19 @@ export function useUserData() {
           };
           setUserData(user);
           clientCache.set(CACHE_KEYS.USER_DATA, user, 300);
+          
+          console.log('👤 User data updated:', {
+            name: user.name,
+            avatarUrl: user.avatarUrl ? 'present' : 'missing',
+            credits: user.credits
+          });
         }
       } else {
-        // If user API fails, no fallback data
-        console.warn('User API failed');
-        setUserData(null);
+        console.warn('User API failed during refetch:', userResponse.status);
+        if (userResponse.status === 401) {
+          setUserData(null);
+          return; // Don't try billing if unauthorized
+        }
       }
 
       // Fetch billing data which includes credits
@@ -207,7 +232,7 @@ export function useUserData() {
         }
       }
     } catch (err) {
-      console.error('Error refetching user data:', err);
+      console.error('💥 Error refetching user data:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch user data');
       setUserData(null);
     } finally {

@@ -38,6 +38,8 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ selectedRepository }: SidebarProps) {
+  console.log(`🚨 [SIDEBAR] Component render for repo: ${selectedRepository?.id}`);
+  
   const pathname = usePathname();
   const { userData, billingData, isLoading } = useUserData();
   const { stats, isLoading: statsLoading, refetch: refetchStats } = useRepositoryStats(selectedRepository?.id);
@@ -45,12 +47,23 @@ export default function Sidebar({ selectedRepository }: SidebarProps) {
   const { isCollapsed, toggleSidebar } = useSidebar();
   const { statsRefreshTrigger } = useQnA();
   const [showRepoDropdown, setShowRepoDropdown] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // Refresh stats when QnA context triggers an update
+  const [searchQuery, setSearchQuery] = useState('');const dropdownRef = useRef<HTMLDivElement>(null);
+  // Refresh stats when QnA context triggers an update (with throttling)
   useEffect(() => {
     if (statsRefreshTrigger > 0 && selectedRepository?.id) {
-      refetchStats();
+      // Throttle stats refresh to prevent excessive API calls
+      const lastRefresh = (refetchStats as any)._lastRefresh || 0;
+      const now = Date.now();
+      const timeSinceLastRefresh = now - lastRefresh;
+      const MIN_REFRESH_INTERVAL = 2 * 60 * 1000; // Increased to 2 minutes minimum between forced refreshes
+      
+      if (timeSinceLastRefresh >= MIN_REFRESH_INTERVAL) {
+        console.log('📊 [SIDEBAR] Triggering throttled stats refresh');
+        refetchStats();
+        (refetchStats as any)._lastRefresh = now;
+      } else {
+        console.log(`📊 [SIDEBAR] Skipping stats refresh (too soon: ${Math.round(timeSinceLastRefresh/1000)}s ago)`);
+      }
     }
   }, [statsRefreshTrigger, selectedRepository?.id, refetchStats]);
 

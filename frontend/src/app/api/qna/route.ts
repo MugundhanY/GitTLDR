@@ -7,7 +7,7 @@ const prisma = new PrismaClient();
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { repositoryId, userId, question } = body;
+    const { repositoryId, userId, question, attachments } = body;
 
     if (!repositoryId || !userId || !question) {
       return NextResponse.json(
@@ -18,7 +18,39 @@ export async function POST(request: NextRequest) {
     // We'll create it after processing since it requires an answer
     const questionId = Date.now().toString();
 
-    // Send processing request to Node.js worker
+    // Create pending question record with attachments if provided
+    if (attachments && attachments.length > 0) {
+      try {
+        await prisma.question.create({
+          data: {
+            id: questionId,
+            query: question,
+            answer: '', // Will be filled when processing completes
+            confidenceScore: 0,
+            relevantFiles: [],
+            userId: userId,
+            repositoryId: repositoryId,
+            createdAt: new Date(),            questionAttachments: {
+              create: attachments.map((attachment: any) => ({
+                fileName: attachment.fileName,
+                originalFileName: attachment.originalFileName,
+                fileSize: attachment.fileSize,
+                fileType: attachment.fileType,
+                uploadUrl: attachment.uploadUrl,
+                backblazeFileId: attachment.backblazeFileId,
+                uploadedBy: userId, // Link attachment to the user who uploaded it
+                repositoryId: repositoryId, // Link attachment to the repository
+                createdAt: new Date()
+              }))
+            }
+          }
+        });
+        console.log(`✅ Created pending question with ${attachments.length} attachments: ${questionId}`);
+      } catch (error) {
+        console.error('Error creating pending question with attachments:', error);
+        // Continue with processing even if pending creation fails
+      }
+    }    // Send processing request to Node.js worker
     const workerResponse = await fetch(`${process.env.NODE_WORKER_URL}/process-question`, {
       method: 'POST',
       headers: {
@@ -28,7 +60,8 @@ export async function POST(request: NextRequest) {
         questionId: questionId,
         repositoryId,
         userId,
-        question
+        question,
+        attachments: attachments || []
       })
     });
 
@@ -108,11 +141,22 @@ export async function GET(request: NextRequest) {  try {
 
     // Fetch Q&A history from database using Prisma
     const questions = await prisma.question.findMany({
-      where: whereClause,
-      include: {
+      where: whereClause,      include: {
         repository: {
           select: {
             name: true
+          }
+        },
+        questionAttachments: {
+          select: {
+            id: true,
+            fileName: true,
+            originalFileName: true,
+            fileSize: true,
+            fileType: true,
+            uploadUrl: true,
+            backblazeFileId: true,
+            createdAt: true
           }
         }
       },
@@ -121,9 +165,7 @@ export async function GET(request: NextRequest) {  try {
         { createdAt: 'desc' }
       ],
       take: 100 // Increased limit for better history access
-    });
-
-    // Transform questions for frontend
+    });    // Transform questions for frontend
     const qnaHistory = questions.map(question => ({
       id: question.id,
       query: question.query,
@@ -138,6 +180,16 @@ export async function GET(request: NextRequest) {  try {
       isFavorite: question.isFavorite,
       tags: question.tags,
       category: question.category,
+      questionAttachments: question.questionAttachments?.map(attachment => ({
+        id: attachment.id,
+        fileName: attachment.fileName,
+        originalFileName: attachment.originalFileName,
+        fileSize: attachment.fileSize,
+        fileType: attachment.fileType,
+        uploadUrl: attachment.uploadUrl,
+        backblazeFileId: attachment.backblazeFileId,
+        createdAt: attachment.createdAt.toISOString()
+      })) || [],
       notes: question.notes
     }));
 

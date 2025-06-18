@@ -17,7 +17,7 @@ import { GitHubRepo, CreditCheck, TabType } from './types';
 
 export default function CreateRepositoryPage() {
   const router = useRouter();
-  const { userData, isLoading: userLoading } = useUserData();  const { addRepositoryFromData, repositories: existingRepositories, selectRepository } = useRepository();
+  const { userData, isLoading: userLoading, refetch: refetchUserData } = useUserData();  const { addRepositoryFromData, repositories: existingRepositories, selectRepository } = useRepository();
   
   // State management
   const [githubUrl, setGithubUrl] = useState('');
@@ -308,6 +308,13 @@ export default function CreateRepositoryPage() {
         }),
       });      if (response.ok) {
         const result = await response.json();
+        
+        // If credits were deducted, refresh user data to update credits display
+        if (actualCreditsNeeded > 0) {
+          console.log('🔄 Refreshing user data after credit deduction...');
+          await refetchUserData(true); // Force refresh to get updated credits
+        }
+        
         // Add the repository to context and select it
         const newRepo = addRepositoryFromData(result);
         selectRepository(newRepo);

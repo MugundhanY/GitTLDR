@@ -38,7 +38,7 @@ export default function RepositoryPage() {
   const params = useParams()
   const router = useRouter()
   const repositoryId = params.id as string
-  const { incrementQuestionCount } = useQnA()
+  const { incrementQuestionCount, triggerStatsRefreshOnCompletion } = useQnA()
   
   const [repository, setRepository] = useState<Repository | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
@@ -55,22 +55,35 @@ export default function RepositoryPage() {
         router.push('/dashboard')
       }
     } catch (error) {
-      console.error('Error fetching repository:', error)
-    } finally {
+      console.error('Error fetching repository:', error)    } finally {
       setIsLoading(false)
     }
   }, [repositoryId, router])
+  
   const fetchQuestions = useCallback(async () => {
     try {
       const response = await fetch(`/api/qna?repositoryId=${repositoryId}&userId=1`) // Mock user ID
       if (response.ok) {
         const data = await response.json()
-        setQuestions(data.questions || [])
+        const newQuestions = data.questions || []
+        
+        // Check if any previously pending questions are now completed
+        const hasNewCompletions = newQuestions.some((newQ: Question) => 
+          newQ.status === 'completed' && 
+          questions.some(existingQ => existingQ.id === newQ.id && existingQ.status === 'pending')
+        )
+        
+        setQuestions(newQuestions)
+        
+        // Trigger stats refresh if we have new completions
+        if (hasNewCompletions) {
+          triggerStatsRefreshOnCompletion()
+        }
       }
     } catch (error) {
       console.error('Error fetching questions:', error)
     }
-  }, [repositoryId])
+  }, [repositoryId, questions, triggerStatsRefreshOnCompletion])
 
   useEffect(() => {
     if (repositoryId) {

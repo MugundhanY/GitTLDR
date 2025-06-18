@@ -136,10 +136,9 @@ export function Header() {
             <button className="relative p-2 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
               <BellIcon className="w-5 h-5" />
               <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-            </button>
-
-            {/* Profile */}
-            <div className="relative" ref={profileDropdownRef}>              <button
+            </button>            {/* Profile */}
+            <div className="relative" ref={profileDropdownRef}>
+              <button
                 onClick={() => setShowProfileDropdown(!showProfileDropdown)}
                 className="flex items-center space-x-2 p-1 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 rounded-lg transition-colors"
               >
@@ -147,14 +146,22 @@ export function Header() {
                   <img 
                     src={userData.avatarUrl} 
                     alt={userData.name || 'User'} 
-                    className="w-8 h-8 rounded-full"
+                    className="w-8 h-8 rounded-full object-cover"
+                    onError={(e) => {
+                      // If avatar fails to load, hide it and show fallback
+                      (e.target as HTMLImageElement).style.display = 'none';
+                      const fallback = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
+                      if (fallback) fallback.style.display = 'flex';
+                    }}
                   />
-                ) : (
-                  <div className="w-8 h-8 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center">
-                    <UserCircleIcon className="w-5 h-5" />
-                  </div>
-                )}
-              </button>{showProfileDropdown && (
+                ) : null}
+                <div 
+                  className={`w-8 h-8 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center ${userData?.avatarUrl ? 'hidden' : 'flex'}`}
+                >
+                  <UserCircleIcon className="w-5 h-5" />
+                </div>
+              </button>
+              {showProfileDropdown && (
                 <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 z-50">                  <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700">
                     <p className="text-sm font-medium text-slate-900 dark:text-white">{userData?.name || 'Guest User'}</p>
                     <p className="text-sm text-slate-500 dark:text-slate-400">{userData?.email || 'Not signed in'}</p>

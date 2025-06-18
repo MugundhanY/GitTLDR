@@ -215,10 +215,9 @@ export const RepositoryProvider: React.FC<RepositoryProviderProps> = ({ children
       stargazers_count: repoData.repository?.stars || repoData.stars || repoData.stargazers_count || 0,
       open_issues_count: repoData.repository?.openIssues || repoData.openIssues || repoData.open_issues_count || 0,
       created_at: repoData.repository?.createdAt || repoData.createdAt || repoData.created_at,
-      updated_at: repoData.repository?.updatedAt || repoData.updatedAt || repoData.updated_at,
-      owner: {
+      updated_at: repoData.repository?.updatedAt || repoData.updatedAt || repoData.updated_at,      owner: {
         login: repoData.repository?.owner || repoData.owner?.login || repoData.owner || 'unknown',
-        avatar_url: repoData.owner?.avatar_url || 'https://github.com/github.png'
+        avatar_url: repoData.repository?.avatarUrl || repoData.owner?.avatar_url || 'https://github.com/github.png'
       }
     };
     

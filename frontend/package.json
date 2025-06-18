@@ -15,20 +15,25 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@headlessui/react": "^2.2.4",
     "@heroicons/react": "^2.2.0",
     "@octokit/rest": "^22.0.0",
     "@prisma/client": "^6.9.0",
     "@tailwindcss/line-clamp": "^0.4.4",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.15.29",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.5",
     "@types/react-syntax-highlighter": "^15.5.13",
+    "@types/uuid": "^10.0.0",
     "autoprefixer": "^10.4.21",
+    "backblaze-b2": "^1.7.1",
     "bcryptjs": "^3.0.2",
     "bullmq": "^5.53.2",
     "clsx": "^2.1.1",
     "eslint": "^9.28.0",
     "eslint-config-next": "^15.3.3",
+    "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.513.0",
     "next": "^15.3.3",
     "node-fetch": "^3.3.2",
@@ -45,9 +50,11 @@
     "stripe": "^18.2.1",
     "tailwind-merge": "^3.3.0",
     "tailwindcss": "^3.4.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
+    "@types/backblaze-b2": "^1.5.6",
     "@types/bcryptjs": "^2.4.6"
   }
 }
