@@ -91,8 +91,8 @@ app.post('/process-repository', async (req: Request, res: Response) => {
 // QnA processing endpoint
 app.post('/process-question', async (req: Request, res: Response) => {
   try {
-    const { questionId, repositoryId, userId, question } = req.body;
-    
+    const { questionId, repositoryId, userId, question, attachments } = req.body;
+
     if (!questionId || !repositoryId || !userId || !question) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -120,10 +120,11 @@ app.post('/process-question', async (req: Request, res: Response) => {
       repositoryId,
       userId,
       question,
+      attachments: attachments || [],
       timestamp: new Date().toISOString()
     }));
     
-    console.log(`❓ Queued QnA job for question ${questionId}`);
+    console.log(`❓ Queued QnA job for question ${questionId}${attachments && attachments.length > 0 ? ` with ${attachments.length} attachments` : ''}`);
     
     res.json({ jobId, status: 'queued' });
   } catch (error) {

@@ -7,9 +7,10 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    """Application settings."""
-    # API Keys (optional for development)
+    """Application settings."""    # API Keys (optional for development)
     gemini_api_key: str = "your-gemini-api-key"
+    deepseek_api_key: Optional[str] = None
+    github_token: Optional[str] = None
     qdrant_api_key: Optional[str] = None
       # Service URLs
     redis_url: str = "redis://localhost:6379"

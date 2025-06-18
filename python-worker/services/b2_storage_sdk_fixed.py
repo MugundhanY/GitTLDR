@@ -92,6 +92,7 @@ class B2StorageService:
             }
         except Exception as e:
             logger.error(f"B2 SDK upload failed for {file_path}: {str(e)}")
+            
             raise Exception(f"Failed to upload file: {str(e)}")
 
     async def download_file_content(self, file_key: str) -> str:
@@ -141,23 +142,41 @@ class B2StorageService:
             return True
         except Exception as e:
             logger.error(f"B2 SDK delete failed for {file_key}: {str(e)}")
-            return False
-
+            return False    
     async def list_repository_files(self, repo_id: str) -> list:
         """List files for a repository from B2 using the official SDK."""
         try:
             prefix = f"repositories/{repo_id}/files/"
             files = []
             
-            # Use correct B2 SDK API
-            for file_version in self.bucket.ls(folder_to_list=prefix, recursive=True):
-                file_path = file_version.file_name.replace(prefix, '')
-                files.append({
-                    'file_path': file_path,
-                    'file_key': file_version.file_name,
-                    'size': file_version.size,
-                    'last_modified': file_version.upload_timestamp
-                })
+            # Use correct B2 SDK API - handle both tuple and object responses
+            for item in self.bucket.ls(folder_to_list=prefix, recursive=True):
+                try:
+                    # Handle different return types from B2 SDK
+                    if isinstance(item, tuple):
+                        # Some versions return (file_info, folder_name) tuples
+                        file_version = item[0] if len(item) > 0 else None
+                        if file_version is None:
+                            continue
+                    else:
+                        # Direct file version object
+                        file_version = item
+                    
+                    # Extract file information safely
+                    if hasattr(file_version, 'file_name') and hasattr(file_version, 'size'):
+                        file_path = file_version.file_name.replace(prefix, '')
+                        files.append({
+                            'file_path': file_path,
+                            'file_key': file_version.file_name,
+                            'size': getattr(file_version, 'size', 0),
+                            'last_modified': getattr(file_version, 'upload_timestamp', None)
+                        })
+                    else:
+                        logger.warning(f"Unexpected item type in B2 listing: {type(item)}")
+                        
+                except Exception as item_error:
+                    logger.warning(f"Error processing B2 list item: {str(item_error)}")
+                    continue
             
             logger.info(f"Listed {len(files)} files for repository {repo_id}")
             return files

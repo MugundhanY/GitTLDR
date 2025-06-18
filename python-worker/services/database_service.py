@@ -6,7 +6,7 @@ import asyncio
 import json
 from typing import List, Dict, Any, Optional
 import asyncpg
-from services.b2_storage_sdk_fixed import B2StorageService
+from services.b2_singleton import get_b2_storage
 from utils.logger import get_logger
 from config.settings import get_settings
 
@@ -15,26 +15,19 @@ logger = get_logger(__name__)
 
 class DatabaseService:
     """Service for retrieving repository and file data from database."""
-    
     def __init__(self):
         """Initialize database service."""
-        self.b2_storage = None
         self.connection_pool = None
         try:
             self.settings = get_settings()
         except Exception as e:
             logger.error(f"Failed to load settings: {str(e)}")
             self.settings = None
-        self._initialize_b2()
-    
-    def _initialize_b2(self):
-        """Initialize B2 storage service if credentials are available."""
-        try:
-            self.b2_storage = B2StorageService()
-            logger.info("B2 storage service initialized for database service")
-        except Exception as e:
-            logger.warning(f"B2 storage not available: {str(e)}")
-            self.b2_storage = None
+
+    @property
+    def b2_storage(self):
+        """Get B2 storage instance using singleton."""
+        return get_b2_storage()
     async def _get_connection_pool(self):
         """Get or create database connection pool."""
         if not self.connection_pool:
@@ -199,7 +192,6 @@ class DatabaseService:
         
         logger.info(f"Filtered {len(relevant_files)} relevant files from {len(files_metadata)} total files")
         return relevant_files
-    
     def _calculate_file_relevance(self, file_info: Dict[str, Any], 
                                  question_analysis: Dict[str, Any]) -> float:
         """Calculate relevance score for a file based on question analysis."""
@@ -210,8 +202,11 @@ class DatabaseService:
         file_type = file_info.get('type', '')
         language = file_info.get('language', '').lower()
         
+        # Get question type safely
+        question_type = question_analysis.get('type', 'general')
+        
         # Question type specific scoring
-        if question_analysis['type'] == 'file_specific':
+        if question_type == 'file_specific':
             # Check if any specific files match this file
             for target_file in question_analysis.get('specific_files', []):
                 if (target_file.lower() in file_path or 
@@ -219,13 +214,13 @@ class DatabaseService:
                     file_path.endswith(target_file.lower())):
                     score += 10.0
         
-        elif question_analysis['type'] == 'folder_specific':
+        elif question_type == 'folder_specific':
             # Check if file is in any of the target folders
             for target_folder in question_analysis.get('specific_folders', []):
                 if target_folder.lower() in file_path:
                     score += 8.0
         
-        elif question_analysis['type'] == 'configuration':
+        elif question_type == 'configuration':
             # Prioritize config files
             config_extensions = ['.conf', '.config', '.ini', '.yaml', '.yml', '.json', '.toml']
             if any(file_path.endswith(ext) for ext in config_extensions):

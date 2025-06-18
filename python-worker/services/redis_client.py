@@ -2,7 +2,7 @@
 Redis client for queue management.
 """
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import redis.asyncio as redis
 from config.settings import get_settings
 from utils.logger import get_logger
@@ -124,12 +124,18 @@ class RedisClient:
         if not self.redis:
             raise RuntimeError("Redis client not connected")
         return await self.redis.lpush(key, *values)
-
+    
     async def publish(self, channel: str, message: str) -> None:
         """Publish message to channel."""
         if not self.redis:
             raise RuntimeError("Redis client not connected")
         await self.redis.publish(channel, message)
+
+    async def keys(self, pattern: str) -> List[str]:
+        """Get keys matching pattern."""
+        if not self.redis:
+            raise RuntimeError("Redis client not connected")
+        return await self.redis.keys(pattern)
 
 
 # Global Redis client instance

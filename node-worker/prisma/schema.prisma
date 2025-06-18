@@ -8,58 +8,60 @@ datasource db {
 }
 
 model User {
-  id                String        @id @default(cuid())
-  email             String        @unique
-  name              String
-  avatarUrl         String?       @map("avatar_url")
-  githubId          String        @unique @map("github_id")
-  githubLogin       String?       @map("github_login")
-  bio               String?
-  location          String?
-  company           String?
-  blog              String?
-  twitterUsername   String?       @map("twitter_username")
-  publicRepos       Int?          @map("public_repos")
-  publicGists       Int?          @map("public_gists")
-  followers         Int?
-  following         Int?
-  hireable          Boolean?
-  githubCreatedAt   DateTime?     @map("github_created_at")
-  credits           Int           @default(150)
-  createdAt         DateTime      @default(now()) @map("created_at")
-  updatedAt         DateTime      @updatedAt @map("updated_at")
-  githubAccessToken String?       @map("github_access_token")
-  meetings          Meeting[]
-  questions         Question[]
-  repositories      Repository[]
-  transactions      Transaction[]
+  id                    String               @id @default(cuid())
+  email                 String               @unique
+  name                  String
+  avatarUrl             String?              @map("avatar_url")
+  githubId              String               @unique @map("github_id")
+  githubLogin           String?              @map("github_login")
+  bio                   String?
+  location              String?
+  company               String?
+  blog                  String?
+  twitterUsername       String?              @map("twitter_username")
+  publicRepos           Int?                 @map("public_repos")
+  publicGists           Int?                 @map("public_gists")
+  followers             Int?
+  following             Int?
+  hireable              Boolean?
+  githubCreatedAt       DateTime?            @map("github_created_at")
+  credits               Int                  @default(150)
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+  githubAccessToken     String?              @map("github_access_token")
+  meetings              Meeting[]
+  questions             Question[]
+  repositories          Repository[]
+  transactions          Transaction[]
+  uploadedAttachments   QuestionAttachment[] @relation("AttachmentUploadedBy")
 
   @@map("users")
 }
 
 model Repository {
-  id               String             @id @default(cuid())
-  name             String
-  fullName         String             @map("full_name")
-  owner            String
-  url              String
-  description      String?
-  language         String?
-  stars            Int                @default(0)
-  forks            Int                @default(0)
-  isPrivate        Boolean            @default(false) @map("is_private")
-  processed        Boolean            @default(false)
-  summary          String?
-  embeddingStatus  RepositoryStatus   @default(PENDING) @map("embedding_status")
-  createdAt        DateTime           @default(now()) @map("created_at")
-  updatedAt        DateTime           @updatedAt @map("updated_at")
-  userId           String             @map("user_id")
-  fileCount        Int?               @map("file_count")
-  totalSize        Int?               @map("total_size")
-  commits          Commit[]
-  questions        Question[]
-  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  files            RepositoryFile[]
+  id                  String               @id @default(cuid())
+  name                String
+  fullName            String               @map("full_name")
+  owner               String
+  url                 String
+  description         String?
+  language            String?
+  stars               Int                  @default(0)
+  forks               Int                  @default(0)
+  isPrivate           Boolean              @default(false) @map("is_private")
+  processed           Boolean              @default(false)
+  summary             String?
+  embeddingStatus     RepositoryStatus     @default(PENDING) @map("embedding_status")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  userId              String               @map("user_id")
+  fileCount           Int?                 @map("file_count")
+  totalSize           Int?                 @map("total_size")
+  commits             Commit[]
+  questions           Question[]
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  files               RepositoryFile[]
+  questionAttachments QuestionAttachment[]
 
   @@map("repositories")
 }
@@ -92,7 +94,7 @@ model Commit {
   authorAvatar String?          @map("author_avatar")
   timestamp    DateTime
   url          String
-  summary      String?          // AI-generated summary
+  summary      String? // AI-generated summary
   status       RepositoryStatus @default(PENDING) // Summary generation status
   filesChanged Int              @map("files_changed")
   createdAt    DateTime         @default(now()) @map("created_at")
@@ -103,23 +105,45 @@ model Commit {
 }
 
 model Question {
-  id              String     @id @default(cuid())
-  query           String
-  answer          String
-  confidenceScore Float      @map("confidence_score")
-  relevantFiles   Json       @map("relevant_files")
-  isFavorite      Boolean    @default(false) @map("is_favorite")
-  tags            String[]   @default([])
-  category        String?
-  notes           String?
-  createdAt       DateTime   @default(now()) @map("created_at")
-  updatedAt       DateTime   @updatedAt @map("updated_at")
-  userId          String     @map("user_id")
-  repositoryId    String     @map("repository_id")
-  repository      Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
-  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                  String               @id @default(cuid())
+  query               String
+  answer              String
+  confidenceScore     Float                @map("confidence_score")
+  relevantFiles       Json                 @map("relevant_files")
+  isFavorite          Boolean              @default(false) @map("is_favorite")
+  tags                String[]             @default([])
+  category            String?
+  notes               String?
+  attachments         Json                 @default("[]")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  userId              String               @map("user_id")
+  repositoryId        String               @map("repository_id")
+  repository          Repository           @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questionAttachments QuestionAttachment[]
 
   @@map("questions")
+}
+
+model QuestionAttachment {
+  id               String     @id @default(cuid())
+  fileName         String     @map("file_name")
+  originalFileName String     @map("original_file_name")
+  fileSize         Int        @map("file_size")
+  fileType         String     @map("file_type")
+  uploadUrl        String     @map("upload_url")
+  backblazeFileId  String?    @map("backblaze_file_id")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+  uploadedBy       String     @map("uploaded_by")
+  questionId       String?    @map("question_id")
+  repositoryId     String     @map("repository_id")
+  uploadedByUser   User       @relation("AttachmentUploadedBy", fields: [uploadedBy], references: [id], onDelete: Cascade)
+  question         Question?  @relation(fields: [questionId], references: [id], onDelete: SetNull)
+  repository       Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@map("question_attachments")
 }
 
 model Transaction {

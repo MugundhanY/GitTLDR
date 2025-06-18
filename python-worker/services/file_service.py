@@ -5,8 +5,9 @@ Handles retrieving file content from B2 storage with Redis-based metadata.
 import asyncio
 import json
 from typing import List, Dict, Any, Optional
-from services.b2_storage_sdk_fixed import B2StorageService
+from services.b2_singleton import get_b2_storage
 from services.redis_client import redis_client
+from services.database_service import DatabaseService
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -14,22 +15,33 @@ logger = get_logger(__name__)
 
 class FileRetrievalService:
     """Service for retrieving file content for Q&A context generation."""
-    
     def __init__(self):
         """Initialize file retrieval service."""
-        self.b2_storage = None
         self.redis_client = redis_client
-        self._initialize_b2()
-    
-    def _initialize_b2(self):
-        """Initialize B2 storage service if credentials are available."""
-        try:
-            self.b2_storage = B2StorageService()
-            logger.info("B2 storage service initialized for file retrieval")
-        except Exception as e:
-            logger.warning(f"B2 storage not available, will use fallback: {str(e)}")
-            self.b2_storage = None
-      async def get_repository_files(self, repo_id: str) -> List[Dict[str, Any]]:
+        self.database_service = DatabaseService()
+        self._redis_connected = False
+
+    @property
+    def b2_storage(self):
+        """Get B2 storage instance using singleton."""
+        return get_b2_storage()
+
+    async def _ensure_redis_connected(self):
+        """Ensure Redis is connected before using it."""
+        if not self._redis_connected:
+            try:
+                await self.redis_client.connect()
+                self._redis_connected = await self.redis_client.ping()
+                if self._redis_connected:
+                    logger.info("Redis connected for file retrieval service")
+                else:
+                    logger.warning("Redis ping failed in file retrieval service")            
+            except Exception as e:
+                logger.error(f"Failed to connect Redis in file retrieval service: {str(e)}")
+                self._redis_connected = False
+        return self._redis_connected
+
+    async def get_repository_files(self, repo_id: str) -> List[Dict[str, Any]]:
         """
         Get all files for a repository from Redis file metadata with smart fallback.
         
@@ -40,18 +52,22 @@ class FileRetrievalService:
             List of file metadata
         """
         try:
-            # Check if we have repository file data
-            repo_files_key = f"repo_files:{repo_id}"
-            repo_files_data = await redis_client.hgetall(repo_files_key)
-            
+            # Ensure Redis is connected
+            redis_available = await self._ensure_redis_connected()
             file_list = []
+            file_keys = []  # Initialize file_keys to avoid NameError
             
-            if not repo_files_data or not repo_files_data.get('file_paths'):
-                logger.warning(f"No file metadata found in Redis for repository {repo_id}")
+            if redis_available:
+                # Check if we have repository file data
+                repo_files_key = f"repo_files:{repo_id}"
+                repo_files_data = await redis_client.hgetall(repo_files_key)
                 
-                # Fallback 1: Try to find files by searching all file keys for this repo_id
-                logger.info(f"Searching for files using pattern: file:{repo_id}:*")
-                file_keys = await redis_client.keys(f"file:{repo_id}:*")
+                if not repo_files_data or not repo_files_data.get('file_paths'):
+                    logger.warning(f"No file metadata found in Redis for repository {repo_id}")
+                    
+                    # Fallback 1: Try to find files by searching all file keys for this repo_id
+                    logger.info(f"Searching for files using pattern: file:{repo_id}:*")
+                    file_keys = await redis_client.keys(f"file:{repo_id}:*")
                 
                 if file_keys:
                     logger.info(f"Found {len(file_keys)} files directly for repo {repo_id}")
@@ -217,13 +233,15 @@ class FileRetrievalService:
             'json': 'json',
             'yaml': 'yaml',
             'yml': 'yaml',
-            'xml': 'xml',
-            'sql': 'sql',            'sh': 'shell',
-            'bash': 'shell',
-            'dockerfile': 'dockerfile'        }
+            'xml': 'xml',        'sql': 'sql',
+        'sh': 'shell',
+        'bash': 'shell',
+        'dockerfile': 'dockerfile'
+        }
         
         return language_map.get(extension, 'unknown')
-      async def get_file_content(self, repo_id: str, file_path: str) -> Optional[str]:
+
+    async def get_file_content(self, repo_id: str, file_path: str) -> Optional[str]:
         """
         Get content of a specific file with smart fallback for multiple repository IDs.
         
@@ -317,9 +335,20 @@ class FileRetrievalService:
                             continue
                 except Exception as e:
                     logger.debug(f"Error checking B2 for key {key}: {str(e)}")
-                    continue
+                    continue            # Try database fallback before giving up
+            logger.info(f"Redis cache miss - attempting database fallback for: {file_path}")
+            content = await self._get_file_content_from_database(repo_id, file_path)
+            if content:
+                return content
             
-            logger.warning(f"File content not found anywhere: {file_path}")
+            # Only warn for important files, not model files or large binaries
+            if not any(skip_pattern in file_path.lower() for skip_pattern in [
+                'model', '.bin', '.dat', '.pkl', '.h5', '.onnx', '.pt', '.pth',
+                'node_modules', '.git', '__pycache__', '.cache'
+            ]):
+                logger.warning(f"File content not found anywhere (Redis + Database): {file_path}")
+            else:
+                logger.debug(f"Skipping missing binary/model file: {file_path}")
             return None
             
         except Exception as e:
@@ -419,7 +448,6 @@ class FileRetrievalService:
             return priority
         
         return sorted(files, key=get_file_priority, reverse=True)
-    
     async def is_repository_processed(self, repo_id: str) -> bool:
         """
         Check if a repository has been processed and files are available for Q&A.
@@ -430,20 +458,26 @@ class FileRetrievalService:
         Returns:
             True if repository is processed and ready for Q&A
         """
-        try:            # Check if repository has completion data in Redis
-            completion_key = f"repository_completion:{repo_id}"
-            completion_data = await redis_client.hgetall(completion_key)
+        try:
+            # Ensure Redis is connected
+            redis_available = await self._ensure_redis_connected()
             
-            if completion_data and completion_data.get('embedding_status') == 'COMPLETED':
-                return True
-              # Check if repository has file metadata
-            repo_files_key = f"repo_files:{repo_id}"
-            repo_files_data = await redis_client.hgetall(repo_files_key)
+            if redis_available:
+                # Check if repository has completion data in Redis
+                completion_key = f"repository_completion:{repo_id}"
+                completion_data = await redis_client.hgetall(completion_key)
+                
+                if completion_data and completion_data.get('embedding_status') == 'COMPLETED':
+                    return True
+                
+                # Check if repository has file metadata
+                repo_files_key = f"repo_files:{repo_id}"
+                repo_files_data = await redis_client.hgetall(repo_files_key)
+                
+                if repo_files_data and int(repo_files_data.get('file_count', 0)) > 0:
+                    return True
             
-            if repo_files_data and int(repo_files_data.get('file_count', 0)) > 0:
-                return True
-            
-            # Check if files exist in B2 storage
+            # Check if files exist in B2 storage as fallback
             if self.b2_storage:
                 b2_files = await self.b2_storage.list_repository_files(repo_id)
                 return len(b2_files) > 0
@@ -549,3 +583,77 @@ class FileRetrievalService:
         except Exception as e:
             logger.error(f"Failed to get files for Q&A context: {str(e)}")
             return []
+    
+    async def _get_file_content_from_database(self, repo_id: str, file_path: str) -> Optional[str]:
+        """
+        Fallback method to get file content from database when Redis cache misses.
+        
+        Args:
+            repo_id: Repository ID
+            file_path: Path of the file to retrieve
+            
+        Returns:
+            File content if found, None otherwise
+        """
+        try:
+            logger.debug(f"Attempting to retrieve file from database: {repo_id}/{file_path}")
+            
+            # Get repository files from database
+            repository_files = await self.database_service.get_repository_files(repo_id)
+            
+            if not repository_files:
+                logger.debug(f"No files found in database for repository {repo_id}")
+                return None
+            
+            # Find the file by path (try exact match first, then fuzzy matching)
+            target_file = None
+            
+            # Try exact path match
+            for file_info in repository_files:
+                if file_info.get('path') == file_path:
+                    target_file = file_info
+                    break
+            
+            # Try normalized path matching if exact match fails
+            if not target_file:
+                normalized_target = file_path.replace('\\', '/').lower()
+                for file_info in repository_files:
+                    file_path_normalized = file_info.get('path', '').replace('\\', '/').lower()
+                    if file_path_normalized == normalized_target:
+                        target_file = file_info
+                        break
+            
+            # Try partial path matching (for files in subdirectories)
+            if not target_file:
+                for file_info in repository_files:
+                    stored_path = file_info.get('path', '')
+                    if file_path in stored_path or stored_path.endswith(file_path):
+                        target_file = file_info
+                        logger.debug(f"Found file via partial match: {stored_path} matches {file_path}")
+                        break
+            
+            if not target_file:
+                logger.debug(f"File not found in database: {file_path}")
+                return None
+            
+            # Try to get content from B2 using the file_key from database
+            file_key = target_file.get('file_key')
+            if file_key and self.b2_storage:
+                try:
+                    content = await self.b2_storage.download_file_content(file_key=file_key)
+                    logger.info(f"Successfully retrieved file content from database fallback: {file_path}")
+                    return content
+                except Exception as e:
+                    logger.warning(f"Failed to get content from B2 using database file_key: {str(e)}")
+            
+            # Check if content is stored directly in database
+            if target_file.get('content'):
+                logger.info(f"Retrieved file content directly from database: {file_path}")
+                return target_file['content']
+            
+            logger.debug(f"File found in database but no content available: {file_path}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error retrieving file from database: {str(e)}")
+            return None

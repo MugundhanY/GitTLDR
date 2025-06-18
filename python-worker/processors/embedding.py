@@ -67,7 +67,6 @@ class EmbeddingProcessor:
         except Exception as e:
             logger.error(f"Failed to process file embedding: {str(e)}")
             raise
-    
     async def answer_question(self, task_data: Dict[str, Any], logger) -> Dict[str, Any]:
         """Answer a question about repository content using database and B2 storage."""
         try:
@@ -75,8 +74,11 @@ class EmbeddingProcessor:
             repository_id = task_data.get("repositoryId")
             user_id = task_data.get("userId")
             question = task_data.get("question")
+            attachments = task_data.get("attachments", [])
             
             logger.info(f"Processing Q&A for question: {question_id}, repo: {repository_id}")
+            if attachments:
+                logger.info(f"Question includes {len(attachments)} attachments")
             
             # First, check if repository processing is complete
             repo_status = await database_service.get_repository_status(repository_id)
@@ -153,10 +155,38 @@ class EmbeddingProcessor:
             # Analyze the question to understand what context is needed
             question_analysis = smart_context_builder.analyze_question(question)
             logger.info(f"Question analysis: {question_analysis}")
-            
-            # Load file content from B2 for relevant files
+              # Load file content from B2 for relevant files
             files_with_content = await database_service.load_file_contents(files_metadata, question_analysis)
             logger.info(f"Loaded content for {len(files_with_content)} files")
+              # Process attachments if present
+            attachment_content = []
+            if attachments:
+                logger.info(f"Processing {len(attachments)} attachments")
+                try:
+                    from services.b2_storage_sdk_fixed import B2StorageService
+                    b2_service = B2StorageService()
+                    for attachment in attachments:
+                        try:
+                            # Download attachment content from B2
+                            file_key = attachment.get('fileName')  # This is the B2 file key
+                            if file_key:
+                                content = await b2_service.download_file_content(file_key)
+                                if content:
+                                    # Add attachment content to context
+                                    attachment_info = {
+                                        'name': attachment.get('originalFileName', 'Unknown'),
+                                        'type': attachment.get('fileType', 'unknown'),
+                                        'content': content,
+                                        'path': f"attachment/{attachment.get('originalFileName', 'unknown')}"
+                                    }
+                                    attachment_content.append(attachment_info)
+                                    files_with_content.append(attachment_info)
+                                    logger.info(f"Loaded attachment: {attachment.get('originalFileName')}")
+                        except Exception as att_error:
+                            logger.warning(f"Failed to load attachment {attachment.get('originalFileName', 'unknown')}: {str(att_error)}")
+                            
+                except Exception as att_proc_error:
+                    logger.warning(f"Failed to process attachments: {str(att_proc_error)}")
             
             if not files_with_content:
                 logger.warning(f"No file content could be loaded for repository {repository_id}")
@@ -184,6 +214,19 @@ class EmbeddingProcessor:
                 question_analysis, files_with_content, question
             )
             
+            # Debug: Log content sources
+            logger.info(f"Content sources breakdown:")
+            logger.info(f"  - Repository files: {len(files_with_content) - len(attachment_content)}")
+            logger.info(f"  - Attachments: {len(attachment_content)}")
+            logger.info(f"  - Total files for context: {len(files_with_content)}")
+            logger.info(f"  - Final context files: {len(files_content)}")
+            
+            # Show which attachments made it to final context
+            if attachment_content:
+                for att in attachment_content:
+                    att_in_context = any(att['name'] in fc for fc in files_content)
+                    logger.info(f"  - Attachment '{att['name']}' in final context: {att_in_context}")
+            
             if not files_content:
                 logger.warning(f"No relevant content found for question: {question}")
                 result_data = {
@@ -203,13 +246,16 @@ class EmbeddingProcessor:
                     "answer": result_data["answer"],
                     "confidence": result_data["confidence"],
                     "relevant_files": []
-                }
-              # Generate answer using Gemini
+                }            # Generate answer using Gemini
             repo_info = f"Repository: {repo_status.get('name')} (ID: {repository_id})"
             if repo_status.get('file_count'):
                 repo_info += f"\nTotal files: {repo_status.get('file_count')}"
             if repo_status.get('total_size'):
                 repo_info += f"\nTotal size: {repo_status.get('total_size')} bytes"
+            if attachment_content:
+                repo_info += f"\nAttachments provided: {len(attachment_content)} files"
+                for att in attachment_content:
+                    repo_info += f"\n  - {att['name']} ({att['type']})"
             
             answer_result = await gemini_client.answer_question(
                 question=question,

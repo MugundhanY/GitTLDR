@@ -299,12 +299,22 @@ class GeminiClient:
         
         max_retries = 5  # Increased for better resilience
         base_delay = 1
-        
-        # Debug logging for Q&A context
+          # Debug logging for Q&A context
         logger.info(f"Q&A Debug - Files content count: {len(files_content)}")
+        attachment_count = 0
+        repo_file_count = 0
+        
         for i, content in enumerate(files_content):
             content_preview = content[:200] + "..." if len(content) > 200 else content
-            logger.info(f"Q&A Debug - File {i+1} preview: {content_preview}")
+            is_attachment = "attachment/" in content or "Attachment:" in content
+            if is_attachment:
+                attachment_count += 1
+                logger.info(f"Q&A Debug - ATTACHMENT {attachment_count} preview: {content_preview}")
+            else:
+                repo_file_count += 1
+                logger.info(f"Q&A Debug - Repository file {repo_file_count} preview: {content_preview}")
+        
+        logger.info(f"Q&A Context Summary - Repository files: {repo_file_count}, Attachments: {attachment_count}")
         
         for attempt in range(max_retries):
             try:

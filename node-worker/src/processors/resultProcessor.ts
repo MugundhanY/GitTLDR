@@ -216,23 +216,48 @@ export class ResultProcessor {
           }
         });
         console.log(`Created default user: ${user.id}`);
-      }      // Create question record
-      const now = new Date();
-      const question = await prisma.question.create({
-        data: {
-          id: result.question_id,
-          query: result.question,
-          answer: result.answer,
-          confidenceScore: result.confidence || 0.5,
-          relevantFiles: result.relevant_files || [],
-          userId: user.id,
-          repositoryId: result.repository_id,
-          createdAt: now,
-          // Add AI-generated categorization data
-          category: result.category || null,
-          tags: result.tags || [],
-        }
+      }      // Check if question already exists (created as pending with attachments)
+      const existingQuestion = await prisma.question.findUnique({
+        where: { id: result.question_id },
+        include: { questionAttachments: true }
       });
+
+      const now = new Date();
+      let question;
+      if (existingQuestion) {
+        // Update existing question to completed status
+        question = await prisma.question.update({
+          where: { id: result.question_id },
+          data: {
+            answer: result.answer,
+            confidenceScore: result.confidence || 0.5,
+            relevantFiles: result.relevant_files || [],
+            // Add AI-generated categorization data
+            category: result.category || null,
+            tags: result.tags || [],
+            updatedAt: now
+          }
+        });
+        console.log(`✅ Updated existing question with attachments: ${question.id}`);
+      } else {
+        // Create new question record (no attachments case)
+        question = await prisma.question.create({
+          data: {
+            id: result.question_id,
+            query: result.question,
+            answer: result.answer,
+            confidenceScore: result.confidence || 0.5,
+            relevantFiles: result.relevant_files || [],
+            userId: user.id,
+            repositoryId: result.repository_id,
+            createdAt: now,
+            // Add AI-generated categorization data
+            category: result.category || null,
+            tags: result.tags || [],
+          }
+        });
+        console.log(`✅ Created new question without attachments: ${question.id}`);
+      }
 
       console.log(`✅ Stored QnA result with category '${result.category}': ${question.id}`);
 

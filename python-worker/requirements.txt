@@ -8,6 +8,11 @@ b2sdk
 python-dotenv
 pydantic-settings
 asyncpg
+fastapi
+uvicorn[standard]
+httpx
+aiohttp
+azure-ai-inference
 
 # Optional dependencies for better performance
 torch
