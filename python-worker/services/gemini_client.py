@@ -532,6 +532,88 @@ Content to summarize:
 
 Provide a clear, structured summary in 2-3 paragraphs:
 """ 
+
+    async def generate_chain_of_thought(self, question: str, context: str, files_content: List[str]) -> Dict[str, Any]:
+        """Generate step-by-step chain-of-thought reasoning similar to DeepSeek R1."""
+        self._ensure_configured()
+        
+        max_retries = 3
+        base_delay = 1
+        
+        for attempt in range(max_retries):
+            try:
+                # Prepare context from files
+                combined_context = self._prepare_qa_context(context, files_content)
+                
+                # Build chain-of-thought prompt
+                prompt = self._build_chain_of_thought_prompt(question, combined_context)
+                
+                # Generate reasoning
+                response = await self.text_model.generate_content_async(
+                    prompt,
+                    safety_settings=self.safety_settings,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.3,
+                        top_p=0.9,
+                        max_output_tokens=3000,
+                    )
+                )
+                
+                reasoning = response.text.strip()
+                confidence = self._calculate_confidence(reasoning, combined_context)
+                
+                logger.info(f"Generated chain-of-thought reasoning (attempt {attempt + 1})")
+                
+                return {
+                    "reasoning": reasoning,
+                    "confidence": confidence,
+                    "provider": "gemini",
+                    "model": "gemini-2.0-flash-thinking-exp"
+                }
+                
+            except Exception as e:
+                error_str = str(e)
+                logger.warning(f"Chain-of-thought attempt {attempt + 1} failed: {error_str}")
+                
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    logger.info(f"Retrying in {delay} seconds...")
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(f"All chain-of-thought attempts failed: {error_str}")
+                    raise Exception(f"Gemini chain-of-thought failed after {max_retries} attempts: {error_str}")
+        
+        raise Exception("Unexpected error in chain-of-thought generation")
+
+    def _build_chain_of_thought_prompt(self, question: str, context: str) -> str:
+        """Build prompt for step-by-step chain-of-thought reasoning."""
+        return f"""You are an expert AI assistant that thinks step-by-step like DeepSeek R1. You need to analyze a code repository and answer a question using detailed chain-of-thought reasoning.
+
+IMPORTANT: You must think step-by-step and show your reasoning process clearly. Structure your response as follows:
+
+## Step 1: Understanding the Question
+[Analyze what the user is asking and what information you need to find]
+
+## Step 2: Repository Analysis
+[Examine the code structure, files, and architecture]
+
+## Step 3: Key Findings
+[Identify the most relevant code, patterns, and relationships]
+
+## Step 4: Technical Analysis
+[Deep dive into the technical details and implementation]
+
+## Step 5: Synthesis and Conclusion
+[Combine all findings to provide a comprehensive answer]
+
+Repository Context:
+{context}
+
+Question: {question}
+
+Think through this step-by-step and provide detailed reasoning for each step. Be thorough and technical in your analysis, referencing specific files, functions, and code patterns.
+"""
+
     def _build_qa_prompt(self, question: str, context: str) -> str:
         """Build prompt for Q&A."""
         return f"""

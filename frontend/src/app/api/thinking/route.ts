@@ -2,7 +2,34 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    // Debug: Log request details
+    console.log('Thinking API called - Method:', request.method)
+    console.log('Thinking API called - Headers:', Object.fromEntries(request.headers.entries()))
+    console.log('Request has body:', !!request.body, 'Content-Length:', request.headers.get('content-length'))
+
+    // Add more robust JSON parsing
+    let body;
+    try {
+      const requestText = await request.text();
+      console.log('Raw request text:', requestText);
+      
+      if (!requestText || requestText.trim() === '') {
+        return NextResponse.json(
+          { error: 'Request body is empty' },
+          { status: 400 }
+        );
+      }
+      
+      body = JSON.parse(requestText);
+      console.log('Parsed request body:', body)
+    } catch (jsonError) {
+      console.error('JSON parsing error:', jsonError);
+      return NextResponse.json(
+        { error: 'Invalid JSON in request body' },
+        { status: 400 }
+      );
+    }
+
     const { repositoryId, question, attachments = [], stream = true } = body
 
     if (!repositoryId || !question) {

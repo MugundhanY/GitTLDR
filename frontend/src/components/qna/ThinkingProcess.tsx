@@ -39,10 +39,11 @@ export default function ThinkingProcess({
   const [thinkingBlocks, setThinkingBlocks] = useState<ThinkingBlock[]>([])
   const [currentThought, setCurrentThought] = useState('')
   const [error, setError] = useState<string | null>(null)
-  
-  const abortControllerRef = useRef<AbortController | null>(null)
+    const abortControllerRef = useRef<AbortController | null>(null)
   const thoughtContainerRef = useRef<HTMLDivElement>(null)
   const shouldAutoScrollRef = useRef(true)
+  const lastRequestRef = useRef<{ repositoryId?: string; question: string } | null>(null)
+  const lastRequestTimeRef = useRef<number>(0)
 
   // Auto-scroll to bottom when new content arrives
   useEffect(() => {
@@ -59,9 +60,36 @@ export default function ThinkingProcess({
       shouldAutoScrollRef.current = isAtBottom
     }
   }, [])
-
   const startThinking = useCallback(async () => {
     if (!repositoryId || !question.trim()) return
+
+    const now = Date.now()
+    const timeSinceLastRequest = now - lastRequestTimeRef.current
+    
+    // Rate limiting: prevent requests within 2 seconds of each other
+    if (timeSinceLastRequest < 2000) {
+      console.log('Rate limit active, ignoring duplicate request')
+      return
+    }
+
+    // Prevent duplicate requests for the same parameters
+    const currentRequest = { repositoryId, question: question.trim() }
+    if (lastRequestRef.current && 
+        lastRequestRef.current.repositoryId === currentRequest.repositoryId &&
+        lastRequestRef.current.question === currentRequest.question &&
+        isThinking) {
+      console.log('Duplicate request detected, skipping')
+      return
+    }
+
+    // Cancel any existing request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+
+    console.log('Starting thinking process with:', currentRequest)
+    lastRequestRef.current = currentRequest
+    lastRequestTimeRef.current = now
 
     setIsThinking(true)
     setError(null)
@@ -180,13 +208,19 @@ export default function ThinkingProcess({
     setCurrentThought('')
     setError(null)
   }, [])
-
   // Auto-start thinking when component becomes visible
   useEffect(() => {
     if (isVisible && repositoryId && question.trim() && !isThinking) {
-      startThinking()
+      // Add a small delay to debounce rapid changes
+      const timeoutId = setTimeout(() => {
+        if (isVisible && repositoryId && question.trim() && !isThinking) {
+          startThinking()
+        }
+      }, 300)
+      
+      return () => clearTimeout(timeoutId)
     }
-  }, [isVisible, repositoryId, question, isThinking, startThinking])
+  }, [isVisible, repositoryId, question, isThinking])
 
   // Cleanup on unmount
   useEffect(() => {

@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
 
     // Build B2 direct URL
     const bucketName = process.env.B2_BUCKET_NAME || 'gittldr-attachments';
-    const directUrl = `https://f002.backblazeb2.com/file/${bucketName}/${attachment.fileKey}`;
+    const directUrl = `https://f002.backblazeb2.com/file/${bucketName}/${attachment.fileName}`;
 
     try {
       // Fetch file from B2 and proxy it through our API

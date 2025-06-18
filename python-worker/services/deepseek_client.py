@@ -99,8 +99,9 @@ Structure your thinking in clear, complete sentences. Use phrases like:
 Show your reasoning process naturally - don't just give the final answer, but walk through how you arrived at it. Reference specific code when relevant."""),
                 UserMessage(content=prompt)            ]
             
-            logger.info(f"Starting GitHub DeepSeek R1 analysis for question: {question[:100]}...")            
-            if stream:                # Stream the response for real-time thinking steps with timeout
+            logger.info(f"Starting GitHub DeepSeek R1 analysis for question: {question[:100]}...")
+            
+            if stream:# Stream the response for real-time thinking steps with timeout
                 try:
                     # Set a 30-second timeout for the initial request
                     response = await asyncio.wait_for(
@@ -129,11 +130,12 @@ Show your reasoning process naturally - don't just give the final answer, but wa
                     error_msg = str(api_error)
                     logger.error(f"DeepSeek API error: {error_msg}")
                     
-                    # Check if this is a rate limit error
+                    # Check if this is a rate limit error (including Azure/GitHub specific error codes)
                     if any(indicator in error_msg.lower() for indicator in [
                         "rate limit", "429", "quota", "exceeded", "ratelimitreached", 
-                        "rate_limit_exceeded", "too many requests"
-                    ]):
+                        "rate_limit_exceeded", "too many requests", "rateLimitReached"
+                    ]) or "Response status: 429" in error_msg:
+                        logger.warning("DeepSeek rate limit detected immediately - yielding error for fallback")
                         yield {
                             "type": "error",
                             "content": "RATE_LIMIT_EXCEEDED: DeepSeek API rate limit reached",

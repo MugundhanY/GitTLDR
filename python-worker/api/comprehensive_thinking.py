@@ -12,6 +12,7 @@ from services.deepseek_client import deepseek_client
 from services.gemini_client import gemini_client
 from utils.logger import get_logger
 import json
+import re
 
 logger = get_logger(__name__)
 
@@ -123,23 +124,33 @@ class ComprehensiveThinkingService:
                 # Enhanced question with attachment context
                 enhanced_question = question
                 if attachment_context:
-                    enhanced_question = f"{question}\n{attachment_context}"
-
-                # Step: Transition to AI thinking
+                    enhanced_question = f"{question}\n{attachment_context}"                # Step: Transition to AI thinking
                 yield self._format_thinking_step({
                     "id": f"step-{int(asyncio.get_event_loop().time() * 1000)}",
-                    "type": "thinking",
+                    "type": "thinking_start",
                     "content": f"🧠 Starting AI deep reasoning with {len(files_content)} files...",
                     "timestamp": int(asyncio.get_event_loop().time() * 1000),
                     "confidence": 0.9
-                })
-
-                # Try DeepSeek R1 first, fallback to Gemini
+                })                # Try DeepSeek R1 first, fallback to Gemini
                 thinking_step_count = 0
                 current_full_content = ""
+                deepseek_failed = False
                 
+                # ATTEMPT DEEPSEEK R1
+                logger.info("Attempting DeepSeek R1 for comprehensive thinking")
+                
+                # Add a status update to let user know we're trying DeepSeek
+                yield self._format_thinking_step({
+                    "id": f"deepseek-attempt-{int(asyncio.get_event_loop().time() * 1000)}",
+                    "type": "thinking_chunk",
+                    "content": "🤔 Connecting to DeepSeek R1 for advanced reasoning...",
+                    "timestamp": int(asyncio.get_event_loop().time() * 1000),
+                    "confidence": 0.8
+                })
+
                 try:
-                    logger.info("Attempting DeepSeek R1 for comprehensive thinking")
+                    start_time = asyncio.get_event_loop().time()
+                    timeout_seconds = 30.0
                     
                     async for thinking_step in deepseek_client.think_and_analyze(
                         question=enhanced_question,
@@ -148,15 +159,29 @@ class ComprehensiveThinkingService:
                         repository_name=repository_name,
                         stream=stream
                     ):
+                        # Check timeout
+                        if asyncio.get_event_loop().time() - start_time > timeout_seconds:
+                            logger.warning("DeepSeek timed out, switching to Gemini")
+                            deepseek_failed = True
+                            yield self._format_thinking_step({
+                                "id": f"timeout-{int(asyncio.get_event_loop().time() * 1000)}",
+                                "type": "thinking_chunk", 
+                                "content": "⏰ DeepSeek R1 is taking too long, switching to Gemini...",
+                                "timestamp": int(asyncio.get_event_loop().time() * 1000),
+                                "confidence": 0.7
+                            })
+                            break
+                            
                         if thinking_step.get("type") == "error":
                             error_content = thinking_step.get("content", "")
-                              # Check for rate limit
+                            # Check for rate limit
                             if any(indicator in error_content.lower() for indicator in [
                                 "rate limit", "429", "quota", "exceeded", "rate_limit_exceeded",
                                 "ratelimitreached", "too many requests"
                             ]) or "RATE_LIMIT_EXCEEDED" in error_content:
                                 logger.warning("DeepSeek R1 rate limited, falling back to Gemini")
-                                break  # Break to try Gemini
+                                deepseek_failed = True
+                                break
                             else:
                                 yield self._format_thinking_step({
                                     "id": f"step-{int(asyncio.get_event_loop().time() * 1000)}",
@@ -171,7 +196,7 @@ class ComprehensiveThinkingService:
                             # Final completion
                             yield self._format_thinking_step({
                                 "id": f"step-{int(asyncio.get_event_loop().time() * 1000)}",
-                                "type": "complete",
+                                "type": "thinking_complete",
                                 "content": "✅ DeepSeek R1 reasoning analysis complete!",
                                 "timestamp": int(asyncio.get_event_loop().time() * 1000),
                                 "confidence": 1.0
@@ -188,92 +213,86 @@ class ComprehensiveThinkingService:
                                 # Emit real AI thinking step
                                 yield self._format_thinking_step({
                                     "id": f"thinking-{thinking_step_count}",
-                                    "type": thinking_step.get("type", "thinking"),
+                                    "type": thinking_step.get("type", "thinking_chunk"),
                                     "content": content_chunk,
                                     "full_content": current_full_content,
                                     "step_number": thinking_step_count,
                                     "timestamp": int(asyncio.get_event_loop().time() * 1000),
                                     "confidence": thinking_step.get("confidence", 0.9)
                                 })
-                    
-                    # If we reach here, DeepSeek was rate limited
-                    logger.info("DeepSeek R1 rate limited, trying Gemini fallback")
-                    
+                
                 except Exception as e:
                     logger.warning(f"DeepSeek R1 failed: {str(e)}, falling back to Gemini")
-
-                # FALLBACK TO GEMINI
-                try:
-                    logger.info("Using Gemini as fallback")
-                    
-                    yield self._format_thinking_step({
-                        "id": f"fallback-{int(asyncio.get_event_loop().time() * 1000)}",
-                        "type": "info",
-                        "content": "🔄 Switching to Gemini AI (DeepSeek R1 temporarily unavailable)",
-                        "timestamp": int(asyncio.get_event_loop().time() * 1000),
-                        "confidence": 0.8
-                    })
-                    
-                    gemini_result = await gemini_client.answer_question(
-                        question=enhanced_question,
-                        context=repository_context,
-                        files_content=enhanced_files_content
-                    )
-                    
-                    if gemini_result and gemini_result.get("answer"):
-                        answer = gemini_result["answer"]
-                        confidence = gemini_result.get("confidence", 0.8)
-                        
-                        # Break into thinking steps
-                        paragraphs = answer.split('\n\n')
-                        step_count = 1
-                        
-                        for i, paragraph in enumerate(paragraphs):
-                            if paragraph.strip():
-                                step_type = "thinking"
-                                if i == 0:
-                                    step_type = "analysis"
-                                elif i == len(paragraphs) - 1:
-                                    step_type = "synthesis"
-                                
-                                yield self._format_thinking_step({
-                                    "id": f"gemini-thinking-{step_count}",
-                                    "type": step_type,
-                                    "content": paragraph.strip(),
-                                    "full_content": answer,
-                                    "step_number": step_count,
-                                    "timestamp": int(asyncio.get_event_loop().time() * 1000),
-                                    "confidence": confidence
-                                })
-                                step_count += 1
-                                await asyncio.sleep(0.5)
+                    deepseek_failed = True# FALLBACK TO GEMINI (only if DeepSeek failed)
+                if deepseek_failed:
+                    try:
+                        logger.info("Using Gemini as fallback for chain-of-thought reasoning")
                         
                         yield self._format_thinking_step({
-                            "id": f"gemini-complete-{step_count}",
-                            "type": "complete",
-                            "content": "✅ Gemini analysis complete!",
-                            "full_content": answer,
+                            "id": f"fallback-{int(asyncio.get_event_loop().time() * 1000)}",
+                            "type": "thinking_start",
+                            "content": "🔄 Switching to Gemini AI for step-by-step reasoning (DeepSeek R1 temporarily unavailable)",
                             "timestamp": int(asyncio.get_event_loop().time() * 1000),
-                            "confidence": confidence
+                            "confidence": 0.8
                         })
-                    else:
+                        
+                        # Use the new chain-of-thought method instead of regular answer_question
+                        gemini_result = await gemini_client.generate_chain_of_thought(
+                            question=enhanced_question,
+                            context=repository_context,
+                            files_content=enhanced_files_content
+                        )
+                        
+                        if gemini_result and gemini_result.get("reasoning"):
+                            reasoning = gemini_result["reasoning"]
+                            confidence = gemini_result.get("confidence", 0.8)
+                            
+                            # Parse the step-by-step reasoning
+                            steps = self._parse_gemini_reasoning_steps(reasoning)
+                            
+                            step_count = 1
+                            for step in steps:
+                                if step.strip():
+                                    yield self._format_thinking_step({
+                                        "id": f"gemini-thinking-{step_count}",
+                                        "type": "thinking_chunk",
+                                        "content": step.strip(),
+                                        "step_number": step_count,
+                                        "timestamp": int(asyncio.get_event_loop().time() * 1000),
+                                        "confidence": confidence
+                                    })
+                                    step_count += 1
+                                    await asyncio.sleep(0.8)  # Slower for better UX
+                            yield self._format_thinking_step({
+                                "id": f"gemini-complete-{step_count}",
+                                "type": "thinking_complete",
+                                "content": "✅ Gemini step-by-step analysis complete!",
+                                "timestamp": int(asyncio.get_event_loop().time() * 1000),
+                                "confidence": confidence                            })
+                            return  # Successfully completed with Gemini
+                        else:
+                            yield self._format_thinking_step({
+                                "id": "gemini-error",
+                                "type": "error",
+                                "content": "Gemini failed to generate reasoning steps.",
+                                "timestamp": int(asyncio.get_event_loop().time() * 1000),
+                                "confidence": 0.1
+                            })
+                            return  # Stop processing on Gemini failure
+                            
+                    except Exception as gemini_error:
+                        logger.error(f"Gemini fallback failed: {str(gemini_error)}")
                         yield self._format_thinking_step({
-                            "id": "gemini-error",
+                            "id": "fallback-error",
                             "type": "error",
-                            "content": "Both AI providers failed to analyze the question.",
+                            "content": f"All AI providers failed. Please try again later.",
                             "timestamp": int(asyncio.get_event_loop().time() * 1000),
-                            "confidence": 0.1
+                            "confidence": 0.0
                         })
-                        
-                except Exception as gemini_error:
-                    logger.error(f"Gemini fallback failed: {str(gemini_error)}")
-                    yield self._format_thinking_step({
-                        "id": "fallback-error",
-                        "type": "error",
-                        "content": f"All AI providers failed. Please try again later.",
-                        "timestamp": int(asyncio.get_event_loop().time() * 1000),
-                        "confidence": 0.0
-                    })
+                        return  # Stop processing on Gemini exception
+                
+                # Ensure we exit the main logic after attempting both providers
+                return
                 
             except Exception as e:
                 logger.error(f"Error in comprehensive thinking process: {str(e)}")
@@ -284,6 +303,7 @@ class ComprehensiveThinkingService:
                     "timestamp": int(asyncio.get_event_loop().time() * 1000),
                     "confidence": 0.0
                 })
+                return
         
         return StreamingResponse(
             generate_thinking_stream(),
@@ -481,6 +501,31 @@ The user has provided the following files/content as additional context for this
 """
         
         return ""
+
+    def _parse_gemini_reasoning_steps(self, reasoning: str) -> List[str]:
+        """Parse Gemini's reasoning into individual steps."""
+        # Split by step headers (## Step X:)
+        steps = re.split(r'##\s+Step\s+\d+:', reasoning)
+        
+        # Remove empty first element if reasoning starts with step header
+        if steps and not steps[0].strip():
+            steps = steps[1:]
+        
+        # If no step headers found, split by double newlines as fallback
+        if len(steps) <= 1:
+            steps = reasoning.split('\n\n')
+        
+        # Clean up steps and add step numbers back
+        cleaned_steps = []
+        for i, step in enumerate(steps):
+            step_content = step.strip()
+            if step_content:
+                # Add step number if not already present
+                if not step_content.startswith(('Step', '##')):
+                    step_content = f"**Step {i + 1}:** {step_content}"
+                cleaned_steps.append(step_content)
+        
+        return cleaned_steps
 
 
 # Global instance
