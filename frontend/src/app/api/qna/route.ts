@@ -176,7 +176,9 @@ export async function GET(request: NextRequest) {  try {
       repositoryId: question.repositoryId,
       repositoryName: question.repository?.name || '',
       confidence: question.confidenceScore,
-      relevantFiles: question.relevantFiles as string[],
+      relevantFiles: Array.isArray(question.relevantFiles) 
+        ? question.relevantFiles.filter((file): file is string => typeof file === 'string')
+        : [],
       isFavorite: question.isFavorite,
       tags: question.tags,
       category: question.category,
@@ -265,7 +267,9 @@ export async function PATCH(request: NextRequest) {
       repositoryId: updatedQuestion.repositoryId,
       repositoryName: updatedQuestion.repository?.name || '',
       confidence: updatedQuestion.confidenceScore,
-      relevantFiles: updatedQuestion.relevantFiles as string[],
+      relevantFiles: Array.isArray(updatedQuestion.relevantFiles) 
+        ? updatedQuestion.relevantFiles.filter((file): file is string => typeof file === 'string')
+        : [],
       isFavorite: updatedQuestion.isFavorite,
       tags: updatedQuestion.tags,
       category: updatedQuestion.category,

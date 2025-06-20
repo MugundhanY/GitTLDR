@@ -24,7 +24,7 @@ interface Question {
   updatedAt?: string
   status: 'pending' | 'completed' | 'failed'
   confidence?: number
-  relevantFiles?: string[]
+  relevantFiles?: (string | any)[] // Can be strings or objects with path properties
   isFavorite?: boolean
   tags?: string[]
   category?: string

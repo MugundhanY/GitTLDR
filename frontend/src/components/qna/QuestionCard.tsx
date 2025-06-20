@@ -263,23 +263,32 @@ const QuestionCard = memo(({
                 <h5 className="text-sm font-medium text-slate-700 dark:text-slate-300">
                   Relevant Files ({question.relevantFiles.length})
                 </h5>
-              </div>
-              <div className="space-y-3">
+              </div>              <div className="space-y-3">
                 {question.relevantFiles.map((filePath) => {
-                  const isExpanded = expandedFiles[filePath]
-                  const isLoading = loadingFiles[filePath]
-                  const fileContent = fileContents[filePath]
-                  const extension = filePath.split('.').pop()?.toLowerCase() || ''
+                  // Handle different possible formats of filePath
+                  let pathString: string
+                  if (typeof filePath === 'string') {
+                    pathString = filePath
+                  } else if (filePath && typeof filePath === 'object') {
+                    pathString = (filePath as any).path || (filePath as any).name || (filePath as any).fileName || String(filePath)
+                  } else {
+                    pathString = String(filePath)
+                  }
+                  
+                  const isExpanded = expandedFiles[pathString]
+                  const isLoading = loadingFiles[pathString]
+                  const fileContent = fileContents[pathString]
+                  const extension = pathString.split('.').pop()?.toLowerCase() || ''
                   const language = languageMap[`.${extension}`] || 'text'
-                  const isCopied = copiedStates[filePath]
+                  const isCopied = copiedStates[pathString]
 
                   return (
-                    <div key={filePath} className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                    <div key={pathString} className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
                       {/* File Header with separate clickable areas */}
                       <div className="p-3 bg-slate-50 dark:bg-slate-800 flex items-center justify-between">
                         {/* Expandable area - clicking here toggles expansion */}
                         <button
-                          onClick={() => toggleFileExpansion(filePath)}
+                          onClick={() => toggleFileExpansion(pathString)}
                           className="flex items-center gap-3 flex-1 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded p-1 -m-1"
                         >
                           {isExpanded ? (
@@ -289,7 +298,7 @@ const QuestionCard = memo(({
                           )}
                           <CodeBracketIcon className="w-4 h-4 text-slate-500" />
                           <span className="text-sm text-slate-700 dark:text-slate-300 text-left truncate font-mono">
-                            {filePath}
+                            {pathString}
                           </span>
                         </button>
                         
@@ -302,7 +311,7 @@ const QuestionCard = memo(({
                           )}
                           {fileContent && (
                             <button
-                              onClick={() => copyToClipboard(fileContent.content, filePath)}
+                              onClick={() => copyToClipboard(fileContent.content, pathString)}
                               className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors rounded"
                               title="Copy file content"
                             >
@@ -319,13 +328,12 @@ const QuestionCard = memo(({
                               <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin mr-2"></div>
                               Loading file content...
                             </div>
-                          ) : fileContent ? (
-                            <LazyCodeContent
+                          ) : fileContent ? (                            <LazyCodeContent
                               fileContent={fileContent}
                               formatCodeContent={formatCodeContent}
                               isCopied={isCopied}
                               copyToClipboard={copyToClipboard}
-                              filePath={filePath}
+                              filePath={pathString}
                               isPageVisible={isPageVisible ?? true}
                             />
                           ) : (

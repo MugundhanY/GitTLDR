@@ -31,7 +31,7 @@ interface Question {
   createdAt: string
   status: 'pending' | 'completed' | 'failed'
   confidence?: number
-  relevantFiles?: string[]
+  relevantFiles?: (string | any)[] // Can be strings or objects with path properties
 }
 
 export default function RepositoryPage() {
@@ -410,15 +410,26 @@ export default function RepositoryPage() {
                           {question.relevantFiles && question.relevantFiles.length > 0 && (
                             <div className="border-t border-neutral-200 pt-3 mt-3">
                               <h6 className="text-xs font-medium text-neutral-600 mb-2">Related Files:</h6>
-                              <div className="flex flex-wrap gap-1">
-                                {question.relevantFiles.map((filePath, index) => (
-                                  <span 
-                                    key={index}
-                                    className="text-xs bg-neutral-200 text-neutral-600 px-2 py-1 rounded"
-                                  >
-                                    {filePath.split('/').pop() || filePath}
-                                  </span>
-                                ))}
+                              <div className="flex flex-wrap gap-1">                                {question.relevantFiles.map((filePath, index) => {
+                                  // Handle different possible formats of filePath
+                                  let pathString: string
+                                  if (typeof filePath === 'string') {
+                                    pathString = filePath
+                                  } else if (filePath && typeof filePath === 'object') {
+                                    pathString = (filePath as any).path || (filePath as any).name || (filePath as any).fileName || String(filePath)
+                                  } else {
+                                    pathString = String(filePath)
+                                  }
+                                  
+                                  return (
+                                    <span 
+                                      key={index}
+                                      className="text-xs bg-neutral-200 text-neutral-600 px-2 py-1 rounded"
+                                    >
+                                      {pathString.split('/').pop() || pathString}
+                                    </span>
+                                  )
+                                })}
                               </div>
                             </div>
                           )}

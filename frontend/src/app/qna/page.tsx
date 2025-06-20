@@ -199,25 +199,30 @@ export default function QnAPage() {
   }, [filtering.filteredQuestions.length])  // Question handlers
   const handleAskQuestion = useCallback(async () => {
     if (!newQuestion.trim()) return
-    
-    // If thinking mode is enabled, trigger thinking process
+      // If thinking mode is enabled, ONLY trigger thinking process
     if (enableDeepResearch) {
+      // Debug: Log attachment state before triggering thinking
+      console.log('🔥 QNA PAGE DEBUG:')
+      console.log('🔥 questionAttachments state:', questionAttachments)
+      console.log('🔥 questionAttachments length:', questionAttachments?.length)
+      console.log('🔥 About to pass to ThinkingProcess...')
+      
       setCurrentThinkingQuestion(newQuestion.trim())
+      setNewQuestion('')
+      // Note: Don't clear attachments yet - ThinkingProcess component needs them
+      return // Don't proceed to normal Q&A
     }
-    
+      // Normal Q&A flow (only when deep thinking is disabled)
     await actions.handleAskQuestion(newQuestion.trim(), questionAttachments)
     setNewQuestion('')
     setQuestionAttachments([]) // Clear attachments after submitting
   }, [newQuestion, questionAttachments, actions, enableDeepResearch, selectedRepository])  
+  
   const handleSelectSuggestion = useCallback((suggestion: string) => {
     setNewQuestion(suggestion)
     setShowSuggestions(false)
     
-    // If thinking mode is enabled, set the thinking question
-    if (enableDeepResearch) {
-      setCurrentThinkingQuestion(suggestion)
-    }
-      // Auto-focus on the textarea
+    // Auto-focus on the textarea
     setTimeout(() => {
       const textarea = document.querySelector('textarea[placeholder*="What does this code do"]') as HTMLTextAreaElement
       if (textarea) {
@@ -225,7 +230,7 @@ export default function QnAPage() {
         textarea.setSelectionRange(suggestion.length, suggestion.length)
       }
     }, 100)
-  }, [enableDeepResearch])
+  }, [])
   const handleSelectFollowUp = useCallback((originalQuestion: Question, followUpText: string) => {
     actions.handleSelectFollowUp(originalQuestion, followUpText, setNewQuestion)
   }, [actions])
@@ -390,16 +395,32 @@ export default function QnAPage() {
                   onToggleDeepResearch={() => setEnableDeepResearch(!enableDeepResearch)}
                   attachments={questionAttachments}
                   onAttachmentsChange={setQuestionAttachments}                />
-              </div>
-
-              {/* AI Thinking Process */}
+              </div>              {/* AI Thinking Process */}
               {enableDeepResearch && selectedRepository && currentThinkingQuestion && (
                 <div className="col-span-12 animate-in fade-in slide-in-from-bottom duration-600 delay-200">
                   <ThinkingProcess
                     repositoryId={selectedRepository.id}
                     question={currentThinkingQuestion}
                     isVisible={enableDeepResearch}
-                    onClose={() => setEnableDeepResearch(false)}
+                    onClose={() => {
+                      setEnableDeepResearch(false)
+                      setQuestionAttachments([]) // Clear attachments when thinking process is closed
+                    }}
+                    attachments={questionAttachments}
+                    onAnswerSubmitted={async (answer) => {
+                      // Clear attachments since thinking is complete
+                      setQuestionAttachments([])
+                      // Add a small delay to ensure database commit completes
+                      setTimeout(async () => {
+                        // Refresh questions to show the new answer
+                        await fetchQuestions()
+                        console.log('Questions refreshed after thinking answer submitted')
+                      }, 1000)
+                      // Optionally close the thinking process after delay
+                      setTimeout(() => {
+                        setEnableDeepResearch(false)
+                      }, 3000)
+                    }}
                   />
                 </div>
               )}

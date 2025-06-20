@@ -16,6 +16,15 @@ interface ThinkingProcessProps {
   question: string
   isVisible: boolean
   onClose?: () => void
+  onAnswerSubmitted?: (answer: string) => void
+  attachments?: Array<{
+    id: string
+    fileName: string
+    originalFileName: string
+    fileType: string
+    fileSize: number
+    uploadUrl: string
+  }>
   className?: string
 }
 
@@ -31,15 +40,19 @@ export default function ThinkingProcess({
   question, 
   isVisible, 
   onClose,
+  onAnswerSubmitted,
+  attachments = [],
   className = '' 
-}: ThinkingProcessProps) {
-  const [isThinking, setIsThinking] = useState(false)
+}: ThinkingProcessProps) {const [isThinking, setIsThinking] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [thinkingBlocks, setThinkingBlocks] = useState<ThinkingBlock[]>([])
   const [currentThought, setCurrentThought] = useState('')
+  const [finalAnswer, setFinalAnswer] = useState('')
   const [error, setError] = useState<string | null>(null)
-    const abortControllerRef = useRef<AbortController | null>(null)
+  const [hasCompleted, setHasCompleted] = useState(false)
+
+  const abortControllerRef = useRef<AbortController | null>(null)
   const thoughtContainerRef = useRef<HTMLDivElement>(null)
   const shouldAutoScrollRef = useRef(true)
   const lastRequestRef = useRef<{ repositoryId?: string; question: string } | null>(null)
@@ -58,17 +71,103 @@ export default function ThinkingProcess({
       const { scrollTop, scrollHeight, clientHeight } = thoughtContainerRef.current
       const isAtBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 10
       shouldAutoScrollRef.current = isAtBottom
+    }  }, [])
+  // Helper function to process attachments for thinking API
+  const processAttachmentsForThinking = async (attachments: any[]) => {
+    const processedAttachments = []
+    
+    for (const attachment of attachments) {
+      try {
+        const fileName = attachment.fileName || attachment.originalFileName || attachment.name
+        console.log(`Processing attachment: ${fileName}`)
+        console.log(`Attachment object:`, attachment)
+          let response = null        
+        // UPDATED: Use direct download endpoint for B2 file paths
+        const b2FileKey = attachment.fileName || attachment.fileKey || attachment.backblazeFileId
+        
+        if (b2FileKey) {
+          console.log(`Getting direct download for B2 file: ${b2FileKey}`)
+          
+          // Use the new direct download endpoint
+          response = await fetch('/api/attachments/download-direct', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              filePath: b2FileKey
+            })
+          })
+          
+          console.log(`Direct download response status: ${response?.status}, OK: ${response?.ok}`)
+        } else {
+          console.warn(`No B2 file key found for attachment ${fileName}`)
+        }
+        
+        console.log(`Response status: ${response?.status}, OK: ${response?.ok}`)
+        
+        if (response && response.ok) {
+          const content = await response.text()
+          console.log(`Fetched content for ${fileName}:`, content.length, 'characters')
+          
+          // Determine file type based on file extension
+          const extension = fileName.split('.').pop()?.toLowerCase()
+          let type = 'document'
+          if (['js', 'ts', 'py', 'java', 'cpp', 'c', 'html', 'css', 'json', 'xml', 'yaml', 'yml'].includes(extension || '')) {
+            type = 'code'
+          } else if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(extension || '')) {
+            type = 'image'
+          }
+          
+          const processedAttachment = {
+            type,
+            name: fileName,
+            content: type === 'image' ? '' : content // Don't include content for images
+          }
+          
+          processedAttachments.push(processedAttachment)
+          console.log(`Successfully processed ${fileName} as ${type}`)
+        } else {
+          console.warn(`Failed to fetch attachment content for ${fileName}:`, response?.status, response?.statusText)
+          // Don't treat attachment failure as a critical error - continue processing
+          console.log(`Continuing without this attachment...`)
+        }
+      } catch (error) {
+        console.error(`Error processing attachment ${attachment.fileName || attachment.name}:`, error)
+        // Don't treat attachment failure as a critical error - continue processing
+        console.log(`Continuing without this attachment...`)
+      }
     }
-  }, [])
-  const startThinking = useCallback(async () => {
+    
+    console.log('Processed attachments for thinking:', processedAttachments.length)
+    processedAttachments.forEach(att => {
+      console.log(`- ${att.name} (${att.type}): ${att.content.length} chars`)
+    })
+    
+    return processedAttachments
+  }
+    const startThinking = useCallback(async () => {
     if (!repositoryId || !question.trim()) return
 
     const now = Date.now()
     const timeSinceLastRequest = now - lastRequestTimeRef.current
-    
-    // Rate limiting: prevent requests within 2 seconds of each other
-    if (timeSinceLastRequest < 2000) {
-      console.log('Rate limit active, ignoring duplicate request')
+
+    // Debug: Log attachments received by ThinkingProcess
+    console.log('🔥 THINKING PROCESS DEBUG:')
+    console.log('🔥 Attachments received:', attachments)
+    console.log('🔥 Attachments length:', attachments?.length)
+    console.log('🔥 Attachments type:', typeof attachments)
+    if (attachments && attachments.length > 0) {
+      attachments.forEach((att, index) => {
+        console.log(`🔥 Attachment ${index}:`, att)
+      })
+    } else {
+      console.log('🚨 NO ATTACHMENTS RECEIVED BY THINKING PROCESS!')
+    }
+
+    // Rate limiting: prevent requests within 3 seconds of each other
+    if (timeSinceLastRequest < 3000) {
+      console.log('Rate limit active, ignoring duplicate request within 3 seconds')
       return
     }
 
@@ -78,7 +177,15 @@ export default function ThinkingProcess({
         lastRequestRef.current.repositoryId === currentRequest.repositoryId &&
         lastRequestRef.current.question === currentRequest.question &&
         isThinking) {
-      console.log('Duplicate request detected, skipping')
+      console.log('Duplicate request detected for same question while thinking, skipping')
+      return
+    }
+
+    // Check if we're already thinking about this exact question
+    if (isThinking && 
+        lastRequestRef.current &&
+        lastRequestRef.current.question === currentRequest.question) {
+      console.log('Already thinking about this question, skipping duplicate')
       return
     }
 
@@ -95,21 +202,28 @@ export default function ThinkingProcess({
     setError(null)
     setThinkingBlocks([])
     setCurrentThought('')
-    
-    // Create abort controller for this request
+    setHasCompleted(false) // Reset completion flag for new request    // Create abort controller for this request
     abortControllerRef.current = new AbortController()
 
     try {
+      // Process attachments to get content for thinking
+      console.log('Processing attachments before thinking...')
+      const processedAttachments = await processAttachmentsForThinking(attachments || [])
+      console.log('Attachment processing completed, starting thinking API call...')
+      
       const response = await fetch('/api/thinking', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           repositoryId,
           question,
+          attachments: processedAttachments,
           stream: true
         }),
         signal: abortControllerRef.current.signal
       })
+
+      console.log('Thinking API response status:', response.status, response.ok)
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
@@ -140,9 +254,7 @@ export default function ThinkingProcess({
         }
 
         const chunk = decoder.decode(value, { stream: true })
-        buffer += chunk
-
-        // Process complete lines
+        buffer += chunk        // Process complete lines
         const lines = buffer.split('\n')
         buffer = lines.pop() || '' // Keep incomplete line in buffer
 
@@ -150,28 +262,120 @@ export default function ThinkingProcess({
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6))
-              
-              if (data.type === 'thinking_start') {
+                if (data.type === 'thinking_start') {
                 currentBlockId = data.block_id || `block_${Date.now()}`
                 currentBlockContent = ''
               } else if (data.type === 'thinking_chunk') {
-                currentBlockContent += data.content || ''
-                setCurrentThought(currentBlockContent)
-              } else if (data.type === 'thinking_complete') {
-                // Complete the current thinking block
-                if (currentBlockContent.trim()) {
-                  setThinkingBlocks(prev => [
-                    ...prev,
-                    {
+                // Check if this is a new step (starts with ##)
+                const content = data.content || ''
+                if (content.includes('Based on my thinking above') || content.startsWith('Based on')) {
+                  // This is the final answer - handle separately
+                  const answerContent = content.replace(/^Based on my thinking above,?\s*/i, '').trim()
+                  setFinalAnswer(answerContent)
+                  
+                  // Complete the previous thinking block if it has content
+                  if (currentBlockContent.trim()) {
+                    const blockToAdd = {
                       id: currentBlockId,
                       content: currentBlockContent.trim(),
                       timestamp: Date.now(),
                       isComplete: true
                     }
-                  ])
+                    
+                    setThinkingBlocks(prev => {
+                      const exists = prev.some(block => 
+                        block.content.trim() === blockToAdd.content.trim()
+                      )
+                      if (!exists) {
+                        return [...prev, blockToAdd]
+                      }
+                      return prev
+                    })
+                  }
+                  
+                  // Clear current thought since this is the final answer
+                  currentBlockContent = ''
+                  setCurrentThought('')
+                } else if (content.includes('<thinking>') || content.includes('</thinking>')) {
+                  // Handle thinking tags - extract content or skip
+                  const cleanContent = content.replace(/<\/?thinking>/g, '').trim()
+                  if (cleanContent) {
+                    currentBlockContent += cleanContent
+                    setCurrentThought(currentBlockContent)
+                  }
+                } else {
+                  // Check if this starts a new major thought (transition words or paragraph break)
+                  const isNewThought = content.match(/^(Actually|Wait|Hmm|Let me|So|Ok|Now)/i) ||
+                                      (currentBlockContent.trim() && content.match(/^\w+.*\.\s*\w/))
+                  
+                  if (isNewThought && currentBlockContent.trim() && currentBlockContent.length > 50) {
+                    // Complete the previous thinking block
+                    const blockToAdd = {
+                      id: currentBlockId,
+                      content: currentBlockContent.trim(),
+                      timestamp: Date.now(),
+                      isComplete: true
+                    }
+                    
+                    setThinkingBlocks(prev => {
+                      const exists = prev.some(block => 
+                        block.content.trim() === blockToAdd.content.trim()
+                      )
+                      if (!exists) {
+                        return [...prev, blockToAdd]
+                      }
+                      return prev
+                    })
+                    
+                    // Start a new thinking block
+                    currentBlockId = `${data.id || 'thought'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+                    currentBlockContent = content
+                    setCurrentThought(content)
+                  } else {
+                    // Continue building current thinking block
+                    if (!finalAnswer) {
+                      currentBlockContent += content
+                      setCurrentThought(currentBlockContent)
+                    } else {
+                      // If we already have a final answer, append to it
+                      setFinalAnswer(prev => prev + content)
+                    }
+                  }
+                }                } else if (data.type === 'answer_submitted') {
+                  // Handle answer submission notification
+                  const finalAnswer = data.final_answer || ''
+                  if (finalAnswer && onAnswerSubmitted) {
+                    onAnswerSubmitted(finalAnswer)
+                  }
+                  
+                  // Display submission notification
+                  const content = data.content || 'Answer submitted to Q&A database'
+                  currentBlockContent += content
+                  setCurrentThought(currentBlockContent)
+                } else if (data.type === 'thinking_complete') {
+                // Complete the current thinking block
+                if (currentBlockContent.trim()) {
+                  const blockToAdd = {
+                    id: currentBlockId,
+                    content: currentBlockContent.trim(),
+                    timestamp: Date.now(),
+                    isComplete: true
+                  }
+                  
+                  // Check for duplicates before adding the final block
+                  setThinkingBlocks(prev => {
+                    const exists = prev.some(block => 
+                      block.content.trim() === blockToAdd.content.trim()
+                    )
+                    if (!exists) {
+                      return [...prev, blockToAdd]
+                    }
+                    return prev
+                  })
                 }
                 setCurrentThought('')
                 currentBlockContent = ''
+                setHasCompleted(true) // Mark as completed to prevent restart
               } else if (data.type === 'error') {
                 setError(data.message || 'An error occurred during thinking')
                 break
@@ -193,34 +397,30 @@ export default function ThinkingProcess({
       setIsThinking(false)
       setCurrentThought('')
     }
-  }, [repositoryId, question, isPaused])
+  }, [repositoryId, question, isPaused, attachments])
 
   const stopThinking = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
     }
     setIsThinking(false)
-    setCurrentThought('')
-  }, [])
+    setCurrentThought('')  }, [])
 
   const clearThoughts = useCallback(() => {
     setThinkingBlocks([])
     setCurrentThought('')
+    setFinalAnswer('')
     setError(null)
+    setHasCompleted(false) // Reset completion flag so thinking can start again
   }, [])
-  // Auto-start thinking when component becomes visible
+
+// NOTE: Removed auto-start thinking to prevent unwanted auto-triggering
+  // Users must manually click "Start Deep Thinking" button to begin the process
+
+  // Reset completion flag when question changes
   useEffect(() => {
-    if (isVisible && repositoryId && question.trim() && !isThinking) {
-      // Add a small delay to debounce rapid changes
-      const timeoutId = setTimeout(() => {
-        if (isVisible && repositoryId && question.trim() && !isThinking) {
-          startThinking()
-        }
-      }, 300)
-      
-      return () => clearTimeout(timeoutId)
-    }
-  }, [isVisible, repositoryId, question, isThinking])
+    setHasCompleted(false)
+  }, [question])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -317,21 +517,20 @@ export default function ThinkingProcess({
                    thinkingBlocks.length > 0 ? 'Complete' : 'Ready'}
                 </span>
               </div>
-              
-              {thinkingBlocks.length > 0 && (
+                {(thinkingBlocks.length > 0 || finalAnswer) && (
                 <span className="text-slate-500 dark:text-slate-400">
-                  {thinkingBlocks.length} reasoning {thinkingBlocks.length === 1 ? 'block' : 'blocks'}
+                  {thinkingBlocks.length} reasoning {thinkingBlocks.length === 1 ? 'step' : 'steps'}
+                  {finalAnswer && ' + final answer'}
                 </span>
               )}
             </div>
-            
-            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
               {!isThinking && !error && (
                 <button
                   onClick={startThinking}
                   className="px-3 py-1.5 text-sm bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors"
                 >
-                  Restart Thinking
+                  {thinkingBlocks.length > 0 || finalAnswer ? 'Restart Thinking' : 'Start Deep Thinking'}
                 </button>
               )}
               
@@ -368,11 +567,33 @@ export default function ThinkingProcess({
                 <div className="flex items-start gap-3">
                   <div className="flex-shrink-0 w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-medium">
                     {index + 1}
-                  </div>
-                  <div className="flex-1 min-w-0">
+                  </div>                  <div className="flex-1 min-w-0">
                     <div className="prose prose-sm dark:prose-invert max-w-none">
-                      <div className="text-slate-900 dark:text-white leading-relaxed whitespace-pre-wrap">
-                        {block.content}
+                      <div className="text-slate-900 dark:text-white leading-relaxed">
+                        {/* Render content with basic markdown formatting for headers */}
+                        {block.content.split('\n').map((line, lineIndex) => {
+                          if (line.startsWith('## ')) {
+                            return (
+                              <h3 key={lineIndex} className="text-lg font-semibold text-purple-700 dark:text-purple-300 mt-4 mb-2 first:mt-0">
+                                {line.replace('## ', '')}
+                              </h3>
+                            )
+                          } else if (line.startsWith('# ')) {
+                            return (
+                              <h2 key={lineIndex} className="text-xl font-bold text-purple-800 dark:text-purple-200 mt-4 mb-2 first:mt-0">
+                                {line.replace('# ', '')}
+                              </h2>
+                            )
+                          } else if (line.trim() === '') {
+                            return <br key={lineIndex} />
+                          } else {
+                            return (
+                              <p key={lineIndex} className="mb-2 last:mb-0">
+                                {line}
+                              </p>
+                            )
+                          }
+                        })}
                       </div>
                     </div>
                     <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
@@ -389,20 +610,72 @@ export default function ThinkingProcess({
                 <div className="flex items-start gap-3">
                   <div className="flex-shrink-0 w-6 h-6 bg-gradient-to-br from-purple-500 to-pink-600 rounded-full flex items-center justify-center">
                     <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                  </div>
-                  <div className="flex-1 min-w-0">
+                  </div>                  <div className="flex-1 min-w-0">
                     <div className="prose prose-sm dark:prose-invert max-w-none">
-                      <div className="text-slate-900 dark:text-white leading-relaxed whitespace-pre-wrap">
-                        {currentThought}
+                      <div className="text-slate-900 dark:text-white leading-relaxed">
+                        {/* Render current thought with basic markdown formatting */}
+                        {currentThought.split('\n').map((line, lineIndex) => {
+                          if (line.startsWith('## ')) {
+                            return (
+                              <h3 key={lineIndex} className="text-lg font-semibold text-purple-700 dark:text-purple-300 mt-4 mb-2 first:mt-0">
+                                {line.replace('## ', '')}
+                              </h3>
+                            )
+                          } else if (line.startsWith('# ')) {
+                            return (
+                              <h2 key={lineIndex} className="text-xl font-bold text-purple-800 dark:text-purple-200 mt-4 mb-2 first:mt-0">
+                                {line.replace('# ', '')}
+                              </h2>
+                            )
+                          } else if (line.trim() === '') {
+                            return <br key={lineIndex} />
+                          } else {
+                            return (
+                              <p key={lineIndex} className="mb-2 last:mb-0">
+                                {line}
+                              </p>
+                            )
+                          }
+                        })}
                         <span className="inline-block w-2 h-4 bg-purple-500 ml-1 animate-pulse" />
                       </div>
+                    </div>
+                  </div>
+                </div>
+              </div>            )}
+
+            {/* Final Answer Section */}
+            {finalAnswer && (
+              <div className="mt-6 border-t border-slate-200 dark:border-slate-700 pt-6">
+                <div className="mb-3 flex items-center gap-2">
+                  <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center">
+                    <SparklesIcon className="w-4 h-4 text-white" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-green-700 dark:text-green-300">
+                    Final Answer
+                  </h3>
+                </div>
+                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <div className="text-slate-900 dark:text-white leading-relaxed">
+                      {finalAnswer.split('\n').map((line, lineIndex) => {
+                        if (line.trim() === '') {
+                          return <br key={lineIndex} />
+                        } else {
+                          return (
+                            <p key={lineIndex} className="mb-2 last:mb-0">
+                              {line}
+                            </p>
+                          )
+                        }
+                      })}
                     </div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Empty state */}            {!isThinking && thinkingBlocks.length === 0 && !currentThought && !error && (
+            {/* Empty state */}{!isThinking && thinkingBlocks.length === 0 && !currentThought && !error && (
               <div className="text-center py-8">
                 <CpuChipIcon className="w-12 h-12 text-slate-400 dark:text-slate-500 mx-auto mb-3" />
                 <p className="text-slate-600 dark:text-slate-400 text-sm">

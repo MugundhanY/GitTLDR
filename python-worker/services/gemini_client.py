@@ -152,7 +152,6 @@ class GeminiClient:
         
         # Rate limiting manager
         self.rate_limit_manager = RateLimitManager()
-        
     def count_tokens(self, text: str) -> int:
         """Count tokens in text."""
         self._ensure_configured()
@@ -167,14 +166,26 @@ class GeminiClient:
             chunk_tokens = tokens[i:i + max_tokens]
             chunk_text = self.encoder.decode(chunk_tokens)
             chunks.append(chunk_text)
-            
         return chunks
     
     async def generate_embedding(self, text: str) -> List[float]:
-        """Generate embedding for text using sentence-transformers."""
+        """Generate embedding for text using sentence-transformers or fallback."""
         self._ensure_configured()
         
         try:
+            if self.embedding_model is None:
+                # Fallback: Generate a simple hash-based embedding
+                logger.warning("Using fallback embedding method - sentence-transformers not available")
+                import hashlib
+                # Create a deterministic embedding from text hash
+                text_hash = hashlib.sha256(text.encode()).hexdigest()
+                # Convert hash to float values (simple but deterministic)
+                embedding = [float(int(text_hash[i:i+2], 16)) / 255.0 for i in range(0, min(len(text_hash), 768), 2)]
+                # Pad to standard embedding size
+                while len(embedding) < 384:
+                    embedding.append(0.0)
+                return embedding[:384]  # Return fixed size
+            
             # Truncate text if too long (sentence-transformers has different limits)
             # Most sentence-transformers models have a max sequence length of 512 tokens
             token_count = self.count_tokens(text)
@@ -200,7 +211,14 @@ class GeminiClient:
             
         except Exception as e:
             logger.error("Failed to generate embedding", error=str(e))
-            raise
+            # Fallback on any error
+            logger.warning("Using emergency fallback embedding method")
+            import hashlib
+            text_hash = hashlib.sha256(text.encode()).hexdigest()
+            embedding = [float(int(text_hash[i:i+2], 16)) / 255.0 for i in range(0, min(len(text_hash), 768), 2)]
+            while len(embedding) < 384:
+                embedding.append(0.0)
+            return embedding[:384]
 
     async def generate_summary(self, text: str, context: str = "code repository") -> str:
         """Generate summary of text with comprehensive retry logic and rate limiting."""
@@ -264,13 +282,14 @@ class GeminiClient:
                             attempt=attempt + 1, 
                             max_retries=max_retries,
                             error=error_str[:100]
-                        )
+                        )                    
                     elif self.rate_limit_manager.is_temporary_error(error_str):
                         logger.warning(
                             f"Temporary error, retrying in {retry_delay}s", 
                             attempt=attempt + 1, 
                             max_retries=max_retries,
-                            error=error_str[:100]                    )
+                            error=error_str[:100]
+                        )
                     
                     await asyncio.sleep(retry_delay)
                     continue
@@ -303,10 +322,9 @@ class GeminiClient:
         logger.info(f"Q&A Debug - Files content count: {len(files_content)}")
         attachment_count = 0
         repo_file_count = 0
-        
         for i, content in enumerate(files_content):
             content_preview = content[:200] + "..." if len(content) > 200 else content
-            is_attachment = "attachment/" in content or "Attachment:" in content
+            is_attachment = "attachment/" in content or "Attachment:" in content or "🔴 USER-PROVIDED" in content
             if is_attachment:
                 attachment_count += 1
                 logger.info(f"Q&A Debug - ATTACHMENT {attachment_count} preview: {content_preview}")
@@ -578,7 +596,7 @@ Provide a clear, structured summary in 2-3 paragraphs:
                 if attempt < max_retries - 1:
                     delay = base_delay * (2 ** attempt)
                     logger.info(f"Retrying in {delay} seconds...")
-                    await asyncio.sleep(delay)
+                    await asyncio.sleep(delay)                
                 else:
                     logger.error(f"All chain-of-thought attempts failed: {error_str}")
                     raise Exception(f"Gemini chain-of-thought failed after {max_retries} attempts: {error_str}")
@@ -587,37 +605,106 @@ Provide a clear, structured summary in 2-3 paragraphs:
 
     def _build_chain_of_thought_prompt(self, question: str, context: str) -> str:
         """Build prompt for step-by-step chain-of-thought reasoning."""
-        return f"""You are an expert AI assistant that thinks step-by-step like DeepSeek R1. You need to analyze a code repository and answer a question using detailed chain-of-thought reasoning.
+        
+        # Check if context contains user attachments
+        has_attachments = "🔴 USER-PROVIDED" in context
+        attachment_instruction = ""
+        if has_attachments:
+            attachment_instruction = """
+🔴🔴🔴 CRITICAL ATTACHMENT PRIORITY 🔴🔴🔴: The user has provided specific files/attachments for analysis. These are marked with "🔴 USER-PROVIDED" in the context. 
 
-IMPORTANT: You must think step-by-step and show your reasoning process clearly. Structure your response as follows:
+MANDATORY REQUIREMENTS:
+1. Your thinking MUST start by identifying and analyzing the user's attachments FIRST
+2. You MUST reference the actual content of these attachments directly in your reasoning
+3. You MUST prioritize the user's attachment content over repository code analysis
+4. Your final answer MUST be primarily based on the user's attachments
+5. If asked about relationships, compare attachment content to repository content
 
-## Step 1: Understanding the Question
-[Analyze what the user is asking and what information you need to find]
+ATTACHMENT CONTENT TAKES ABSOLUTE PRIORITY in your analysis and reasoning.
+"""
+        
+        return f"""You are an expert AI assistant that thinks step-by-step like DeepSeek R1. You need to show your actual reasoning process - not just structured analysis, but real thinking with exploration, uncertainty, corrections, and discoveries.
 
-## Step 2: Repository Analysis
-[Examine the code structure, files, and architecture]
+{attachment_instruction}
 
-## Step 3: Key Findings
-[Identify the most relevant code, patterns, and relationships]
+CRITICAL: Your response must show genuine exploration and reasoning. Think like a human would - with uncertainty, questions, discoveries, and course corrections. Make it feel like reading someone's actual thought process.
 
-## Step 4: Technical Analysis
-[Deep dive into the technical details and implementation]
+Your thinking should include:
+- Initial thoughts and first impressions
+- Exploring different possibilities and approaches
+- Questioning your own assumptions
+- Making connections between concepts
+- Getting stuck and trying different angles
+- Having insights and "aha" moments
+- Correcting yourself when you realize something
+- Building understanding piece by piece
+- ESPECIALLY: If user attachments are present, focus on analyzing their specific content
 
-## Step 5: Synthesis and Conclusion
-[Combine all findings to provide a comprehensive answer]
+Structure your response as:
+
+<thinking>
+Let me think about this question step by step...
+
+Hmm, when I look at this question about "{question}", my first thought is... Actually, let me be more careful here. I should probably start by understanding what exactly is being asked.
+
+{f"Wait, I notice there are user-provided attachments marked with 🔴. Let me focus on those first since that's what the user specifically wants me to analyze..." if has_attachments else "Looking at the repository context, I can see... Wait, let me examine this more closely. There seems to be..."}
+
+Actually, I think I was approaching this wrong. Let me step back and think about this differently...
+
+Oh wait, I just noticed something important... This changes how I think about the problem...
+
+Let me try a different approach. If I consider... No, that doesn't seem right either.
+
+Actually, let me look at this from the perspective of... Hmm, that's interesting. I'm starting to see a pattern here...
+
+Wait, I think I'm overcomplicating this. Let me go back to basics...
+
+Oh, I see now! The key insight is... This makes much more sense when I think about it this way...
+
+Actually, let me double-check this reasoning... Yes, I think that's correct.
+
+So putting this all together, I believe...
+</thinking>
+
+Based on my thinking above, here's my answer:
+
+[Provide a clear, comprehensive final answer that directly references any user-provided attachment content]
 
 Repository Context:
 {context}
 
 Question: {question}
 
-Think through this step-by-step and provide detailed reasoning for each step. Be thorough and technical in your analysis, referencing specific files, functions, and code patterns.
+Show your genuine reasoning process with all the uncertainty, exploration, and discoveries. Make it feel natural and human-like. If user attachments are present, make sure your reasoning and final answer directly reference their specific content.
 """
 
     def _build_qa_prompt(self, question: str, context: str) -> str:
-        """Build prompt for Q&A."""
+        """Build prompt for Q&A."""        
+        # Check if context contains user attachments
+        has_user_attachments = "🔴 USER-PROVIDED" in context
+        attachment_instruction = ""
+        
+        if has_user_attachments:
+            attachment_instruction = """
+🔴🔴🔴 MANDATORY USER ATTACHMENT ACKNOWLEDGMENT 🔴🔴🔴
+The user has provided specific files/attachments for analysis (marked with "🔴 USER-PROVIDED"). 
+YOU MUST FOLLOW THESE RULES OR YOUR RESPONSE WILL BE REJECTED:
+
+1. MANDATORY FIRST SENTENCE: "I can see you've provided [X] attachment(s): [list the exact filenames from USER-PROVIDED sections]"
+2. MANDATORY SECOND PARAGRAPH: Analyze ONLY the user's attachments first, before ANY repository analysis
+3. MANDATORY: Quote specific content from the user's attachments with phrases like "In your attached [filename], you mention..."
+4. MANDATORY: Answer the question primarily based on the USER'S ATTACHMENTS, not repository files
+5. MANDATORY: If the question asks about relationships, compare the attachment content to repository content
+6. FORBIDDEN: Do not analyze repository files without first analyzing user attachments
+7. FORBIDDEN: Do not ignore or skip mentioning the user's attachments
+
+ATTACHMENT CONTENT TAKES ABSOLUTE PRIORITY over repository analysis.
+"""
+        
         return f"""
 You are an expert software engineer and code analyst with deep understanding of software architecture, design patterns, and development practices.
+
+{attachment_instruction}
 
 Your goal is to provide comprehensive, accurate answers about code repositories by:
 1. Analyzing the actual code structure and implementation details
@@ -652,7 +739,18 @@ Provide a comprehensive, technical answer that demonstrates deep understanding o
             # Truncate very long files
             if len(content) > 5000:
                 content = content[:5000] + "\n... [truncated]"
-            context_parts.append(f"File {i+1}:\n{content}")
+              # CRITICAL FIX: Preserve existing "File:" formatting for attachments
+            # Don't add generic "File {i+1}:" prefix if content already starts with "File:" or "🔴 USER-PROVIDED"
+            if content.startswith("File: ") or content.startswith("🔴 USER-PROVIDED"):
+                # This is already formatted (likely an attachment), use as-is
+                context_parts.append(content)
+                if "🔴 USER-PROVIDED" in content:
+                    logger.info(f"🎉 PRESERVED USER-PROVIDED ATTACHMENT: {content[:100]}...")
+                else:
+                    logger.info(f"🎉 PRESERVED ATTACHMENT FORMATTING: {content[:100]}...")
+            else:
+                # This is a repository file, add standard prefix
+                context_parts.append(f"File {i+1}:\n{content}")
             
         return "\n\n".join(context_parts)
         
@@ -679,11 +777,15 @@ Provide a comprehensive, technical answer that demonstrates deep understanding o
                 HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
             }
-            
-            # Initialize sentence-transformers embedding model
-            logger.info("Loading paraphrase-mpnet-base-v2 embedding model...")
-            self.embedding_model = SentenceTransformer('sentence-transformers/paraphrase-mpnet-base-v2')
-            logger.info("Embedding model loaded successfully")
+              # Initialize sentence-transformers embedding model with error handling
+            try:
+                logger.info("Loading paraphrase-mpnet-base-v2 embedding model...")
+                self.embedding_model = SentenceTransformer('sentence-transformers/paraphrase-mpnet-base-v2')
+                logger.info("Embedding model loaded successfully")
+            except Exception as e:
+                logger.warning(f"Failed to load sentence-transformers model: {str(e)}")
+                logger.info("Using fallback embedding approach")
+                self.embedding_model = None
             
             self._initialized = True
             

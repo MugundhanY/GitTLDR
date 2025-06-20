@@ -288,6 +288,73 @@ class DatabaseService:
             logger.error(f"Failed to load file content from B2: {str(e)}")
             return None
     
+    async def create_question(
+        self, 
+        repository_id: str,
+        user_id: str,
+        query: str,
+        answer: str,
+        confidence_score: float = 0.9,
+        relevant_files: List[Dict[str, Any]] = None,
+        category: str = "ai_generated"
+    ) -> str:
+        """
+        Create a new question entry in the database.
+        
+        Args:
+            repository_id: Repository ID
+            user_id: User ID
+            query: The question text
+            answer: The answer text
+            confidence_score: Confidence score for the answer
+            relevant_files: List of relevant files
+            category: Question category
+            
+        Returns:
+            The created question ID
+        """
+        try:
+            pool = await self._get_connection_pool()
+            
+            async with pool.acquire() as connection:
+                # Generate a CUID-like ID (since database default isn't working)
+                import time
+                import random
+                import string
+                
+                # Generate a CUID-like identifier
+                timestamp = str(int(time.time() * 1000))[-10:]  # Last 10 digits of timestamp
+                random_chars = ''.join(random.choices(string.ascii_lowercase + string.digits, k=15))
+                generated_id = f"q{timestamp}{random_chars}"
+                
+                # Insert the question with explicit ID
+                question_id = await connection.fetchval(
+                    """
+                    INSERT INTO questions (
+                        id, repository_id, user_id, query, answer, 
+                        confidence_score, relevant_files, category,
+                        created_at, updated_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()
+                    ) RETURNING id
+                    """,
+                    generated_id,
+                    repository_id,
+                    user_id,
+                    query,
+                    answer,
+                    confidence_score,
+                    json.dumps(relevant_files) if relevant_files else json.dumps([]),
+                    category
+                )
+                
+                logger.info(f"Created question in database with ID: {question_id}")
+                return str(question_id)
+                
+        except Exception as e:
+            logger.error(f"Failed to create question in database: {str(e)}")
+            raise
+    
     async def close(self):
         """Close database connections."""
         if self.connection_pool:

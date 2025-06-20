@@ -14,7 +14,7 @@ export interface Question {
   status: 'pending' | 'completed' | 'failed'
   tags?: string[]
   category?: string
-  relevantFiles?: string[]
+  relevantFiles?: (string | any)[] // Can be strings or objects with path properties
   confidence?: number
   isFavorite?: boolean
   reasoningSteps?: ReasoningStep[]
@@ -89,16 +89,27 @@ export function useQnAFiltering({
     Array.from(new Set(questions.flatMap(q => q.tags || []))), 
     [questions]
   )
-
   // Get unique file types/extensions from relevant files
   const allFileTypes = useMemo(() => {
     const extensions = new Set<string>()
     questions.forEach(q => {
-      if (q.relevantFiles) {
+      if (q.relevantFiles && Array.isArray(q.relevantFiles)) {
         q.relevantFiles.forEach(filePath => {
-          const extension = filePath.split('.').pop()?.toLowerCase()
-          if (extension) {
-            extensions.add(extension)
+          // Handle different possible formats of filePath
+          let pathString: string | undefined
+          
+          if (typeof filePath === 'string') {
+            pathString = filePath
+          } else if (filePath && typeof filePath === 'object') {
+            // Handle case where filePath might be an object with path property
+            pathString = (filePath as any).path || (filePath as any).name || (filePath as any).fileName
+          }
+          
+          if (pathString && typeof pathString === 'string') {
+            const extension = pathString.split('.').pop()?.toLowerCase()
+            if (extension) {
+              extensions.add(extension)
+            }
           }
         })
       }
@@ -137,17 +148,29 @@ export function useQnAFiltering({
       filtered = filtered.filter(q => 
         selectedTags.some(tag => q.tags?.includes(tag))
       )
-    }
-
-    // Apply file type filter
+    }    // Apply file type filter
     if (selectedFileTypes.length > 0) {
       filtered = filtered.filter(q => {
         if (!q.relevantFiles || q.relevantFiles.length === 0) {
           return false // No relevant files, so it doesn't match any file type filter
         }
         return q.relevantFiles.some(filePath => {
-          const extension = filePath.split('.').pop()?.toLowerCase()
-          return extension && selectedFileTypes.includes(extension)
+          // Handle different possible formats of filePath
+          let pathString: string | undefined
+          
+          if (typeof filePath === 'string') {
+            pathString = filePath
+          } else if (filePath && typeof filePath === 'object') {
+            // Handle case where filePath might be an object with path property
+            pathString = (filePath as any).path || (filePath as any).name || (filePath as any).fileName
+          }
+          
+          if (pathString && typeof pathString === 'string') {
+            const extension = pathString.split('.').pop()?.toLowerCase()
+            return extension && selectedFileTypes.includes(extension)
+          }
+          
+          return false
         })
       })
     }
