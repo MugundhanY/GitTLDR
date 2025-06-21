@@ -331,11 +331,59 @@ class GeminiClient:
             else:
                 repo_file_count += 1
                 logger.info(f"Q&A Debug - Repository file {repo_file_count} preview: {content_preview}")
-        
         logger.info(f"Q&A Context Summary - Repository files: {repo_file_count}, Attachments: {attachment_count}")
         
         for attempt in range(max_retries):
             try:
+                # Check if this is a commit-focused question and optimize context
+                is_commit_focused = "🔄 COMMIT ANALYSIS RESULTS:" in context or any("🔄 COMMIT ANALYSIS" in fc for fc in files_content)
+                
+                if is_commit_focused:
+                    logger.info("🔄 GEMINI COMMIT OPTIMIZATION: Detected commit-focused question, optimizing context")
+                    
+                    # Separate commit data from regular files
+                    commit_files = []
+                    other_files = []
+                    
+                    for content in files_content:
+                        if "🔄 COMMIT ANALYSIS" in content or "COMMIT " in content or "Message:" in content:
+                            commit_files.append(content)
+                        else:
+                            other_files.append(content)
+                    
+                    # For commit questions, severely limit non-commit content
+                    MAX_COMMIT_CONTEXT = 3000  # Small context for commit questions
+                    commit_content_size = sum(len(fc) for fc in commit_files)
+                    
+                    logger.info(f"🔄 COMMIT OPTIMIZATION: Found {len(commit_files)} commit files ({commit_content_size} chars), {len(other_files)} other files")
+                    
+                    if commit_content_size + sum(len(fc) for fc in other_files) > MAX_COMMIT_CONTEXT:
+                        # Keep all commit files, severely reduce other files
+                        remaining_budget = max(0, MAX_COMMIT_CONTEXT - commit_content_size)
+                        
+                        if remaining_budget > 500:  # Only include other files if there's meaningful space
+                            optimized_other_files = []
+                            current_size = 0
+                            
+                            for content in other_files:
+                                if current_size + len(content) <= remaining_budget:
+                                    optimized_other_files.append(content)
+                                    current_size += len(content)
+                                else:
+                                    # Heavily truncate to fit
+                                    remaining_space = remaining_budget - current_size
+                                    if remaining_space > 200:  # Only if meaningful space left
+                                        truncated = content[:remaining_space-50] + "\n... [truncated for commit focus]"
+                                        optimized_other_files.append(truncated)
+                                    break
+                            
+                            files_content = commit_files + optimized_other_files
+                            logger.info(f"🔄 COMMIT OPTIMIZATION: Kept {len(commit_files)} commit files + {len(optimized_other_files)} truncated files")
+                        else:
+                            # Remove all non-commit files
+                            files_content = commit_files
+                            logger.info(f"🔄 COMMIT OPTIMIZATION: Removed all non-commit files, kept only {len(commit_files)} commit files")
+                
                 # Prepare context from files
                 combined_context = self._prepare_qa_context(context, files_content)
                 
@@ -344,20 +392,56 @@ class GeminiClient:
                 logger.info(f"Q&A Debug - Combined context preview: {context_preview}")
                 
                 # Build Q&A prompt
-                prompt = self._build_qa_prompt(question, combined_context)
+                prompt = self._build_qa_prompt(question, combined_context)                # Generate answer with adaptive token limits based on context size
+                context_size = len(combined_context)
+                if context_size > 15000:  # Very large context
+                    max_tokens = 6000  # More tokens for complex questions
+                elif context_size > 8000:  # Large context  
+                    max_tokens = 5000  # Medium token limit
+                else:  # Normal context
+                    max_tokens = 4000  # Standard limit
                 
-                # Generate answer
+                logger.info(f"Using {max_tokens} max tokens for context size: {context_size} chars")
+                
                 response = await self.text_model.generate_content_async(
                     prompt,
                     safety_settings=self.safety_settings,
                     generation_config=genai.types.GenerationConfig(
                         temperature=0.2,
                         top_p=0.9,
-                        max_output_tokens=2000,
+                        max_output_tokens=max_tokens,  # Adaptive token limit
                     )
                 )
                 
                 answer = response.text.strip()
+                
+                # Enhanced truncation detection and handling
+                is_likely_truncated = False
+                truncation_reasons = []
+                
+                # Check if response was likely truncated
+                if len(answer) >= max_tokens * 0.95:  # Within 5% of token limit
+                    is_likely_truncated = True
+                    truncation_reasons.append(f"Length near token limit ({len(answer)}/{max_tokens * 4} chars)")
+                
+                if not answer.endswith(('.', '!', '?', '```', ')', ']', '}', '"')):
+                    is_likely_truncated = True
+                    truncation_reasons.append("No proper sentence ending")
+                
+                # Check for abrupt cuts in common patterns
+                if answer.endswith(('*', '-', ':', ',', ';', 'and', 'or', 'but', 'with', 'to', 'for')):
+                    is_likely_truncated = True
+                    truncation_reasons.append("Ends with incomplete word/phrase")
+                
+                if is_likely_truncated:
+                    logger.warning(f"Response likely truncated: {', '.join(truncation_reasons)}")
+                    
+                    # Add helpful truncation notice
+                    if not answer.endswith('\n'):
+                        answer += '\n'
+                    answer += '\n[Note: This response may have been truncated due to length. If you need more details about specific aspects, please ask a more focused question.]'
+                else:
+                    logger.info(f"Response appears complete ({len(answer)} chars, proper ending)")
                 
                 # Extract confidence score (simple heuristic)
                 confidence = self._calculate_confidence(answer, combined_context)
@@ -682,7 +766,28 @@ Show your genuine reasoning process with all the uncertainty, exploration, and d
         """Build prompt for Q&A."""        
         # Check if context contains user attachments
         has_user_attachments = "🔴 USER-PROVIDED" in context
+          # Check if this is a commit-focused question
+        is_commit_focused = "🔄 COMMIT ANALYSIS RESULTS:" in context
+        
+        # Initialize instructions
+        commit_instruction = ""
         attachment_instruction = ""
+        
+        if is_commit_focused:
+            commit_instruction = """
+🔄🔄� COMMIT-FOCUSED QUESTION DETECTED 🔄🔄🔄
+This question is specifically about commits/commit history. 
+
+MANDATORY REQUIREMENTS:
+1. FOCUS PRIMARILY on the commit data provided in the context
+2. For "last commit" questions, provide specific details about the most recent commit
+3. Include commit SHA, message, author, date, and any file changes
+4. Do NOT provide extensive code file analysis unless specifically asked
+5. Keep repository file discussion minimal and only as supporting context
+6. Be direct and concise - user wants commit information, not code architecture
+
+COMMIT DATA TAKES PRIORITY over file content analysis.
+"""
         
         if has_user_attachments:
             attachment_instruction = """
@@ -706,6 +811,8 @@ You are an expert software engineer and code analyst with deep understanding of 
 
 {attachment_instruction}
 
+{commit_instruction}
+
 Your goal is to provide comprehensive, accurate answers about code repositories by:
 1. Analyzing the actual code structure and implementation details
 2. Understanding relationships between files and components
@@ -722,6 +829,17 @@ IMPORTANT GUIDELINES:
 - For folder/directory questions, analyze the actual contents and structure
 - Use technical accuracy and provide actionable insights
 - If you find conflicting information, prioritize actual code over documentation
+
+🔄 FOR COMMIT-RELATED QUESTIONS:
+- If commit data is provided in the context, analyze it thoroughly
+- For "last commit" or "recent commits" questions, provide specific details like:
+  * Commit SHA (shortened)
+  * Commit message
+  * Author and timestamp
+  * Files changed (if available)
+  * Brief description of what the commit does
+- Always provide concrete, factual information from the commit data
+- If no commit data is available, explain that and suggest how the user can find this information
 
 Repository Context:
 {context}

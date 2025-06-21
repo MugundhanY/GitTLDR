@@ -320,3 +320,7 @@ Please think through this step by step, showing your complete reasoning process.
 """
         
         return prompt
+
+
+# Create singleton instance for easy importing
+deepseek_client = EnhancedDeepSeekClient()

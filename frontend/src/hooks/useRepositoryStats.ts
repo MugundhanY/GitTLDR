@@ -310,12 +310,11 @@ export function useRepositoryStats(repositoryId?: string) {
       ongoingRequests.delete(repositoryId);
     } finally {
       setIsLoading(false);
-    }
-  }, [repositoryId, cache, ongoingRequests]); // Add dependencies for useCallback
+    }  }, [repositoryId]); // Remove cache and ongoingRequests from dependencies to prevent infinite loop
   
   useEffect(() => {
     fetchStats();
-  }, [fetchStats]); // Now properly depends on the memoized function
+  }, [repositoryId]); // Only depend on repositoryId, not the fetchStats function
 
   // Debug logging for monitoring optimization effectiveness
   useEffect(() => {

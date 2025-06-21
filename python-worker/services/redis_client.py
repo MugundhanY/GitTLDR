@@ -137,6 +137,27 @@ class RedisClient:
             raise RuntimeError("Redis client not connected")
         return await self.redis.keys(pattern)
 
+    async def get(self, key: str) -> Optional[str]:
+        """Get value from Redis."""
+        if not self.redis:
+            await self.connect()
+        try:
+            return await self.redis.get(key)
+        except Exception as e:
+            logger.error(f"Failed to get value from Redis: {str(e)}")
+            return None
+
+    async def setex(self, key: str, ttl: int, value: str) -> bool:
+        """Set value in Redis with expiration."""
+        if not self.redis:
+            await self.connect()
+        try:
+            await self.redis.setex(key, ttl, value)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to set value in Redis: {str(e)}")
+            return False
+
 
 # Global Redis client instance
 redis_client = RedisClient()

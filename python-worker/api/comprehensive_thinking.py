@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from services.file_service import FileRetrievalService
 from services.smart_context_builder import SmartContextBuilder
 from services.database_service import database_service
-from services.deepseek_client import deepseek_client
+from services.enhanced_deepseek_client import deepseek_client
 from services.gemini_client import gemini_client
 from utils.logger import get_logger
 import json

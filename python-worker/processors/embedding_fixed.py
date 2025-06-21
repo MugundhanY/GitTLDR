@@ -167,8 +167,9 @@ class EmbeddingProcessor:
             if is_commit_question and commit_params:
                 commit_analysis_attempted = True
                 logger.info(f"Detected {commit_params.question_type} commit question")
-                try:                    # Get relevant commits using the new scalable service
-                    commits = await commit_analysis_service.get_commits_for_question(repository_id, commit_params, user_id)
+                try:
+                    # Get relevant commits using the new scalable service
+                    commits = await commit_analysis_service.get_commits_for_question(repository_id, commit_params)
                     if commits:
                         # Format commits for context
                         commit_content = commit_analysis_service.format_commits_for_context(commits, question)

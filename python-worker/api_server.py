@@ -493,7 +493,7 @@ async def detailed_health_check():
     
     # Check DeepSeek client
     try:
-        from services.deepseek_client import deepseek_client
+        from services.enhanced_deepseek_client import deepseek_client
         health_status["services"]["deepseek"] = "configured" if deepseek_client.github_token else "not_configured"
     except Exception as e:
         health_status["services"]["deepseek"] = f"error: {str(e)}"
