@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Button } from '@/components/ui/Button'
 import { 
   QuestionMarkCircleIcon,
   SparklesIcon,
   PaperAirplaneIcon,
-  CogIcon
+  CogIcon,
+  MicrophoneIcon,
+  StopIcon
 } from '@heroicons/react/24/outline'
 import { Repository } from '@/contexts/RepositoryContext'
 import { QuestionAttachment } from '@/types/attachments'
@@ -43,11 +45,41 @@ export default function QuestionInput({
   onAttachmentsChange,
   className = ""
 }: QuestionInputProps) {
-  
+  const [isRecording, setIsRecording] = useState(false)
+  const recognitionRef = useRef<any>(null)
+
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       onSubmit()
+    }
+  }
+
+  const handleVoiceInput = () => {
+    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+      alert('Speech recognition is not supported in this browser.')
+      return
+    }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!recognitionRef.current) {
+      recognitionRef.current = new SpeechRecognition()
+      recognitionRef.current.continuous = false
+      recognitionRef.current.interimResults = false
+      recognitionRef.current.lang = 'en-US'
+      recognitionRef.current.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript
+        onQuestionChange((question || '') + (question && !question.endsWith(' ')? ' ' : '') + transcript)
+        setIsRecording(false)
+      }
+      recognitionRef.current.onerror = () => setIsRecording(false)
+      recognitionRef.current.onend = () => setIsRecording(false)
+    }
+    if (!isRecording) {
+      setIsRecording(true)
+      recognitionRef.current.start()
+    } else {
+      setIsRecording(false)
+      recognitionRef.current.stop()
     }
   }
 
@@ -123,14 +155,24 @@ export default function QuestionInput({
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
               Your Question
             </label>
-            <textarea
-              placeholder="What does this code do? How does authentication work? Explain the main architecture... (Enable Deep Research for complex analysis)"
-              value={question}
-              onChange={(e) => onQuestionChange(e.target.value)}
-              className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all duration-200"
-              rows={3}
-              onKeyPress={handleKeyPress}
-            />
+            <div className="flex items-center gap-2">
+              <textarea
+                placeholder="What does this code do? How does authentication work? Explain the main architecture... (Enable Deep Research for complex analysis)"
+                value={question}
+                onChange={(e) => onQuestionChange(e.target.value)}
+                className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all duration-200"
+                rows={3}
+                onKeyPress={handleKeyPress}
+              />
+              <button
+                type="button"
+                onClick={handleVoiceInput}
+                className={`ml-2 p-2 rounded-full border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors ${isRecording ? 'animate-pulse border-blue-500' : ''}`}
+                title={isRecording ? 'Stop Recording' : 'Start Voice Input'}
+              >
+                {isRecording ? <StopIcon className="w-5 h-5 text-blue-600" /> : <MicrophoneIcon className="w-5 h-5 text-blue-600" />}
+              </button>
+            </div>
           </div>
 
           {/* Attachments */}

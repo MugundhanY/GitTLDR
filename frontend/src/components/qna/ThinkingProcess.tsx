@@ -8,7 +8,10 @@ import {
   XMarkIcon,
   ChevronDownIcon,
   ChevronUpIcon,
-  CpuChipIcon
+  CpuChipIcon,
+  SpeakerWaveIcon,
+  HandThumbUpIcon,
+  HandThumbDownIcon
 } from '@heroicons/react/24/outline'
 
 interface ThinkingProcessProps {
@@ -51,6 +54,10 @@ export default function ThinkingProcess({
   const [finalAnswer, setFinalAnswer] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [hasCompleted, setHasCompleted] = useState(false)
+  const [stepFeedback, setStepFeedback] = useState<{ [id: string]: 'like' | 'dislike' }>({})
+  const [stepFeedbackLoading, setStepFeedbackLoading] = useState<{ [id: string]: boolean }>({})
+  const [finalFeedback, setFinalFeedback] = useState<'like' | 'dislike' | null>(null)
+  const [finalFeedbackLoading, setFinalFeedbackLoading] = useState(false)
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const thoughtContainerRef = useRef<HTMLDivElement>(null)
@@ -265,7 +272,7 @@ export default function ThinkingProcess({
               } else if (data.type === 'thinking_chunk') {
                 const content = data.content || ''
                 // DeepSeek: buffer until logical break, Gemini: push immediately
-                const isDeepSeek = (data.id || currentBlockId || '').toLowerCase().includes('deepseek') || (data.provider === 'DeepSeek')
+                const isDeepSeek = (data.id || currentBlockId || `block_${Date.now()}`).toLowerCase().includes('deepseek') || (data.provider === 'DeepSeek')
                 if (isDeepSeek) {
                   currentBlockContent += content
                   // Logical break: double newline or markdown step header
@@ -411,6 +418,52 @@ export default function ThinkingProcess({
       }
     }
   }, [])
+
+  // Voice output for reasoning steps and final answer
+  const handleSpeak = (text: string) => {
+    if (!('speechSynthesis' in window)) {
+      alert('Text-to-speech is not supported in this browser.')
+      return
+    }
+    window.speechSynthesis.cancel(); // Stop any ongoing speech
+    const utterance = new window.SpeechSynthesisUtterance(text)
+    utterance.lang = 'en-US'
+    window.speechSynthesis.speak(utterance)
+  }
+  const handleStopSpeak = () => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
+  }
+  const handleStepFeedback = async (stepId: string, value: 'like' | 'dislike') => {
+    setStepFeedbackLoading(f => ({ ...f, [stepId]: true }))
+    await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        stepId,
+        type: 'step',
+        value,
+        userId: '1',
+      })
+    })
+    setStepFeedback(f => ({ ...f, [stepId]: value }))
+    setStepFeedbackLoading(f => ({ ...f, [stepId]: false }))
+  }
+  const handleFinalFeedback = async (value: 'like' | 'dislike') => {
+    setFinalFeedbackLoading(true)
+    await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'deep',
+        value,
+        userId: '1',
+      })
+    })
+    setFinalFeedback(value)
+    setFinalFeedbackLoading(false)
+  }
 
   if (!isVisible) return null
 
@@ -569,6 +622,43 @@ export default function ThinkingProcess({
                         {provider}
                       </span>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => handleSpeak(block.content)}
+                      className="ml-2 p-2 rounded-full border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors"
+                      title="Read step aloud"
+                    >
+                      <SpeakerWaveIcon className="w-5 h-5 text-purple-600" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleStopSpeak}
+                      className="ml-1 p-2 rounded-full border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                      title="Stop reading"
+                    >
+                      <span className="w-5 h-5 block text-red-600">&#9632;</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleStepFeedback(block.id, 'like')}
+                      disabled={stepFeedbackLoading[block.id] || stepFeedback[block.id] === 'like'}
+                      className={`ml-2 p-2 rounded-full border border-slate-200 dark:border-green-600 bg-white dark:bg-slate-800 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors ${stepFeedback[block.id] === 'like' ? 'bg-green-200 dark:bg-green-800' : ''}`}
+                      title="Like step"
+                    >
+                      <HandThumbUpIcon className="w-5 h-5 text-green-600" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleStepFeedback(block.id, 'dislike')}
+                      disabled={stepFeedbackLoading[block.id] || stepFeedback[block.id] === 'dislike'}
+                      className={`ml-1 p-2 rounded-full border border-slate-200 dark:border-green-600 bg-white dark:bg-slate-800 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors ${stepFeedback[block.id] === 'dislike' ? 'bg-red-200 dark:bg-red-800' : ''}`}
+                      title="Dislike step"
+                    >
+                      <HandThumbDownIcon className="w-5 h-5 text-red-600" />
+                    </button>
+                    {stepFeedback[block.id] && (
+                      <span className={`ml-2 text-xs ${stepFeedback[block.id] === 'like' ? 'text-green-600' : 'text-red-600'}`}>{stepFeedback[block.id] === 'like' ? 'Thanks for your feedback!' : 'We appreciate your feedback!'}</span>
+                    )}
                     <span className="ml-auto text-xs text-slate-400 dark:text-slate-500">{new Date(block.timestamp).toLocaleTimeString()}</span>
                   </div>
                   <div className="prose prose-sm dark:prose-invert max-w-none">
@@ -652,6 +742,45 @@ export default function ThinkingProcess({
                   <h3 className="text-lg font-semibold text-green-700 dark:text-green-300">
                     Final Answer
                   </h3>
+                  <span className="flex items-center ml-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSpeak(finalAnswer)}
+                      className="p-2 rounded-full border border-slate-200 dark:border-green-600 bg-white dark:bg-slate-800 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
+                      title="Read answer aloud"
+                    >
+                      <SpeakerWaveIcon className="w-5 h-5 text-green-600" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleStopSpeak}
+                      className="ml-1 p-2 rounded-full border border-slate-200 dark:border-green-600 bg-white dark:bg-slate-800 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                      title="Stop reading"
+                    >
+                      <span className="w-5 h-5 block text-red-600">&#9632;</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleFinalFeedback('like')}
+                      disabled={finalFeedbackLoading || finalFeedback === 'like'}
+                      className={`ml-2 p-2 rounded-full border border-slate-200 dark:border-green-600 bg-white dark:bg-slate-800 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors ${finalFeedback === 'like' ? 'bg-green-200 dark:bg-green-800' : ''}`}
+                      title="Like answer"
+                    >
+                      <HandThumbUpIcon className="w-5 h-5 text-green-600" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleFinalFeedback('dislike')}
+                      disabled={finalFeedbackLoading || finalFeedback === 'dislike'}
+                      className={`ml-1 p-2 rounded-full border border-slate-200 dark:border-green-600 bg-white dark:bg-slate-800 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors ${finalFeedback === 'dislike' ? 'bg-red-200 dark:bg-red-800' : ''}`}
+                      title="Dislike answer"
+                    >
+                      <HandThumbDownIcon className="w-5 h-5 text-red-600" />
+                    </button>
+                    {finalFeedback && (
+                      <span className={`ml-2 text-xs ${finalFeedback === 'like' ? 'text-green-600' : 'text-red-600'}`}>{finalFeedback === 'like' ? 'Thanks for your feedback!' : 'We appreciate your feedback!'}</span>
+                    )}
+                  </span>
                 </div>
                 <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
                   <div className="prose prose-sm dark:prose-invert max-w-none">

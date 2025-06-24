@@ -12,7 +12,10 @@ import {
   DocumentTextIcon,
   CodeBracketIcon,
   ChatBubbleLeftRightIcon,
-  ClipboardDocumentIcon
+  ClipboardDocumentIcon,
+  SpeakerWaveIcon,
+  HandThumbUpIcon,
+  HandThumbDownIcon
 } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import MarkdownContent from '@/components/ui/MarkdownContent'
@@ -67,6 +70,8 @@ const QuestionCard = memo(({
 }: QuestionCardProps) => {
   const [isInView, setIsInView] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
+  const [feedback, setFeedback] = useState<'like' | 'dislike' | null>(null)
+  const [feedbackLoading, setFeedbackLoading] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
 
   // Handle favorite toggle
@@ -105,6 +110,65 @@ const QuestionCard = memo(({
     }
   }
 
+  // Voice output for answer
+  const handleSpeak = (text: string) => {
+    if (!('speechSynthesis' in window)) {
+      alert('Text-to-speech is not supported in this browser.')
+      return
+    }
+    window.speechSynthesis.cancel(); // Stop any ongoing speech
+    const utterance = new window.SpeechSynthesisUtterance(text)
+    utterance.lang = 'en-US'
+    window.speechSynthesis.speak(utterance)
+  }
+  const handleStopSpeak = () => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
+  }
+
+  useEffect(() => {
+    // Fetch feedback state for this question and user
+    async function fetchFeedback() {
+      try {
+        const res = await fetch(`/api/feedback?answerId=${question.id}&userId=1&type=qna`)
+        if (!res.ok) {
+          setFeedback(null)
+          return
+        }
+        const text = await res.text()
+        if (!text) {
+          setFeedback(null)
+          return
+        }
+        const data = JSON.parse(text)
+        if (data.feedback && data.feedback.value) {
+          setFeedback(data.feedback.value)
+        } else {
+          setFeedback(null)
+        }
+      } catch (e) {
+        setFeedback(null)
+      }
+    }
+    fetchFeedback()
+  }, [question.id])
+
+  const handleFeedback = async (value: 'like' | 'dislike') => {
+    setFeedbackLoading(true)
+    await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        answerId: question.id,
+        type: 'qna',
+        value,
+        userId: '1',
+      })
+    })
+    setFeedback(value)
+    setFeedbackLoading(false)
+  }
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -226,6 +290,49 @@ const QuestionCard = memo(({
               <div className="flex items-center gap-2 mb-3">
                 <CheckCircleIcon className="w-5 h-5 text-green-500" />
                 <h5 className="text-sm font-medium text-slate-700 dark:text-slate-300">Answer</h5>
+                <span className="flex items-center ml-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSpeak(question.answer || '')}
+                    className="p-2 rounded-full border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
+                    title="Read answer aloud"
+                  >
+                    <SpeakerWaveIcon className="w-5 h-5 text-green-600" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleStopSpeak}
+                    className="ml-1 p-2 rounded-full border border-slate-200 dark:border-green-600 bg-white dark:bg-slate-800 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                    title="Stop reading"
+                  >
+                    <span className="w-5 h-5 block text-red-600">&#9632;</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleFeedback('like')}
+                    disabled={feedbackLoading}
+                    className={`ml-2 p-2 rounded-full border border-slate-200 dark:border-green-600 transition-colors
+                      ${feedback === 'like' ? 'bg-green-500 !text-white' : 'bg-white dark:bg-slate-800 hover:bg-green-100 dark:hover:bg-green-900/30'}
+                      ${feedbackLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    title="Like answer"
+                  >
+                    <HandThumbUpIcon className={`w-5 h-5 ${feedback === 'like' ? '!text-white' : 'text-green-600'}`} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleFeedback('dislike')}
+                    disabled={feedbackLoading}
+                    className={`ml-1 p-2 rounded-full border border-slate-200 dark:border-green-600 transition-colors
+                      ${feedback === 'dislike' ? 'bg-red-500 !text-white' : 'bg-white dark:bg-slate-800 hover:bg-red-100 dark:hover:bg-red-900/30'}
+                      ${feedbackLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    title="Dislike answer"
+                  >
+                    <HandThumbDownIcon className={`w-5 h-5 ${feedback === 'dislike' ? '!text-white' : 'text-red-600'}`} />
+                  </button>
+                  {feedback && (
+                    <span className={`ml-2 text-xs ${feedback === 'like' ? 'text-green-600' : 'text-red-600'}`}>{feedback === 'like' ? 'Thanks for your feedback!' : 'We appreciate your feedback!'}</span>
+                  )}
+                </span>
                 {useConfidenceFilter && question.confidence !== undefined && (
                   <span className={`text-xs px-2 py-1 rounded-full ${
                     question.confidence > 0.8 

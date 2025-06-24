@@ -2,6 +2,9 @@
 
 import { memo, useState, useRef, useEffect } from 'react'
 import { FileContent } from '@/hooks/useQnAFiltering'
+import dynamic from 'next/dynamic'
+
+const CodeViewer = dynamic(() => import('@/components/ui/CodeViewer'), { ssr: false })
 
 interface LazyCodeContentProps {
   fileContent: FileContent
@@ -49,14 +52,13 @@ const LazyCodeContent = memo(({
           Copied!
         </div>
       )}
-      <pre className="p-4 text-sm text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900 overflow-x-auto max-h-96">
-        <code 
-          className={`language-${fileContent.language}`}
-          dangerouslySetInnerHTML={{
-            __html: formatCodeContent(fileContent.content, fileContent.language)
-          }}
-        />
-      </pre>
+      <CodeViewer
+        code={fileContent.content}
+        language={fileContent.language}
+        initialTheme={0}
+        initialFontSize={14}
+        showLineNumbers={true}
+      />
     </div>
   )
 })

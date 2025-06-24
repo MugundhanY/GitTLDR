@@ -181,6 +181,22 @@ model Meeting {
   @@map("meetings")
 }
 
+model Feedback {
+  id        String   @id @default(cuid())
+  answerId  String?  // QnA answer id (nullable for step/deep)
+  stepId    String?  // Step id (nullable for qna/deep)
+  type      String   // 'qna' | 'deep' | 'step'
+  value     String   // 'like' | 'dislike'
+  userId    String?  // User id (optional)
+  createdAt DateTime @default(now())
+
+  @@unique([answerId, userId, type], name: "answerId_userId_type")
+  @@index([answerId])
+  @@index([stepId])
+  @@index([userId])
+  @@map("feedback")
+}
+
 enum RepositoryStatus {
   PENDING
   PROCESSING

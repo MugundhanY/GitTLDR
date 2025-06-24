@@ -51,6 +51,7 @@ export default function Sidebar({ selectedRepository }: SidebarProps) {
       return await response.json();
     },
     enabled: !!selectedRepository?.id,
+    refetchInterval: (query) => query.state.data && query.state.data.processed === false ? 5000 : false,
     staleTime: 1000 * 60 * 10 // 10 minutes
   });
   const { repositories, selectRepository } = useRepository();

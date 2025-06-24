@@ -18,15 +18,27 @@ import {
 } from '@heroicons/react/24/outline';
 import { clientCache, CACHE_KEYS } from '@/lib/client-cache';
 import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 
 export function Header() {
   const { theme, setTheme } = useTheme();
   const { userData } = useUserData();
   const { selectedRepository } = useRepository();
+  const { data: repoStats } = useQuery({
+    queryKey: ['repositoryStats', selectedRepository?.id],
+    queryFn: async () => {
+      if (!selectedRepository?.id) return null;
+      const res = await fetch(`/api/repositories/${selectedRepository.id}/stats`);
+      if (!res.ok) throw new Error('Failed to fetch repository stats');
+      return await res.json();
+    },
+    enabled: !!selectedRepository?.id,
+    refetchInterval: (query) => query.state.data && query.state.data.processed === false ? 5000 : false,
+    staleTime: 1000 * 60 * 10
+  });
   const [showThemeDropdown, setShowThemeDropdown] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
-  const [repoStats, setRepoStats] = useState<any>(null);
   const themeDropdownRef = useRef<HTMLDivElement>(null);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -44,20 +56,6 @@ export function Header() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  useEffect(() => {
-    async function fetchStats() {
-      if (selectedRepository?.id) {
-        try {
-          const res = await fetch(`/api/repositories/${selectedRepository.id}/stats`);
-          if (res.ok) {
-            setRepoStats(await res.json());
-          }
-        } catch {}
-      }
-    }
-    fetchStats();
-  }, [selectedRepository?.id]);
 
   const themeOptions = [
     { 
