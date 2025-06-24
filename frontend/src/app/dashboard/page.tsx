@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useRepository } from '@/contexts/RepositoryContext';
@@ -22,6 +22,7 @@ import {
   LockClosedIcon,
   GlobeAltIcon
 } from '@heroicons/react/24/outline';
+import { useQuery } from '@tanstack/react-query';
 
 interface DashboardStats {
   name: string;
@@ -74,65 +75,25 @@ interface DashboardData {
 
 export default function DashboardPage() {
   const { selectedRepository, repositories, isLoading } = useRepository();
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [isLoadingData, setIsLoadingData] = useState(false);
-  const [dataError, setDataError] = useState<string | null>(null);
+  // React Query: Fetch dashboard data
+  const {
+    data: dashboardData,
+    isLoading: isDashboardLoading,
+    error: dashboardError,
+    refetch: refetchDashboard
+  } = useQuery({
+    queryKey: ['dashboard', selectedRepository?.id],
+    queryFn: async () => {
+      if (!selectedRepository?.id) return null;
+      const response = await fetch(`/api/dashboard/stats?repositoryId=${selectedRepository.id}`);
+      if (!response.ok) throw new Error('Failed to fetch dashboard data');
+      return await response.json();
+    },
+    enabled: !!selectedRepository?.id,
+    staleTime: 1000 * 60 // 1 minute
+  });
 
-  // Fetch dashboard data when repository changes
-  useEffect(() => {
-    if (selectedRepository?.id) {
-      fetchDashboardData(selectedRepository.id);
-    }
-  }, [selectedRepository?.id]);
-
-  const fetchDashboardData = async (repositoryId: string) => {
-    setIsLoadingData(true);
-    setDataError(null);
-    
-    try {
-      const response = await fetch(`/api/dashboard/stats?repositoryId=${repositoryId}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch dashboard data');
-      }
-      
-      const data = await response.json();
-      setDashboardData(data);
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-      setDataError('Failed to load dashboard data');
-      // Set fallback data
-      setDashboardData({
-        stats: [
-          { name: 'Stars', value: selectedRepository?.stargazers_count || 0, icon: 'StarIcon', change: '+0', changeType: 'neutral', trend: 'stable' },
-          { name: 'Issues', value: selectedRepository?.open_issues_count || 0, icon: 'ExclamationTriangleIcon', change: '+0', changeType: 'neutral', trend: 'stable' },
-          { name: 'Pull Requests', value: 0, icon: 'CodeBracketIcon', change: '+0', changeType: 'neutral', trend: 'stable' },
-          { name: 'Contributors', value: 1, icon: 'UsersIcon', change: '+0', changeType: 'neutral', trend: 'stable' }
-        ],
-        recentActivity: [],
-        insights: {
-          size: 'Unknown',
-          forks: 0,
-          watchers: selectedRepository?.stargazers_count || 0,
-          files: 0,
-          lastActivity: 'Unknown',
-          language: selectedRepository?.language || 'Unknown',
-          topics: []
-        },
-        repository: {
-          id: selectedRepository?.id || '',
-          name: selectedRepository?.name || '',
-          description: selectedRepository?.description,
-          url: selectedRepository?.html_url || '',
-          processed: false,
-          embeddingStatus: 'unknown'
-        }
-      });
-    } finally {
-      setIsLoadingData(false);
-    }
-  };
-
-  if (isLoading || isLoadingData) {
+  if (isLoading || isDashboardLoading) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-full">
@@ -169,64 +130,6 @@ export default function DashboardPage() {
       </DashboardLayout>
     );
   }
-
-  // Use dynamic data if available, otherwise fallback to static data
-  const stats = dashboardData?.stats || [
-    {
-      name: 'Stars',
-      value: selectedRepository?.stargazers_count || 0,
-      icon: 'StarIcon',
-      change: '+0',
-      changeType: 'neutral' as const,
-      trend: 'stable' as const
-    },
-    {
-      name: 'Issues',
-      value: selectedRepository?.open_issues_count || 0,
-      icon: 'ExclamationTriangleIcon',
-      change: '+0',
-      changeType: 'neutral' as const,
-      trend: 'stable' as const
-    },
-    {
-      name: 'Pull Requests',
-      value: 0,
-      icon: 'CodeBracketIcon',
-      change: '+0',
-      changeType: 'neutral' as const,
-      trend: 'stable' as const
-    },
-    {
-      name: 'Contributors',
-      value: 1,
-      icon: 'UsersIcon',
-      change: '+0',
-      changeType: 'neutral' as const,
-      trend: 'stable' as const
-    }
-  ];
-
-  const recentActivity = dashboardData?.recentActivity || [
-    {
-      id: '1',
-      type: 'commit' as const,
-      title: 'Loading recent activity...',
-      author: 'System',
-      time: 'Just now',
-      avatar: 'SY',
-      description: 'Fetching latest updates from repository'
-    }
-  ];
-
-  const insights = dashboardData?.insights || {
-    size: 'Unknown',
-    forks: 0,
-    watchers: selectedRepository?.stargazers_count || 0,
-    files: 0,
-    lastActivity: 'Unknown',
-    language: selectedRepository?.language || 'Unknown',
-    topics: []
-  };
 
   const getIconComponent = (iconName: string) => {
     const iconMap: Record<string, any> = {
@@ -428,7 +331,7 @@ export default function DashboardPage() {
           {/* Stats Grid - 8 columns */}
           <div className="lg:col-span-8">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              {stats.map((stat) => {
+              {dashboardData?.stats.map((stat: any) => {
                 const Icon = getIconComponent(stat.icon);
                 return (
                   <div key={stat.name} className="bg-white dark:bg-gray-900 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-all duration-200 group">
@@ -467,11 +370,11 @@ export default function DashboardPage() {
               <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Activity</h3>
-                  {dataError && (
+                  {dashboardError && (
                     <span className="text-sm text-amber-600 dark:text-amber-400">Using cached data</span>
                   )}
                   <button 
-                    onClick={() => selectedRepository && fetchDashboardData(selectedRepository.id)}
+                    onClick={() => refetchDashboard()}
                     className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium"
                   >
                     Refresh
@@ -481,7 +384,7 @@ export default function DashboardPage() {
               
               <div className="p-6">
                 <div className="space-y-4">
-                  {recentActivity.length > 0 ? recentActivity.map((activity) => (
+                  {dashboardData?.recentActivity.length > 0 ? dashboardData.recentActivity.map((activity: any) => (
                     <div key={activity.id} className="flex items-start space-x-4 p-4 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                       <div className="flex-shrink-0">
                         {getActivityIcon(activity.type)}
@@ -544,7 +447,7 @@ export default function DashboardPage() {
                     </div>
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Size</span>
                   </div>
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{insights.size}</span>
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{dashboardData?.insights.size}</span>
                 </div>
                 
                 <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
@@ -554,7 +457,7 @@ export default function DashboardPage() {
                     </div>
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Forks</span>
                   </div>
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{insights.forks}</span>
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{dashboardData?.insights.forks}</span>
                 </div>
 
                 <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
@@ -564,7 +467,7 @@ export default function DashboardPage() {
                     </div>
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Watchers</span>
                   </div>
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{insights.watchers}</span>
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{dashboardData?.insights.watchers}</span>
                 </div>
 
                 <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
@@ -574,7 +477,7 @@ export default function DashboardPage() {
                     </div>
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Files</span>
                   </div>
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{insights.files}</span>
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{dashboardData?.insights.files}</span>
                 </div>
               </div>
             </div>

@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+'use client'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { RepositoryProvider } from '@/contexts/RepositoryContext'
@@ -8,20 +8,9 @@ import { QnAProvider } from '@/contexts/QnAContext'
 import { ToastContainer } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import '../styles/toast.css'
+import { ReactQueryProvider } from './react-query-provider'
 
 const inter = Inter({ subsets: ['latin'] })
-
-export const metadata: Metadata = {
-  title: 'GitTLDR - AI-Powered Repository Insights',
-  description: 'Transform GitHub repositories into intelligent, searchable knowledge bases with AI-powered embeddings and summarization.',
-  keywords: ['GitHub', 'AI', 'Repository', 'Summarization', 'Embeddings', 'Code Analysis'],
-  authors: [{ name: 'GitTLDR Team' }],
-  openGraph: {
-    title: 'GitTLDR - AI-Powered Repository Insights',
-    description: 'Transform GitHub repositories into intelligent, searchable knowledge bases',
-    type: 'website',
-  },
-}
 
 export default function RootLayout({
   children,
@@ -56,27 +45,30 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={inter.className}>        <ThemeProvider>
-          <SidebarProvider>
-            <RepositoryProvider>
-              <QnAProvider>
-                <div id="root">{children}</div>
-                <ToastContainer
-                  position="bottom-right"
-                  autoClose={3000}
-                  hideProgressBar={false}
-                  newestOnTop={false}
-                  closeOnClick
-                  rtl={false}
-                  pauseOnFocusLoss
-                  draggable
-                  pauseOnHover
-                  theme="light"
-                />
-              </QnAProvider>
-            </RepositoryProvider>
-          </SidebarProvider>
-        </ThemeProvider>
+      <body className={inter.className}>
+        <ReactQueryProvider>
+          <ThemeProvider>
+            <SidebarProvider>
+              <RepositoryProvider>
+                <QnAProvider>
+                  <div id="root">{children}</div>
+                  <ToastContainer
+                    position="bottom-right"
+                    autoClose={3000}
+                    hideProgressBar={false}
+                    newestOnTop={false}
+                    closeOnClick
+                    rtl={false}
+                    pauseOnFocusLoss
+                    draggable
+                    pauseOnHover
+                    theme="light"
+                  />
+                </QnAProvider>
+              </RepositoryProvider>
+            </SidebarProvider>
+          </ThemeProvider>
+        </ReactQueryProvider>
       </body>
     </html>
   )

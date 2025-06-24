@@ -141,7 +141,8 @@ export async function GET(request: NextRequest) {  try {
 
     // Fetch Q&A history from database using Prisma
     const questions = await prisma.question.findMany({
-      where: whereClause,      include: {
+      where: whereClause,
+      include: {
         repository: {
           select: {
             name: true
@@ -164,7 +165,7 @@ export async function GET(request: NextRequest) {  try {
         { confidenceScore: 'desc' }, // Order by confidence first
         { createdAt: 'desc' }
       ],
-      take: 100 // Increased limit for better history access
+      take: 500 // Increased limit for better history access
     });    // Transform questions for frontend
     const qnaHistory = questions.map(question => ({
       id: question.id,

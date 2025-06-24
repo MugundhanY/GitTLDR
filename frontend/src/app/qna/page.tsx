@@ -15,6 +15,7 @@ import {
   QuestionMarkCircleIcon,
   ChevronDownIcon
 } from '@heroicons/react/24/outline'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 // Components
 import QuestionInput from '@/components/qna/QuestionInput'
@@ -38,43 +39,71 @@ export default function QnAPage() {
   const { selectedRepository } = useRepository()
   const { isCollapsed } = useSidebar()
   const { incrementQuestionCount, updateQuestionCount, triggerStatsRefreshOnCompletion } = useQnA()
-    // Core state
-  const [questions, setQuestions] = useState<Question[]>([])
+  // Core state
   const [newQuestion, setNewQuestion] = useState('')
-  const [isLoading, setIsLoading] = useState(true)
   const [showSuggestions, setShowSuggestions] = useState(true)
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null)
   const [isPageVisible, setIsPageVisible] = useState(true)
-  const [visibleQuestions, setVisibleQuestions] = useState(10)  
+  const [visibleQuestions, setVisibleQuestions] = useState(10)
   const [enableDeepResearch, setEnableDeepResearch] = useState(false)
   const [questionAttachments, setQuestionAttachments] = useState<QuestionAttachment[]>([])
   const [currentThinkingQuestion, setCurrentThinkingQuestion] = useState('')
+  const [optimisticQuestions, setOptimisticQuestions] = useState<Question[]>([])
+  const queryClient = useQueryClient()
+
+  // React Query: Fetch questions
+  // Fix: fetchedQuestions is unknown by default, so type it as Question[]
+  const {
+    data: fetchedQuestionsRaw = [],
+    isLoading,
+    refetch: refetchQuestions
+  } = useQuery<Question[]>({
+    queryKey: ['questions', selectedRepository?.id],
+    queryFn: async () => {
+      if (!selectedRepository?.id) return []
+      const response = await fetch(`/api/qna?repositoryId=${selectedRepository.id}&userId=1`)
+      if (!response.ok) throw new Error('Failed to fetch questions')
+      const data = await response.json()
+      return data.questions || []
+    },
+    enabled: !!selectedRepository?.id,
+    staleTime: 1000 * 60 // 1 minute
+  })
+  const fetchedQuestions = fetchedQuestionsRaw as Question[]
+
+  // Merge fetched and optimistic questions, deduping by id (optimistic first)
+  const mergedQuestions = useMemo(() => {
+    const byId = new Map<string, Question>()
+    for (const q of optimisticQuestions) byId.set(q.id, q)
+    for (const q of fetchedQuestions) if (!byId.has(q.id)) byId.set(q.id, q)
+    return Array.from(byId.values())
+  }, [optimisticQuestions, fetchedQuestions])
+
+  // Sort mergedQuestions so pending (optimistic) questions appear first, then by createdAt desc
+  const sortedMergedQuestions = useMemo(() => {
+    return [...mergedQuestions].sort((a, b) => {
+      // Pending (optimistic) questions first
+      if (a.status === 'pending' && b.status !== 'pending') return -1
+      if (a.status !== 'pending' && b.status === 'pending') return 1
+      // Then by createdAt desc
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    })
+  }, [mergedQuestions])
+
+  // Use sortedMergedQuestions for filtering
   const filtering = useQnAFiltering({ 
-    questions, 
+    questions: sortedMergedQuestions, 
     selectedRepositoryId: selectedRepository?.id 
   })
-  
+
   const actions = useQnAActions({
     selectedRepository: selectedRepository ? { 
       id: selectedRepository.id, 
       name: selectedRepository.name 
     } : undefined,
     onQuestionsUpdate: (newQuestions: Question[] | Question) => {
-      if (Array.isArray(newQuestions)) {
-        setQuestions(newQuestions)
-      } else {
-        // Handle single question update - either update existing or add new
-        setQuestions(prev => {
-          const existingQuestionIndex = prev.findIndex(q => q.id === newQuestions.id)
-          if (existingQuestionIndex >= 0) {
-            // Update existing question
-            return prev.map(q => q.id === newQuestions.id ? newQuestions : q)
-          } else {
-            // Add new question at the beginning
-            return [newQuestions, ...prev]
-          }
-        })
-      }
+      // Invalidate and refetch questions via React Query
+      refetchQuestions()
     },
     incrementQuestionCount,
     triggerStatsRefreshOnCompletion
@@ -105,101 +134,55 @@ export default function QnAPage() {
       window.removeEventListener('focus', handleFocus)
       window.removeEventListener('blur', handleBlur)
     }
-  }, [])  // Fetch questions when repository changes
-  const fetchQuestions = useCallback(async () => {
-    if (!selectedRepository?.id) {
-      setIsLoading(false)
-      return
-    }
-    
-    try {
-      const response = await fetch(`/api/qna?repositoryId=${selectedRepository.id}&userId=1`)
-      if (response.ok) {
-        const data = await response.json()
-        const fetchedQuestions = data.questions || []
-        
-        // Merge with any pending questions
-        setQuestions(prev => {
-          const pendingQuestions = prev.filter(q => q.status === 'pending')
-          const completedQuestionIds = new Set(fetchedQuestions.map((q: Question) => q.id))
-          const remainingPendingQuestions = pendingQuestions.filter(q => !completedQuestionIds.has(q.id))
-          
-          const allQuestions = [...fetchedQuestions, ...remainingPendingQuestions]
-            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-          
-          return allQuestions
-        })
-      } else {
-        console.error('Failed to fetch questions:', response.status, response.statusText)
-      }
-    } catch (error) {
-      console.error('Error fetching questions:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [selectedRepository?.id]) // Include selectedRepository?.id as dependency for proper memoization  // Only fetch questions once when repository changes (not continuously)
-  useEffect(() => {
-    fetchQuestions()
-  }, [fetchQuestions]) // Depend on memoized fetchQuestions function
+  }, [])
 
-  // Update question count when questions change
+  // Update question count when fetchedQuestions change
   useEffect(() => {
     if (selectedRepository?.id) {
-      const repositoryQuestions = questions.filter(q => q?.repositoryId === selectedRepository.id)
+      const repositoryQuestions = fetchedQuestions.filter(q => q?.repositoryId === selectedRepository.id)
       updateQuestionCount(repositoryQuestions.length)
     }
-  }, [questions, selectedRepository?.id, updateQuestionCount])
-  
-  // Auto-show suggestions for new repositories or when no questions exist
+  }, [fetchedQuestions, selectedRepository?.id, updateQuestionCount])
+
+  // Remove optimistic questions only when backend returns a matching completed question
   useEffect(() => {
-    if (selectedRepository?.id) {
-      const repositoryQuestions = questions.filter(q => q?.repositoryId === selectedRepository.id)
-      // Only auto-show suggestions when there are no questions, don't auto-hide when questions exist
-      if (repositoryQuestions.length === 0 && !newQuestion.trim()) {
-        setShowSuggestions(true)
+    if (!optimisticQuestions.length) return;
+    const completedIds = new Set(fetchedQuestions.map(q => q.query.trim().toLowerCase()));
+    setOptimisticQuestions(prev => prev.filter(optQ => !completedIds.has(optQ.query.trim().toLowerCase())));
+  }, [fetchedQuestions]);
+
+  // Add optimistic pending question for deep thinking as well
+  useEffect(() => {
+    if (enableDeepResearch && currentThinkingQuestion && selectedRepository?.id) {
+      // Only add if not already present
+      const alreadyExists = optimisticQuestions.some(q => q.query.trim().toLowerCase() === currentThinkingQuestion.trim().toLowerCase());
+      if (!alreadyExists) {
+        const optimisticId = `optimistic-deep-${Date.now()}`;
+        const pendingQuestion: Question = {
+          id: optimisticId,
+          query: currentThinkingQuestion.trim(),
+          repositoryId: selectedRepository.id,
+          repositoryName: selectedRepository.name,
+          createdAt: new Date().toISOString(),
+          status: 'pending',
+          tags: [],
+          category: '',
+          relevantFiles: [],
+          confidence: 0,
+          isFavorite: false,
+          reasoningSteps: [],
+          hasMultiStepReasoning: true,
+          questionAttachments: questionAttachments || [],
+        };
+        setOptimisticQuestions(prev => [pendingQuestion, ...prev]);
       }
     }
-  }, [questions, selectedRepository?.id, newQuestion])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enableDeepResearch, currentThinkingQuestion, selectedRepository?.id])
 
-  // Advanced search effect - only trigger search when confidence filter is enabled and settings change
-  useEffect(() => {
-    if (filtering.useConfidenceFilter) {
-      actions.performAdvancedSearch({
-        searchQuery: filtering.searchQuery,
-        selectedCategory: filtering.selectedCategory,
-        selectedTags: filtering.selectedTags,
-        selectedFileTypes: filtering.selectedFileTypes,
-        filterFavorites: filtering.filterFavorites,
-        minConfidence: filtering.minConfidence,
-        maxConfidence: filtering.maxConfidence,
-        useConfidenceFilter: filtering.useConfidenceFilter
-      })
-    }
-    // REMOVED: Don't call fetchQuestions() here as it causes continuous polling
-  }, [
-    filtering.useConfidenceFilter, 
-    filtering.minConfidence, 
-    filtering.maxConfidence, 
-    actions.performAdvancedSearch, // Only depend on the search function
-    filtering.searchQuery,
-    filtering.selectedCategory,
-    filtering.selectedTags,
-    filtering.selectedFileTypes,
-    filtering.filterFavorites
-  ])
-
-  // Memoized filtered questions for display
-  const questionsToShow = useMemo(() => 
-    filtering.filteredQuestions.slice(0, visibleQuestions), 
-    [filtering.filteredQuestions, visibleQuestions]
-  )
-  
-  const loadMoreQuestions = useCallback(() => {
-    setVisibleQuestions(prev => Math.min(prev + 10, filtering.filteredQuestions.length))
-  }, [filtering.filteredQuestions.length])  // Question handlers
+  // In ThinkingProcess onAnswerSubmitted, just refetch (optimistic removal is handled globally)
   const handleAskQuestion = useCallback(async () => {
     if (!newQuestion.trim()) return
-      // If thinking mode is enabled, ONLY trigger thinking process
     if (enableDeepResearch) {
       // Debug: Log attachment state before triggering thinking
       console.log('🔥 QNA PAGE DEBUG:')
@@ -209,13 +192,34 @@ export default function QnAPage() {
       
       setCurrentThinkingQuestion(newQuestion.trim())
       setNewQuestion('')
-      // Note: Don't clear attachments yet - ThinkingProcess component needs them
-      return // Don't proceed to normal Q&A
+      return
     }
-      // Normal Q&A flow (only when deep thinking is disabled)
+    // Optimistically add pending question
+    const optimisticId = `optimistic-${Date.now()}`
+    const pendingQuestion: Question = {
+      id: optimisticId,
+      query: newQuestion.trim(),
+      repositoryId: selectedRepository?.id || '',
+      repositoryName: selectedRepository?.name || '',
+      createdAt: new Date().toISOString(),
+      status: 'pending',
+      tags: [],
+      category: '',
+      relevantFiles: [],
+      confidence: 0,
+      isFavorite: false,
+      reasoningSteps: [],
+      hasMultiStepReasoning: false,
+      questionAttachments: questionAttachments || [],
+    }
+    setOptimisticQuestions(prev => [pendingQuestion, ...prev])
     await actions.handleAskQuestion(newQuestion.trim(), questionAttachments)
     setNewQuestion('')
-    setQuestionAttachments([]) // Clear attachments after submitting
+    setQuestionAttachments([])
+    // No longer clear optimistic questions after timeout
+    setTimeout(() => {
+      refetchQuestions()
+    }, 1000)
   }, [newQuestion, questionAttachments, actions, enableDeepResearch, selectedRepository])  
   
   const handleSelectSuggestion = useCallback((suggestion: string) => {
@@ -235,6 +239,7 @@ export default function QnAPage() {
     actions.handleSelectFollowUp(originalQuestion, followUpText, setNewQuestion)
   }, [actions])
 
+  // Move all code that depends on 'filtering' to after its declaration
   // Export handler
   const handleExport = useCallback((format: 'markdown' | 'json' | 'html') => {
     actions.exportQuestions(format, {
@@ -243,6 +248,20 @@ export default function QnAPage() {
       selectedFileTypes: filtering.selectedFileTypes
     })
   }, [actions, filtering])
+
+  // Memoized filtered questions for display, sorted by createdAt (most recent first)
+  const sortedFilteredQuestions = useMemo(
+    () => [...filtering.filteredQuestions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [filtering.filteredQuestions]
+  )
+  const questionsToShow = useMemo(() => 
+    sortedFilteredQuestions.slice(0, visibleQuestions), 
+    [sortedFilteredQuestions, visibleQuestions]
+  )
+
+  const loadMoreQuestions = useCallback(() => {
+    setVisibleQuestions(prev => Math.min(prev + 10, filtering.filteredQuestions.length))
+  }, [filtering.filteredQuestions.length])
 
   // Status utility functions
   const getStatusIcon = (status: string) => {
@@ -413,7 +432,7 @@ export default function QnAPage() {
                       // Add a small delay to ensure database commit completes
                       setTimeout(async () => {
                         // Refresh questions to show the new answer
-                        await fetchQuestions()
+                        await refetchQuestions()
                         console.log('Questions refreshed after thinking answer submitted')
                       }, 1000)
                       // Optionally close the thinking process after delay
@@ -514,7 +533,7 @@ export default function QnAPage() {
                       <QnAEmptyState repositoryName={selectedRepository.name} />
                     ) : (
                       <div className="space-y-4">
-                        {questionsToShow.map((question) => (
+                        {questionsToShow.map((question: Question) => (
                           <QuestionCard
                             key={question.id}
                             question={question}

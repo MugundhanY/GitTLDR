@@ -17,6 +17,7 @@ import {
   FileStats,
   Breadcrumb
 } from '@/components/files'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 // Animated counter hook
 const useAnimatedCounter = (end: number, duration: number = 1000, delay: number = 0) => {
@@ -99,7 +100,8 @@ const useAnimatedCounter = (end: number, duration: number = 1000, delay: number 
 }
 
 // Animated Header Stats Component
-const AnimatedHeaderStats = ({ stats }: { stats: FileStats }) => {
+const AnimatedHeaderStats = ({ stats }: { stats?: FileStats }) => {
+  if (!stats) return null;
   const filesCounter = useAnimatedCounter(stats.totalFiles, 1200, 100)
   const sizeCounter = useAnimatedCounter(stats.totalSize, 1000, 200)
   const languagesCounter = useAnimatedCounter(stats.languages.length, 800, 300)
@@ -164,24 +166,11 @@ const AnimatedHeaderStats = ({ stats }: { stats: FileStats }) => {
 export default function FilesPage() {
   const { selectedRepository } = useRepository()
   const { isCollapsed } = useSidebar()
-  const [files, setFiles] = useState<FileItem[]>([])
-  const [stats, setStats] = useState<FileStats>({
-    totalFiles: 0,
-    totalSize: 0,
-    totalDirectories: 0,
-    languages: []
-  })
-  const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([])
-  const [currentPath, setCurrentPath] = useState('/')
-  const [isLoading, setIsLoading] = useState(true)
-  
-  const [searchQuery, setSearchQuery] = useState('')
   const [selectedLanguage, setSelectedLanguage] = useState('all')
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null)
-  const [fileContent, setFileContent] = useState<string | null>(null)
-  const [isLoadingContent, setIsLoadingContent] = useState(false)
-    const [error, setError] = useState<string | null>(null)  
-    // Consolidated search state - single source of truth
+  const [error, setError] = useState<string | null>(null)  
+  
+  // Consolidated search state - single source of truth
   const [searchState, setSearchState] = useState({
     // Basic search
     query: '',
@@ -205,67 +194,56 @@ export default function FilesPage() {
   // Performance optimizations
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
-  // Optimized fetchFiles with request cancellation
-  const fetchFiles = useCallback(async (path: string, searchTerm = '', language = 'all') => {
-    if (!selectedRepository) return
-    
-    // Cancel previous request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-    }
-    
-    // Create new abort controller
-    const controller = new AbortController()
-    abortControllerRef.current = controller
-    
-    setIsLoading(true)
-    setError(null)
-    
-    try {      const params = new URLSearchParams({
-        path,
-        ...(searchTerm && { search: searchTerm }),
-        ...(language !== 'all' && { language }),
+  
+  // React Query: Fetch files, stats, breadcrumbs
+  const {
+    data: filesData,
+    isLoading: isFilesLoading,
+    error: filesError,
+    refetch: refetchFiles
+  } = useQuery({
+    queryKey: [
+      'files',
+      selectedRepository?.id,
+      searchState.query,
+      selectedLanguage,
+      searchState.searchInSummaries
+    ],
+    queryFn: async () => {
+      if (!selectedRepository) return null
+      const params = new URLSearchParams({
+        ...(searchState.query && { search: searchState.query }),
+        ...(selectedLanguage !== 'all' && { language: selectedLanguage }),
         ...(searchState.searchInSummaries && { searchInSummaries: 'true' })
       })
-      
-      const response = await fetch(`/api/repositories/${selectedRepository.id}/files?${params}`, {
-        signal: controller.signal
-      })
-      
-      // Check if request was cancelled
-      if (controller.signal.aborted) {
-        return
-      }
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-        throw new Error(errorData.error || `HTTP ${response.status}`)
-      }
-      
-      const data = await response.json()
-      
-      // Only update state if this is still the current request
-      if (!controller.signal.aborted) {
-        setFiles(data.files || [])
-        setStats(data.stats || { totalFiles: 0, totalSize: 0, totalDirectories: 0, languages: [] })
-        setBreadcrumbs(data.breadcrumbs || [])
-        setCurrentPath(data.currentPath || '/')
-      }
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        // Request was cancelled, ignore
-        return
-      }
-        console.error('Error fetching files:', error)
-      setError(error instanceof Error ? error.message : 'Failed to fetch files')
-      setFiles([])
-      setStats({ totalFiles: 0, totalSize: 0, totalDirectories: 0, languages: [] })
-    } finally {
-      if (!controller.signal.aborted) {
-        setIsLoading(false)
-      }
-    }
-  }, [selectedRepository, searchState.searchInSummaries])
+      const response = await fetch(`/api/repositories/${selectedRepository.id}/files?${params}`)
+      if (!response.ok) throw new Error('Failed to fetch files')
+      return await response.json()
+    },
+    enabled: !!selectedRepository,
+    staleTime: 1000 * 60 // 1 minute
+  })
+
+  // React Query: Fetch file content
+  const {
+    data: fileContentData,
+    isLoading: isFileContentLoading,
+    refetch: refetchFileContent
+  } = useQuery({
+    queryKey: [
+      'fileContent',
+      selectedRepository?.id,
+      selectedFile?.id
+    ],
+    queryFn: async () => {
+      if (!selectedRepository || !selectedFile) return null
+      const response = await fetch(`/api/repositories/${selectedRepository.id}/files/${selectedFile.id}/content`)
+      if (!response.ok) throw new Error('Failed to fetch file content')
+      return await response.json()
+    },
+    enabled: !!selectedRepository && !!selectedFile,
+    staleTime: 1000 * 60 // 1 minute
+  })
 
   // Cleanup function
   useEffect(() => {
@@ -277,173 +255,20 @@ export default function FilesPage() {
         abortControllerRef.current.abort()
       }
     }
-  }, [])  // Initial load
-  useEffect(() => {
-    if (selectedRepository) {
-      fetchFiles(currentPath, searchQuery, selectedLanguage)
-    }
-  }, [selectedRepository, currentPath, fetchFiles])
-
-  // Optimized file content fetching
-  const fetchFileContent = useCallback(async (file: FileItem) => {
-    if (!selectedRepository) return
-    
-    setIsLoadingContent(true)
-    try {
-      const response = await fetch(`/api/repositories/${selectedRepository.id}/files/${file.id}/content`)
-      if (!response.ok) {
-        throw new Error(`Failed to fetch file content: ${response.status}`)
-      }
-      
-      const data = await response.json()
-      
-      if (data.error) {
-        setFileContent(null)
-      } else {
-        setFileContent(data.content)
-        if (data.file) {
-          setSelectedFile(prev => prev ? { ...prev, ...data.file } : data.file)
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching file content:', error)
-      setFileContent(null)
-    } finally {
-      setIsLoadingContent(false)
-    }
-  }, [selectedRepository])  // Optimized search handler with proper debouncing
-  const handleSearchChange = useCallback((value: string) => {
-    setSearchQuery(value)
-    setSearchState(prev => ({ ...prev, query: value }))
-    
-    // Clear previous timeout
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current)
-    }
-    
-    // If advanced filters are active, we need to re-run them with the new query
-    // Otherwise just do the basic search
-    if (searchState.useAdvancedFilters) {
-      // For advanced filters, we need immediate re-filtering since it's client-side
-      // This will be handled by the effect below
-    } else {
-      // Set new debounced search for basic search
-      searchTimeoutRef.current = setTimeout(() => {
-        fetchFiles(currentPath, value, searchState.language)
-      }, 300)
-    }
-  }, [currentPath, searchState.language, searchState.useAdvancedFilters, fetchFiles])
-
-  // Immediate search clear handler
-  const handleSearchClear = useCallback(() => {
-    setSearchQuery('')
-    setSearchState(prev => ({ ...prev, query: '' }))
-    
-    // Clear timeout and cancel any pending requests
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current)
-    }
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-    }
-    
-    // Immediately fetch without search
-    fetchFiles(currentPath, '', searchState.language)
-  }, [currentPath, searchState.language, fetchFiles])
-
-  // Language filter handler
-  const handleLanguageChange = useCallback((language: string) => {
-    setSelectedLanguage(language)
-    setSearchState(prev => ({ ...prev, language }))
-    fetchFiles(currentPath, searchState.query, language)
-  }, [currentPath, searchState.query, fetchFiles])
-
-  // File click handler
-  const handleFileClick = useCallback((file: FileItem) => {
-    if (file.type === 'dir') {
-      setCurrentPath(file.path)
-      setSelectedFile(null)
-      setFileContent(null)
-    } else {
-      setSelectedFile(file)
-      fetchFileContent(file)
-    }
-  }, [fetchFileContent])
-
-  // Breadcrumb click handler
-  const handleBreadcrumbClick = useCallback((path: string) => {
-    setCurrentPath(path)
-    setSelectedFile(null)
-    setFileContent(null)
   }, [])
-  // Refresh handler
-  const handleRefresh = useCallback(() => {
-    fetchFiles(currentPath, searchQuery, selectedLanguage)
-  }, [currentPath, searchQuery, selectedLanguage, fetchFiles])  // Advanced search handler - just enable advanced filtering mode
-  const handleAdvancedSearch = useCallback(() => {
-    setSearchState(prev => ({
-      ...prev,
-      useAdvancedFilters: true
-    }))
-  }, [])
-    
-  // Clear advanced search handler - resets all advanced filters to defaults
-  const handleClearAdvancedSearch = useCallback(() => {
-    setSearchState(prev => ({
-      ...prev,
-      useAdvancedFilters: false,
-      advancedFilteredFiles: [],
-      // Reset all advanced filter settings to defaults
-      mode: 'normal',
-      caseSensitive: false,
-      searchInSummaries: false,
-      minFileSize: '',
-      maxFileSize: '',
-      selectedExtensions: []
-    }))
-  }, [])  // Search mode change handler - search in summaries applies immediately, others wait for "Apply Filters"
-  const handleSearchModeChange = useCallback((mode: 'normal' | 'regex' | 'exact', caseSensitive: boolean, searchInContent: boolean) => {
-    setSearchState(prev => ({
-      ...prev,
-      mode,
-      caseSensitive,
-      searchInSummaries: searchInContent
-    }))
-    
-    // If only searchInContent changed, apply immediately by re-fetching
-    if (searchInContent !== searchState.searchInSummaries) {
-      // Clear any pending timeout
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current)
-      }
-      // Immediately fetch with new searchInSummaries setting
-      fetchFiles(currentPath, searchQuery, selectedLanguage)
-    }
-    // Don't apply mode/caseSensitive filters immediately - wait for "Apply Filters" button
-  }, [searchState.searchInSummaries, currentPath, searchQuery, selectedLanguage, fetchFiles])
 
-  // File filters change handler
-  const handleFileFiltersChange = useCallback((filters: {
-    minFileSize?: string,
-    maxFileSize?: string,
-    selectedExtensions?: string[]
-  }) => {
-    setSearchState(prev => ({
-      ...prev,
-      ...filters
-    }))
-  }, [])  // Client-side filtering for better performance
+  // Client-side filtering for better performance
   const filteredFiles = useMemo(() => {
     if (searchState.useAdvancedFilters) {
       // Perform advanced search with current search query and settings
-      let filtered = files
+      let filtered = filesData?.files || []
 
       // Apply search query using the same logic as the child component
-      const hasSearchQuery = searchQuery.trim()
+      const hasSearchQuery = searchState.query.trim()
       const shouldApplySearchFilter = hasSearchQuery || searchState.mode === 'exact'
       
       if (shouldApplySearchFilter) {
-        filtered = filtered.filter(file => {
+        filtered = filtered.filter((file: FileItem) => {
           // If no search query and in exact mode, match nothing
           if (!hasSearchQuery && searchState.mode === 'exact') {
             return false
@@ -463,7 +288,7 @@ export default function FilesPage() {
             searchTarget = searchTarget.toLowerCase()
           }
 
-          const query = searchState.caseSensitive ? searchQuery : searchQuery.toLowerCase()
+          const query = searchState.caseSensitive ? searchState.query : searchState.query.toLowerCase()
 
           switch (searchState.mode) {
             case 'regex':
@@ -496,7 +321,7 @@ export default function FilesPage() {
           }
         }
         const minBytes = parseFileSize(searchState.minFileSize)
-        filtered = filtered.filter(file => (file.size || 0) >= minBytes)
+        filtered = filtered.filter((file: FileItem) => (file.size || 0) >= minBytes)
       }
 
       if (searchState.maxFileSize) {
@@ -513,12 +338,12 @@ export default function FilesPage() {
           }
         }
         const maxBytes = parseFileSize(searchState.maxFileSize)
-        filtered = filtered.filter(file => (file.size || 0) <= maxBytes)
+        filtered = filtered.filter((file: FileItem) => (file.size || 0) <= maxBytes)
       }
 
       // Apply extension filters
       if (searchState.selectedExtensions.length > 0) {
-        filtered = filtered.filter(file => {
+        filtered = filtered.filter((file: FileItem) => {
           if (file.type === 'dir') return true
           const ext = file.name.split('.').pop()?.toLowerCase()
           return ext && searchState.selectedExtensions.includes(ext)
@@ -528,34 +353,82 @@ export default function FilesPage() {
       return filtered
     } else {
       // Use server-filtered results directly when not using advanced filters
-      return files
+      return filesData?.files || []
     }
   }, [
     searchState.useAdvancedFilters,
-    searchQuery,
+    searchState.query,
     searchState.mode,
     searchState.caseSensitive,
     searchState.searchInSummaries,
     searchState.minFileSize,
     searchState.maxFileSize,
     searchState.selectedExtensions,
-    files
+    filesData
   ])
 
-  const availableLanguages = stats.languages.map(lang => lang.name).filter(Boolean)
+  // Use filesData?.stats for stats
+  const stats = filesData?.stats
+  const availableLanguages = stats?.languages?.map((lang: { name: string }) => lang.name).filter(Boolean) || []
 
   // Effect to automatically re-run advanced search when search query changes
   useEffect(() => {
-    if (searchState.useAdvancedFilters && searchQuery !== searchState.query) {
+    if (searchState.useAdvancedFilters && searchState.query !== searchState.query) {
       // Update the search state query to match the current search
-      setSearchState(prev => ({ ...prev, query: searchQuery }))
+      setSearchState(prev => ({ ...prev, query: searchState.query }))
       
       // Trigger a re-run of advanced search with the updated query
       // We'll need to call the advanced search function from the child component
       // For now, we can simulate this by temporarily disabling advanced filters
       // and letting the user re-apply them, or by re-running the logic here
     }
-  }, [searchQuery, searchState.useAdvancedFilters, searchState.query])
+  }, [searchState.query, searchState.useAdvancedFilters, searchState.query])
+
+  // Restore all handler callbacks for UI controls
+  const handleLanguageChange = (language: string) => {
+    setSelectedLanguage(language)
+  }
+  const handleAdvancedSearch = () => {
+    setSearchState(prev => ({ ...prev, useAdvancedFilters: true }))
+  }
+  const handleClearAdvancedSearch = () => {
+    setSearchState(prev => ({
+      ...prev,
+      useAdvancedFilters: false,
+      advancedFilteredFiles: [],
+      mode: 'normal',
+      caseSensitive: false,
+      searchInSummaries: false,
+      minFileSize: '',
+      maxFileSize: '',
+      selectedExtensions: []
+    }))
+  }
+  const handleSearchModeChange = (mode: 'normal' | 'regex' | 'exact', caseSensitive: boolean, searchInContent: boolean) => {
+    setSearchState(prev => ({
+      ...prev,
+      mode,
+      caseSensitive,
+      searchInSummaries: searchInContent
+    }))
+  }
+  const handleFileFiltersChange = (filters: {
+    minFileSize?: string,
+    maxFileSize?: string,
+    selectedExtensions?: string[]
+  }) => {
+    setSearchState(prev => ({ ...prev, ...filters }))
+  }
+  const handleFileClick = (file: FileItem) => {
+    if (file.type === 'dir') {
+      // Use refetchFiles with new path
+      refetchFiles()
+    } else {
+      // Use React Query to fetch file content
+      // selectedFile is still needed for query key
+      setSelectedFile(file)
+    }
+  }
 
   if (!selectedRepository) {
     return (
@@ -593,6 +466,7 @@ export default function FilesPage() {
       </DashboardLayout>
     )
   }
+  // Wrap main return in a fragment to ensure a single parent
   return (
     <>
       <div className="fixed inset-0 w-screen h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 -z-50 animate-gradient-x"></div>
@@ -625,11 +499,12 @@ export default function FilesPage() {
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight transition-colors duration-200">
                       {selectedRepository.name}
                     </h1>
-                    <AnimatedHeaderStats stats={stats} />
+                    {/* Only render AnimatedHeaderStats if stats is defined */}
+                    {filesData?.stats && <AnimatedHeaderStats stats={filesData.stats} />}
                   </div>
                 </div>
                   <button
-                  onClick={handleRefresh}
+                  onClick={() => refetchFiles()}
                   className="group flex items-center gap-3 px-6 py-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all duration-200 animate-in slide-in-from-right"
                 >
                   <svg className="w-4 h-4 text-slate-600 dark:text-slate-300 group-hover:rotate-180 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -645,12 +520,12 @@ export default function FilesPage() {
           }`}>            <div className="grid grid-cols-12 gap-6 auto-rows-max">              {/* Search & Controls */}
               <div className="col-span-12 animate-in fade-in slide-in-from-bottom duration-500 delay-100">
         <div className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl p-4 hover:shadow-2xl transition-shadow duration-300">                  <FileSearchAndFilters
-                    searchQuery={searchQuery}
+                    searchQuery={searchState.query}
                     selectedLanguage={selectedLanguage}
                     availableLanguages={availableLanguages}
-                    files={files}
-                    onSearchChange={handleSearchChange}
-                    onSearchClear={handleSearchClear}
+                    files={filesData?.files || []}
+                    onSearchChange={query => setSearchState(prev => ({ ...prev, query }))}
+                    onSearchClear={() => setSearchState(prev => ({ ...prev, query: '' }))}
                     onLanguageChange={handleLanguageChange}
                     onAdvancedFiltersApply={handleAdvancedSearch}
                     onAdvancedFiltersClear={handleClearAdvancedSearch}
@@ -684,11 +559,11 @@ export default function FilesPage() {
                   </div>
                   <div className="h-[calc(100%-4rem)]">
                     <FileBrowser
-                      files={files}
+                      files={filesData?.files || []}
                       filteredFiles={filteredFiles}
                       selectedFile={selectedFile}
-                      isLoading={isLoading}
-                      currentPath={currentPath}
+                      isLoading={isFilesLoading}
+                      currentPath={filesData?.currentPath || '/'}
                       onFileClick={handleFileClick}
                     />
                   </div>
@@ -709,9 +584,9 @@ export default function FilesPage() {
                         <div className="flex items-center gap-2 flex-1 animate-in slide-in-from-left duration-300">
                           {getFileIcon(selectedFile)}
                           <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{selectedFile.name}</h2>                          <div className="ml-auto flex items-center gap-2">
-                            {fileContent && (
+                            {fileContentData?.content && (
                               <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 px-3 py-1 rounded-full animate-in fade-in duration-500 delay-100 hover:scale-105 transition-transform cursor-pointer">
-                                {fileContent.split('\n').length.toLocaleString()} lines
+                                {fileContentData.content.split('\n').length.toLocaleString()} lines
                               </span>
                             )}
                             {selectedFile.size && (
@@ -732,13 +607,13 @@ export default function FilesPage() {
                   <div className="h-[calc(100%-4rem)]">
                     <FileContentViewer
                       selectedFile={selectedFile}
-                      fileContent={fileContent}
-                      isLoadingContent={isLoadingContent}
+                      fileContent={fileContentData?.content}
+                      isLoadingContent={isFileContentLoading}
                     />
                   </div>
                 </div>
               </div>              {/* Language Distribution */}
-              {stats.languages.length > 0 && (
+              {stats?.languages?.length > 0 && (
                 <div className="col-span-12 animate-in fade-in slide-in-from-bottom duration-700 delay-400">                  <div className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl hover:shadow-2xl transition-shadow duration-300">
                     <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4 rounded-t-2xl">
                       <div className="flex items-center gap-3">
@@ -761,7 +636,7 @@ export default function FilesPage() {
           {error && (
             <div className="fixed bottom-8 left-8 right-8 max-w-md mx-auto z-50 animate-in slide-in-from-bottom duration-300">
               <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border border-red-200 dark:border-red-800 rounded-2xl shadow-2xl">
-                <ErrorDisplay error={error} onRetry={handleRefresh} />
+                <ErrorDisplay error={error} onRetry={refetchFiles} />
               </div>
             </div>
           )}

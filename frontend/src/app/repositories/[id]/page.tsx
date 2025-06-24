@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { useQnA } from '@/contexts/QnAContext'
+import { useQuery } from '@tanstack/react-query'
 
 interface Repository {
   id: string
@@ -39,61 +40,43 @@ export default function RepositoryPage() {
   const router = useRouter()
   const repositoryId = params.id as string
   const { incrementQuestionCount, triggerStatsRefreshOnCompletion } = useQnA()
-  
-  const [repository, setRepository] = useState<Repository | null>(null)
-  const [questions, setQuestions] = useState<Question[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+
+  // React Query: Fetch repository details
+  const {
+    data: repositoryData,
+    isLoading: isRepositoryLoading,
+    error: repositoryError
+  } = useQuery<Repository>({
+    queryKey: ['repository', repositoryId],
+    queryFn: async () => {
+      const response = await fetch(`/api/repositories/${repositoryId}`)
+      if (!response.ok) throw new Error('Repository not found')
+      return (await response.json()).repository
+    },
+    enabled: !!repositoryId
+  })
+
+  // React Query: Fetch questions
+  const {
+    data: questionsData,
+    isLoading: isQuestionsLoading,
+    error: questionsError,
+    refetch: refetchQuestions
+  } = useQuery<Question[]>({
+    queryKey: ['questions', repositoryId],
+    queryFn: async () => {
+      const response = await fetch(`/api/qna?repositoryId=${repositoryId}&userId=1`)
+      if (!response.ok) throw new Error('Failed to fetch questions')
+      return (await response.json()).questions || []
+    },
+    enabled: !!repositoryId
+  })
+
   const [newQuestion, setNewQuestion] = useState('')
   const [isAsking, setIsAsking] = useState(false)
-  const fetchRepository = useCallback(async () => {
-    try {
-      const response = await fetch(`/api/repositories/${repositoryId}`)
-      if (response.ok) {
-        const data = await response.json()
-        setRepository(data.repository)
-      } else if (response.status === 404) {
-        router.push('/dashboard')
-      }
-    } catch (error) {
-      console.error('Error fetching repository:', error)    } finally {
-      setIsLoading(false)
-    }
-  }, [repositoryId, router])
-  
-  const fetchQuestions = useCallback(async () => {
-    try {
-      const response = await fetch(`/api/qna?repositoryId=${repositoryId}&userId=1`) // Mock user ID
-      if (response.ok) {
-        const data = await response.json()
-        const newQuestions = data.questions || []
-        
-        // Check if any previously pending questions are now completed
-        const hasNewCompletions = newQuestions.some((newQ: Question) => 
-          newQ.status === 'completed' && 
-          questions.some(existingQ => existingQ.id === newQ.id && existingQ.status === 'pending')
-        )
-        
-        setQuestions(newQuestions)
-        
-        // Trigger stats refresh if we have new completions
-        if (hasNewCompletions) {
-          triggerStatsRefreshOnCompletion()
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching questions:', error)
-    }
-  }, [repositoryId, questions, triggerStatsRefreshOnCompletion])
-
-  useEffect(() => {
-    if (repositoryId) {
-      fetchRepository()
-      fetchQuestions()
-    }
-  }, [repositoryId, fetchRepository, fetchQuestions])
 
   const handleAskQuestion = async () => {
-    if (!newQuestion.trim() || !repository) return
+    if (!newQuestion.trim() || !repositoryData) return
 
     setIsAsking(true)
     try {
@@ -101,34 +84,22 @@ export default function RepositoryPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-        },        body: JSON.stringify({
-          repositoryId: repository.id,
+        },
+        body: JSON.stringify({
+          repositoryId: repositoryData.id,
           question: newQuestion.trim(),
           userId: '1' // Mock user ID
         }),
       })
 
       if (response.ok) {
-        const data = await response.json()
-        console.log('Question submitted:', data) // Debug log
-        
-        // Create a pending question object to show in the UI
-        const pendingQuestion: Question = {
-          id: data.questionId,
-          query: newQuestion.trim(),
-          answer: undefined,
-          createdAt: new Date().toISOString(),
-          status: 'pending'
-        }
-          setQuestions([pendingQuestion, ...questions])
-        setNewQuestion('')
-        
         // Immediately increment the question count for sidebar update
         incrementQuestionCount()
+        setNewQuestion('')
         
         // Refresh questions after a delay to get the answer
         setTimeout(() => {
-          fetchQuestions()
+          refetchQuestions()
         }, 5000) // Check for answer after 5 seconds
       } else {
         throw new Error('Failed to ask question')
@@ -163,7 +134,7 @@ export default function RepositoryPage() {
     return colors[language] || '#6b7280'
   }
 
-  if (isLoading) {
+  if (isRepositoryLoading || isQuestionsLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -174,7 +145,7 @@ export default function RepositoryPage() {
     )
   }
 
-  if (!repository) {
+  if (!repositoryData) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <Card className="p-8 text-center">
@@ -189,6 +160,9 @@ export default function RepositoryPage() {
       </div>
     )
   }
+
+  const repository = repositoryData
+  const questions = questionsData || []
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -389,7 +363,7 @@ export default function RepositoryPage() {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  {questions.map((question) => (
+                  {questions.map((question: Question) => (
                     <div key={question.id} className="border-l-4 border-primary-200 pl-4">
                       <div className="flex items-start justify-between mb-2">
                         <h4 className="font-medium text-neutral-800">{question.query}</h4>
@@ -410,7 +384,8 @@ export default function RepositoryPage() {
                           {question.relevantFiles && question.relevantFiles.length > 0 && (
                             <div className="border-t border-neutral-200 pt-3 mt-3">
                               <h6 className="text-xs font-medium text-neutral-600 mb-2">Related Files:</h6>
-                              <div className="flex flex-wrap gap-1">                                {question.relevantFiles.map((filePath, index) => {
+                              <div className="flex flex-wrap gap-1">
+                                {question.relevantFiles.map((filePath: string | any, index: number) => {
                                   // Handle different possible formats of filePath
                                   let pathString: string
                                   if (typeof filePath === 'string') {

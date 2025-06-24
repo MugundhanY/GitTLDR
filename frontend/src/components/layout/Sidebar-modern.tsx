@@ -9,7 +9,7 @@ import { useSidebar } from '@/contexts/SidebarContext';
 import { useRepository, Repository } from '@/contexts/RepositoryContext';
 import { useQnA } from '@/contexts/QnAContext';
 import { useUserData } from '@/hooks/useUserData';
-import { useRepositoryStats } from '@/hooks/useRepositoryStats';
+import { useQuery } from '@tanstack/react-query';
 import Tooltip from '@/components/ui/Tooltip';
 import {
   HomeIcon,
@@ -42,7 +42,17 @@ export default function Sidebar({ selectedRepository }: SidebarProps) {
   
   const pathname = usePathname();
   const { userData, billingData, isLoading } = useUserData();
-  const { stats, isLoading: statsLoading, refetch: refetchStats } = useRepositoryStats(selectedRepository?.id);
+  const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useQuery({
+    queryKey: ['repositoryStats', selectedRepository?.id],
+    queryFn: async () => {
+      if (!selectedRepository?.id) return null;
+      const response = await fetch(`/api/repositories/${selectedRepository.id}/stats`);
+      if (!response.ok) throw new Error('Failed to fetch repository stats');
+      return await response.json();
+    },
+    enabled: !!selectedRepository?.id,
+    staleTime: 1000 * 60 * 10 // 10 minutes
+  });
   const { repositories, selectRepository } = useRepository();
   const { isCollapsed, toggleSidebar } = useSidebar();
   const { statsRefreshTrigger } = useQnA();
@@ -55,7 +65,7 @@ export default function Sidebar({ selectedRepository }: SidebarProps) {
       const lastRefresh = (refetchStats as any)._lastRefresh || 0;
       const now = Date.now();
       const timeSinceLastRefresh = now - lastRefresh;
-      const MIN_REFRESH_INTERVAL = 2 * 60 * 1000; // Increased to 2 minutes minimum between forced refreshes
+      const MIN_REFRESH_INTERVAL = 2 * 60 * 1000; // Increased to 2 minutes minimum between forced refreshs
       
       if (timeSinceLastRefresh >= MIN_REFRESH_INTERVAL) {
         console.log('📊 [SIDEBAR] Triggering throttled stats refresh');

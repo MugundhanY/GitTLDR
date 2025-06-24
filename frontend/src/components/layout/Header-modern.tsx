@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useUserData } from '@/hooks/useUserData';
+import { useRepository } from '@/contexts/RepositoryContext';
 import { 
   BellIcon,
   SunIcon,
@@ -15,15 +16,20 @@ import {
   ArrowRightOnRectangleIcon,
   MagnifyingGlassIcon
 } from '@heroicons/react/24/outline';
+import { clientCache, CACHE_KEYS } from '@/lib/client-cache';
+import { useRouter } from 'next/navigation';
 
 export function Header() {
   const { theme, setTheme } = useTheme();
   const { userData } = useUserData();
+  const { selectedRepository } = useRepository();
   const [showThemeDropdown, setShowThemeDropdown] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  const [repoStats, setRepoStats] = useState<any>(null);
   const themeDropdownRef = useRef<HTMLDivElement>(null);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -38,6 +44,20 @@ export function Header() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    async function fetchStats() {
+      if (selectedRepository?.id) {
+        try {
+          const res = await fetch(`/api/repositories/${selectedRepository.id}/stats`);
+          if (res.ok) {
+            setRepoStats(await res.json());
+          }
+        } catch {}
+      }
+    }
+    fetchStats();
+  }, [selectedRepository?.id]);
 
   const themeOptions = [
     { 
@@ -59,9 +79,31 @@ export function Header() {
       description: 'Follow system'
     }
   ];
+
+  const handleLogout = () => {
+    clientCache.delete(CACHE_KEYS.USER_DATA);
+    clientCache.delete(CACHE_KEYS.BILLING_DATA);
+    // Optionally clear all cache: clientCache.clear();
+    // Remove any auth tokens from localStorage/cookies if used
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('auth_token');
+      // Optionally clear other user-related storage
+    }
+    setShowProfileDropdown(false);
+    router.push('/');
+  };
+
   return (
-    <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-50">
-      <div className="px-4 sm:px-6 lg:px-8">        <div className="flex justify-between items-center h-16">
+    <>
+      {/* Repo Processing Banner */}
+      {repoStats && repoStats.processed === false && (
+        <div className="w-full bg-yellow-100 border-b border-yellow-300 text-yellow-900 text-center py-2 font-medium flex items-center justify-center gap-2 animate-pulse z-50">
+          <span className="inline-block w-3 h-3 bg-yellow-400 rounded-full animate-ping mr-2"></span>
+          Repository is still processing. Some files and stats may be incomplete.
+        </div>
+      )}
+      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-50">
+        <div className="px-4 sm:px-6 lg:px-8">        <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <div className="flex items-center">
             <Link href="/dashboard" className="flex items-center">
@@ -174,7 +216,10 @@ export function Header() {
                       <Cog6ToothIcon className="w-4 h-4 mr-3" />
                       Settings
                     </Link>
-                    <button className="w-full flex items-center px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-left">
+                    <button
+                      className="w-full flex items-center px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-left"
+                      onClick={handleLogout}
+                    >
                       <ArrowRightOnRectangleIcon className="w-4 h-4 mr-3" />
                       Sign out
                     </button>
@@ -186,5 +231,6 @@ export function Header() {
         </div>
       </div>
     </header>
+    </>
   );
 }
