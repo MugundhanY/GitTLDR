@@ -20,6 +20,7 @@ interface ThinkingProcessProps {
   isVisible: boolean
   onClose?: () => void
   onAnswerSubmitted?: (answer: string) => void
+  onClearThinking?: () => void // Add this prop
   attachments?: Array<{
     id: string
     fileName: string
@@ -44,6 +45,7 @@ export default function ThinkingProcess({
   isVisible, 
   onClose,
   onAnswerSubmitted,
+  onClearThinking,
   attachments = [],
   className = '' 
 }: ThinkingProcessProps) {const [isThinking, setIsThinking] = useState(false)
@@ -400,9 +402,10 @@ export default function ThinkingProcess({
     setFinalAnswer('')
     setError(null)
     setHasCompleted(false) // Reset completion flag so thinking can start again
-  }, [])
+    if (onClearThinking) onClearThinking(); // Notify parent to clear currentThinkingQuestion
+  }, [onClearThinking])
 
-// NOTE: Removed auto-start thinking to prevent unwanted auto-triggering
+  // NOTE: Removed auto-start thinking to prevent unwanted auto-triggering
   // Users must manually click "Start Deep Thinking" button to begin the process
 
   // Reset completion flag when question changes
@@ -418,6 +421,23 @@ export default function ThinkingProcess({
       }
     }
   }, [])
+
+  // Auto-trigger startThinking when question or isVisible changes and not already thinking
+  useEffect(() => {
+    if (
+      isVisible &&
+      question &&
+      !isThinking &&
+      !hasCompleted &&
+      !error &&
+      thinkingBlocks.length === 0 &&
+      currentThought === ''
+    ) {
+      // Use a microtask to ensure the component is fully mounted before starting
+      Promise.resolve().then(() => startThinking());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isVisible, question])
 
   // Voice output for reasoning steps and final answer
   const handleSpeak = (text: string) => {
@@ -559,14 +579,6 @@ export default function ThinkingProcess({
               )}
             </div>
               <div className="flex items-center gap-2">
-              {!isThinking && !error && (
-                <button
-                  onClick={startThinking}
-                  className="px-3 py-1.5 text-sm bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors"
-                >
-                  {thinkingBlocks.length > 0 || finalAnswer ? 'Restart Thinking' : 'Start Deep Thinking'}
-                </button>
-              )}
               
               {(thinkingBlocks.length > 0 || currentThought) && (
                 <button
@@ -610,10 +622,10 @@ export default function ThinkingProcess({
               return (
                 <div 
                   key={block.id}
-                  className="animate-in slide-in-from-bottom duration-300 border-l-4 pl-4 mb-4 bg-white dark:bg-slate-900/60 rounded-lg shadow-sm border-purple-400 relative"
+                  className="animate-in slide-in-from-bottom duration-300 border-l-4 pl-6 pr-4 py-5 mb-4 bg-gradient-to-br from-purple-50/80 to-white dark:from-purple-900/40 dark:to-slate-900/60 rounded-xl shadow-md border-purple-400 relative group transition-all"
                 >
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="flex-shrink-0 w-7 h-7 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-base font-bold">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-lg font-bold shadow-md">
                       {stepNumber}
                     </div>
                     <span className="text-xs font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wide">Step {stepNumber}</span>
@@ -625,7 +637,7 @@ export default function ThinkingProcess({
                     <button
                       type="button"
                       onClick={() => handleSpeak(block.content)}
-                      className="ml-2 p-2 rounded-full border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors"
+                      className="ml-2 p-2 rounded-full border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors shadow-sm"
                       title="Read step aloud"
                     >
                       <SpeakerWaveIcon className="w-5 h-5 text-purple-600" />
@@ -633,32 +645,13 @@ export default function ThinkingProcess({
                     <button
                       type="button"
                       onClick={handleStopSpeak}
-                      className="ml-1 p-2 rounded-full border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                      className="ml-1 flex items-center justify-center p-2 w-10 h-10 rounded-full border border-slate-200 dark:border-green-600 bg-white dark:bg-slate-800 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
                       title="Stop reading"
                     >
-                      <span className="w-5 h-5 block text-red-600">&#9632;</span>
+                      <svg viewBox="0 0 32 32" fill="currentColor" className="w-8 h-8 text-red-600">
+                        <rect x="8" y="8" width="16" height="16" rx="4" />
+                      </svg>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleStepFeedback(block.id, 'like')}
-                      disabled={stepFeedbackLoading[block.id] || stepFeedback[block.id] === 'like'}
-                      className={`ml-2 p-2 rounded-full border border-slate-200 dark:border-green-600 bg-white dark:bg-slate-800 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors ${stepFeedback[block.id] === 'like' ? 'bg-green-200 dark:bg-green-800' : ''}`}
-                      title="Like step"
-                    >
-                      <HandThumbUpIcon className="w-5 h-5 text-green-600" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleStepFeedback(block.id, 'dislike')}
-                      disabled={stepFeedbackLoading[block.id] || stepFeedback[block.id] === 'dislike'}
-                      className={`ml-1 p-2 rounded-full border border-slate-200 dark:border-green-600 bg-white dark:bg-slate-800 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors ${stepFeedback[block.id] === 'dislike' ? 'bg-red-200 dark:bg-red-800' : ''}`}
-                      title="Dislike step"
-                    >
-                      <HandThumbDownIcon className="w-5 h-5 text-red-600" />
-                    </button>
-                    {stepFeedback[block.id] && (
-                      <span className={`ml-2 text-xs ${stepFeedback[block.id] === 'like' ? 'text-green-600' : 'text-red-600'}`}>{stepFeedback[block.id] === 'like' ? 'Thanks for your feedback!' : 'We appreciate your feedback!'}</span>
-                    )}
                     <span className="ml-auto text-xs text-slate-400 dark:text-slate-500">{new Date(block.timestamp).toLocaleTimeString()}</span>
                   </div>
                   <div className="prose prose-sm dark:prose-invert max-w-none">
@@ -757,7 +750,9 @@ export default function ThinkingProcess({
                       className="ml-1 p-2 rounded-full border border-slate-200 dark:border-green-600 bg-white dark:bg-slate-800 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
                       title="Stop reading"
                     >
-                      <span className="w-5 h-5 block text-red-600">&#9632;</span>
+                      <span className="w-5 h-5 block text-red-600">
+                        <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><rect x="4" y="4" width="12" height="12" rx="2" /></svg>
+                      </span>
                     </button>
                     <button
                       type="button"

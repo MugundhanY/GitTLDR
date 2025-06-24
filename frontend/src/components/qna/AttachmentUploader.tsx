@@ -8,7 +8,10 @@ import {
   DocumentIcon,
   PhotoIcon,
   ExclamationTriangleIcon,
-  ArrowUpTrayIcon
+  ArrowUpTrayIcon,
+  DocumentTextIcon,
+  DocumentArrowDownIcon,
+  DocumentChartBarIcon
 } from '@heroicons/react/24/outline';
 import { QuestionAttachment, AttachmentUploaderProps } from '@/types/attachments';
 
@@ -32,12 +35,14 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
     '.yml',
     '.yaml'
   ],
-  repositoryId
+  repositoryId,
+  onUploadingChange
 }) => {
   const [internalAttachments, setInternalAttachments] = useState<AttachmentWithClientKey[]>([]);
   const [uploading, setUploading] = useState<string[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isDragActive, setIsDragActive] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<{ [key: string]: File }>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
     // Unique key generator with timestamp, counter, and multiple random elements
   const generateUniqueKey = (() => {
@@ -95,6 +100,12 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
     });
   }, [attachments]);
 
+  useEffect(() => {
+    if (typeof onUploadingChange === 'function') {
+      onUploadingChange(uploading.length > 0);
+    }
+  }, [uploading, onUploadingChange]);
+
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -102,21 +113,48 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
-  const getFileIcon = (fileType: string) => {
-    if (fileType.startsWith('image/')) {
+  const getFileIcon = (fileType: string, fileName?: string) => {
+    const ext = fileName ? fileName.split('.').pop()?.toLowerCase() : '';
+    if (fileType.startsWith('image/') || ['jpg','jpeg','png','gif','bmp','svg','webp'].includes(ext || '')) {
       return <PhotoIcon className="h-5 w-5 text-purple-500" />;
     }
-    if (fileType === 'application/pdf') {
+    if (fileType === 'application/pdf' || ext === 'pdf') {
       return <DocumentIcon className="h-5 w-5 text-red-500" />;
     }
-    if (fileType.includes('json')) {
-      return <DocumentIcon className="h-5 w-5 text-orange-500" />;
+    if (fileType.includes('json') || ext === 'json') {
+      return <DocumentTextIcon className="h-5 w-5 text-orange-500" />;
     }
-    if (fileType.includes('text') || fileType.includes('markdown')) {
-      return <DocumentIcon className="h-5 w-5 text-blue-500" />;
+    if (fileType.includes('csv') || ext === 'csv') {
+      return <DocumentChartBarIcon className="h-5 w-5 text-green-500" />;
     }
-    if (fileType.includes('csv')) {
-      return <DocumentIcon className="h-5 w-5 text-green-500" />;
+    if (fileType.includes('text') || ext === 'txt') {
+      return <DocumentTextIcon className="h-5 w-5 text-blue-400" />;
+    }
+    if (ext === 'md') {
+      return <DocumentTextIcon className="h-5 w-5 text-pink-500" />;
+    }
+    if (['doc','docx'].includes(ext || '')) {
+      return <DocumentArrowDownIcon className="h-5 w-5 text-indigo-500" />;
+    }
+    if (['ppt','pptx'].includes(ext || '')) {
+      return <DocumentIcon className="h-5 w-5 text-orange-400" />;
+    }
+    if (['xls','xlsx'].includes(ext || '')) {
+      return <DocumentChartBarIcon className="h-5 w-5 text-lime-500" />;
+    }
+    if (['zip','rar','7z','tar','gz'].includes(ext || '')) {
+      return <DocumentIcon className="h-5 w-5 text-gray-500" />;
+    }
+    if (['mp3','wav','ogg','flac'].includes(ext || '')) {
+      return <DocumentIcon className="h-5 w-5 text-amber-500" />;
+    }
+    if (['mp4','mov','avi','mkv','webm'].includes(ext || '')) {
+      return <DocumentIcon className="h-5 w-5 text-cyan-500" />;
+    }
+    if ([
+      'js','ts','jsx','tsx','py','java','cpp','c','cs','go','rb','php','swift','sh','bat','pl','rs','kt','scala','dart','lua','r','m','vb','groovy','asm','sql','html','css','scss','less','xml','json5','yml','yaml'
+    ].includes(ext || '')) {
+      return <DocumentTextIcon className="h-5 w-5 text-emerald-500" />;
     }
     return <DocumentIcon className="h-5 w-5 text-slate-500" />;
   };
@@ -333,13 +371,28 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
     }
 
     const tempIds = validFiles.map(() => `temp-${crypto.randomUUID()}`);
+    // Add pending files to state for display
+    setPendingFiles(prev => {
+      const next = { ...prev };
+      validFiles.forEach((file, idx) => {
+        next[tempIds[idx]] = file;
+      });
+      return next;
+    });
     setUploading(prev => [...prev, ...tempIds]);
 
     const uploadPromises = validFiles.map(file => uploadFile(file));
 
     const results = await Promise.allSettled(uploadPromises);
 
-    setUploading(prev => prev.filter(id => !tempIds.includes(id)));    const newInternalAttachments: AttachmentWithClientKey[] = [];
+    setUploading(prev => prev.filter(id => !tempIds.includes(id)));
+    setPendingFiles(prev => {
+      const next = { ...prev };
+      tempIds.forEach(id => { delete next[id]; });
+      return next;
+    });
+
+    const newInternalAttachments: AttachmentWithClientKey[] = [];
     const failedUploads: string[] = [];    results.forEach((result, index) => {
       if (result.status === 'fulfilled') {
         // Use index and additional random string to ensure absolute uniqueness
@@ -451,7 +504,6 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
             : 'border-slate-300 dark:border-slate-600 hover:border-slate-400 dark:hover:border-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50'
           }
           ${disabled ? 'pointer-events-none opacity-50' : ''}
-          ${uploading.length > 0 ? 'pointer-events-none opacity-75' : ''}
         `}
         onClick={handleButtonClick}
         onDrop={handleDrop}
@@ -469,54 +521,32 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
           disabled={disabled}
         />
 
-        {uploading.length > 0 ? (
-          <div className="space-y-3">
-            <div className="w-12 h-12 mx-auto bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
-              <CloudArrowUpIcon className="w-6 h-6 text-blue-600 dark:text-blue-400 animate-spin" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                Uploading {uploading.length} file{uploading.length > 1 ? 's' : ''}...
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Please wait while your files are being uploaded
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center transition-all duration-200 ${
+        {/* Remove uploading message block entirely, always show drag-and-drop UI */}
+        <div className="space-y-3">
+          <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center transition-all duration-200 ${
+            isDragActive 
+              ? 'bg-blue-100 dark:bg-blue-900/30 scale-110' 
+              : 'bg-slate-100 dark:bg-slate-800'
+          }`}>
+            <ArrowUpTrayIcon className={`w-6 h-6 transition-colors duration-200 ${
               isDragActive 
-                ? 'bg-blue-100 dark:bg-blue-900/30 scale-110' 
-                : 'bg-slate-100 dark:bg-slate-800'
-            }`}>
-              <ArrowUpTrayIcon className={`w-6 h-6 transition-colors duration-200 ${
-                isDragActive 
-                  ? 'text-blue-600 dark:text-blue-400' 
-                  : 'text-slate-600 dark:text-slate-400'
-              }`} />
-            </div>
-            
-            <div>
-              <p className={`text-sm font-medium transition-colors duration-200 ${
-                isDragActive 
-                  ? 'text-blue-700 dark:text-blue-300' 
-                  : 'text-slate-700 dark:text-slate-300'
-              }`}>
-                {isDragActive 
-                  ? 'Drop files here to upload' 
-                  : 'Drop files here or click to browse'
-                }
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Max {maxFiles} files, up to {formatFileSize(maxFileSize)} each
-              </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                Supported: {acceptedFileTypes.slice(0, 3).join(', ')}{acceptedFileTypes.length > 3 ? `, +${acceptedFileTypes.length - 3} more` : ''}
-              </p>
-            </div>
+                ? 'text-blue-600 dark:text-blue-400' 
+                : 'text-slate-600 dark:text-slate-400'
+            }`} />
           </div>
-        )}
+          
+          <div>
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+              Drop files here or click to browse
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Max {maxFiles} files, up to {formatFileSize(maxFileSize)} each
+            </p>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+              Supported: {acceptedFileTypes.slice(0, 3).join(', ')}{acceptedFileTypes.length > 3 ? `, +${acceptedFileTypes.length - 3} more` : ''}
+            </p>
+          </div>
+        </div>
 
         {/* Visual feedback overlay for drag state */}
         {isDragActive && (
@@ -529,13 +559,13 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
           <span className="text-sm text-red-700 dark:text-red-300">{uploadError}</span>
         </div>
       )}      {/* Attached Files */}
-      {internalAttachments.length > 0 && (
+      {(Object.keys(pendingFiles).length > 0 || internalAttachments.length > 0) && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              Attached Files ({internalAttachments.length}/{maxFiles})
+              Attached Files ({internalAttachments.length + Object.keys(pendingFiles).length}/{maxFiles})
             </p>
-            {internalAttachments.length > 0 && (
+            {(internalAttachments.length > 0 || Object.keys(pendingFiles).length > 0) && (
               <button
                 type="button"
                 onClick={clearAllAttachments}
@@ -544,41 +574,70 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
                 Clear All
               </button>
             )}
-          </div>          <div className="grid gap-2">
-            {internalAttachments
-              .filter((attachment, index, array) => 
-                // Remove duplicates by clientKey - keep only the first occurrence
-                array.findIndex(a => a.clientKey === attachment.clientKey) === index
-              )
-              .map((attachment) => (
-              <div
-                key={attachment.clientKey}
-                className="group flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-all duration-200"
-              >
-                <div className="flex items-center space-x-3 min-w-0 flex-1">
-                  <div className="flex-shrink-0">
-                    {getFileIcon(attachment.fileType)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-900 dark:text-white truncate">
-                      {attachment.originalFileName}
-                    </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {formatFileSize(attachment.fileSize)} • {attachment.fileType.split('/')[1]?.toUpperCase() || 'File'}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => removeAttachment(attachment.clientKey)}
-                  disabled={disabled}
-                  className="ml-2 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 rounded-md opacity-0 group-hover:opacity-100"
-                  title="Remove file"
+          </div>
+          <div className="grid gap-2">
+            {[
+              ...Object.entries(pendingFiles).map(([clientKey, file]) => ({
+                clientKey,
+                originalFileName: file.name,
+                fileName: '',
+                fileSize: file.size,
+                fileType: file.type,
+                id: '',
+                uploadUrl: '',
+                createdAt: '',
+                isUploading: true,
+              })),
+              ...internalAttachments
+                .filter((attachment, index, array) =>
+                  array.findIndex(a => a.clientKey === attachment.clientKey) === index &&
+                  !pendingFiles[attachment.clientKey]
+                )
+                .map(attachment => ({ ...attachment, isUploading: uploading.includes(attachment.clientKey) }))
+            ].map((attachment) => {
+              const isUploading = attachment.isUploading;
+              return (
+                <div
+                  key={attachment.clientKey}
+                  className="group flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-all duration-200"
                 >
-                  <XMarkIcon className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
+                  <div className="flex items-center space-x-3 min-w-0 flex-1">
+                    <div className="flex-shrink-0">
+                      {getFileIcon(attachment.fileType, attachment.originalFileName)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                        {attachment.originalFileName}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                        {attachment.fileSize > 0 && `${formatFileSize(attachment.fileSize)} • ${attachment.fileType.split('/')[1]?.toUpperCase() || 'File'}`}
+                        {isUploading && (
+                          <span className="inline-flex items-center gap-1 text-blue-500 ml-2">
+                            <span className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></span>
+                            Uploading
+                          </span>
+                        )}
+                        {!isUploading && attachment.fileSize > 0 && (
+                          <span className="inline-flex items-center gap-1 text-green-500 ml-2">
+                            <span className="w-3 h-3 bg-green-500 rounded-full"></span>
+                            Uploaded
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeAttachment(attachment.clientKey)}
+                    disabled={disabled}
+                    className="ml-2 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 rounded-md opacity-0 group-hover:opacity-100"
+                    title="Remove file"
+                  >
+                    <XMarkIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

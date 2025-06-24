@@ -27,4 +27,5 @@ export interface AttachmentUploaderProps {
   maxFileSize?: number; // in bytes
   acceptedFileTypes?: string[];
   repositoryId: string;
+  onUploadingChange?: (uploading: boolean) => void;
 }

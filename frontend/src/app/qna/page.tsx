@@ -183,17 +183,14 @@ export default function QnAPage() {
   // In ThinkingProcess onAnswerSubmitted, just refetch (optimistic removal is handled globally)
   const handleAskQuestion = useCallback(async () => {
     if (!newQuestion.trim()) return
+    // Do NOT auto-enable deep research here; only use current state
     if (enableDeepResearch) {
-      // Debug: Log attachment state before triggering thinking
-      console.log('🔥 QNA PAGE DEBUG:')
-      console.log('🔥 questionAttachments state:', questionAttachments)
-      console.log('🔥 questionAttachments length:', questionAttachments?.length)
-      console.log('🔥 About to pass to ThinkingProcess...')
-      
       setCurrentThinkingQuestion(newQuestion.trim())
-      setNewQuestion('')
-      return
+    } else {
+      // Normal question mode
+      setCurrentThinkingQuestion('')
     }
+    setNewQuestion('')
     // Optimistically add pending question
     const optimisticId = `optimistic-${Date.now()}`
     const pendingQuestion: Question = {
@@ -216,7 +213,6 @@ export default function QnAPage() {
     await actions.handleAskQuestion(newQuestion.trim(), questionAttachments)
     setNewQuestion('')
     setQuestionAttachments([])
-    // No longer clear optimistic questions after timeout
     setTimeout(() => {
       refetchQuestions()
     }, 1000)
@@ -374,13 +370,13 @@ export default function QnAPage() {
                         className="w-12 h-12 rounded-2xl object-cover shadow-lg border-2 border-white/20 transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in"
                       />
                     ) : (
-                      <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in">
+                      <div className={`w-12 h-12 bg-gradient-to-br from-${enableDeepResearch ? 'purple' : 'blue'}-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in`}>
                         <ChatBubbleLeftRightIcon className="w-6 h-6 text-white" />
                       </div>
                     )}
                   </div>
                   <div className="animate-in slide-in-from-left duration-500 delay-200">                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
-                      <SparklesIcon className="w-6 h-6 text-blue-500" />
+                      <SparklesIcon className={`w-6 h-6 text-${enableDeepResearch ? 'purple' : 'blue'}-500`} />
                       Q&A Assistant                      {enableDeepResearch && (
                         <span className="text-sm px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-full font-medium">
                           Thinking Mode
@@ -400,21 +396,46 @@ export default function QnAPage() {
           <div className={`mx-auto px-8 py-8 transition-all duration-300 ${
             isCollapsed ? 'max-w-none' : 'max-w-7xl'
           }`}>
-            <div className="grid grid-cols-12 gap-8">              {/* Question Input Section */}              <div className="col-span-12 animate-in fade-in slide-in-from-top duration-600 delay-100">
-                <QuestionInput
-                  repository={selectedRepository}
-                  question={newQuestion}
-                  onQuestionChange={setNewQuestion}
-                  onSubmit={handleAskQuestion}
-                  isAsking={actions.isAsking}
-                  showSuggestions={showSuggestions}
-                  onToggleSuggestions={() => setShowSuggestions(!showSuggestions)}
-                  onSelectSuggestion={handleSelectSuggestion}
-                  enableDeepResearch={enableDeepResearch}
-                  onToggleDeepResearch={() => setEnableDeepResearch(!enableDeepResearch)}
-                  attachments={questionAttachments}
-                  onAttachmentsChange={setQuestionAttachments}                />
-              </div>              {/* AI Thinking Process */}
+            <div className="flex flex-col gap-8">
+              {/* QnA Input + Suggestions Row */}
+              <div className="w-full">
+                <div className="flex flex-col lg:flex-row gap-8 items-stretch h-full min-h-[220px]">
+                  {/* Ask a Question (left, 2/3 or full width) */}
+                  <div
+                    className={`transition-all duration-500 ease-in-out h-full ${
+                      showSuggestions && selectedRepository
+                        ? 'lg:w-2/3 w-full'
+                        : 'w-full'
+                    } ${enableDeepResearch ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-700' : ''}`}
+                  >
+                    <QuestionInput
+                      repository={selectedRepository}
+                      question={newQuestion}
+                      onQuestionChange={setNewQuestion}
+                      onSubmit={handleAskQuestion}
+                      isAsking={actions.isAsking}
+                      showSuggestions={showSuggestions}
+                      onToggleSuggestions={() => setShowSuggestions(!showSuggestions)}
+                      onSelectSuggestion={handleSelectSuggestion}
+                      enableDeepResearch={enableDeepResearch}
+                      onToggleDeepResearch={() => setEnableDeepResearch(!enableDeepResearch)}
+                      attachments={questionAttachments}
+                      onAttachmentsChange={setQuestionAttachments}
+                    />
+                  </div>
+                  {/* Suggestions (right, 1/3) */}
+                  {showSuggestions && selectedRepository && (
+                    <aside className="lg:w-1/3 w-full h-full flex flex-col">
+                      <QuestionSuggestions
+                        repository={selectedRepository}
+                        onSelectQuestion={handleSelectSuggestion}
+                        className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl hover:shadow-2xl transition-shadow duration-300 h-full"
+                      />
+                    </aside>
+                  )}
+                </div>
+              </div>
+              {/* AI Thinking Process */}
               {enableDeepResearch && selectedRepository && currentThinkingQuestion && (
                 <div className="col-span-12 animate-in fade-in slide-in-from-bottom duration-600 delay-200">
                   <ThinkingProcess
@@ -423,67 +444,30 @@ export default function QnAPage() {
                     isVisible={enableDeepResearch}
                     onClose={() => {
                       setEnableDeepResearch(false)
-                      setQuestionAttachments([]) // Clear attachments when thinking process is closed
+                      setQuestionAttachments([])
+                      setCurrentThinkingQuestion('') // Clear the current thinking question when closed
                     }}
                     attachments={questionAttachments}
                     onAnswerSubmitted={async (answer) => {
-                      // Clear attachments since thinking is complete
                       setQuestionAttachments([])
-                      // Add a small delay to ensure database commit completes
                       setTimeout(async () => {
-                        // Refresh questions to show the new answer
                         await refetchQuestions()
                         console.log('Questions refreshed after thinking answer submitted')
-                      }, 1000)
-                      // Optionally close the thinking process after delay
-                      setTimeout(() => {
                         setEnableDeepResearch(false)
-                      }, 3000)
+                        setCurrentThinkingQuestion('') // Also clear after answer is posted
+                      }, 1000)
                     }}
+                    onClearThinking={() => setCurrentThinkingQuestion('')} // Clear when user hits Clear
                   />
                 </div>
               )}
 
-              {/* Question Suggestions Section */}
-              {showSuggestions && selectedRepository && (
-                <div className="col-span-12 animate-in fade-in slide-in-from-bottom duration-600 delay-150">
-                  <div className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl hover:shadow-2xl transition-shadow duration-300">
-                    <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4 rounded-t-2xl">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-lg flex items-center justify-center animate-pulse">
-                            <SparklesIcon className="w-4 h-4 text-white" />
-                          </div>
-                          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Question Suggestions</h2>
-                          <span className="text-xs px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 rounded-full">
-                            Smart Templates
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => setShowSuggestions(false)}
-                          className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                        >
-                          <ChevronDownIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-                        </button>
-                      </div>
-                    </div>
-                    
-                    <div className="p-0 rounded-b-2xl">
-                      <QuestionSuggestions
-                        repository={selectedRepository}
-                        onSelectQuestion={handleSelectSuggestion}
-                        className="border-none rounded-none"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* Questions & Answers Section */}
-              <div className="col-span-12 animate-in fade-in slide-in-from-bottom duration-600 delay-200">
+              <section className="col-span-12 animate-in fade-in slide-in-from-bottom duration-600 delay-200" aria-label="Questions and Answers">
                 <div className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl hover:shadow-2xl transition-shadow duration-300">
                   {/* Header */}
-                  <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4 rounded-t-2xl">                    <QnAHeader
+                  <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4 rounded-t-2xl">
+                    <QnAHeader
                       questionsCount={filtering.filteredQuestions.length}
                       useConfidenceFilter={filtering.useConfidenceFilter}
                       minConfidence={filtering.minConfidence}
@@ -493,14 +477,12 @@ export default function QnAPage() {
                       onExport={handleExport}
                       onToggleSuggestions={() => setShowSuggestions(!showSuggestions)}
                     />
-
                     {/* Search Bar */}
                     <QnASearchBar
                       searchQuery={filtering.searchQuery}
                       onSearchChange={filtering.setSearchQuery}
                       className="mb-3 mt-3"
                     />
-
                     {/* Filters */}
                     <QnAFilterPanel
                       searchQuery={filtering.searchQuery}
@@ -526,43 +508,49 @@ export default function QnAPage() {
                       onToggleFilters={() => filtering.setShowFilters(!filtering.showFilters)}
                     />
                   </div>
-                  
                   {/* Questions List */}
                   <div className="p-6 rounded-b-2xl">
                     {filtering.filteredQuestions.length === 0 ? (
                       <QnAEmptyState repositoryName={selectedRepository.name} />
                     ) : (
                       <div className="space-y-4">
-                        {questionsToShow.map((question: Question) => (
-                          <QuestionCard
+                        {questionsToShow.map((question: Question, idx: number) => (
+                          <div
                             key={question.id}
-                            question={question}
-                            selectedRepository={selectedRepository}
-                            expandedFiles={actions.expandedFiles}
-                            loadingFiles={actions.loadingFiles}
-                            fileContents={actions.fileContents}
-                            copiedStates={actions.copiedStates}
-                            languageMap={codeFormatting.languageMap}
-                            getStatusIcon={getStatusIcon}
-                            getStatusColor={getStatusColor}
-                            toggleFileExpansion={actions.toggleFileExpansion}
-                            copyToClipboard={actions.copyToClipboard}
-                            formatCodeContent={codeFormatting.formatCodeContent}
-                            getLanguageColor={codeFormatting.getLanguageColor}
-                            onQuestionUpdate={actions.handleQuestionUpdate}
-                            getFollowUpSuggestions={actions.getFollowUpSuggestions}
-                            handleSelectFollowUp={handleSelectFollowUp}
-                            isPageVisible={isPageVisible}
-                            useConfidenceFilter={filtering.useConfidenceFilter}
-                          />
+                            style={{
+                              animation: `fadeInUp 0.5s cubic-bezier(0.4,0,0.2,1) both`,
+                              animationDelay: `${idx * 60}ms`,
+                            }}
+                            tabIndex={-1}
+                          >
+                            <QuestionCard
+                              question={question}
+                              selectedRepository={selectedRepository}
+                              expandedFiles={actions.expandedFiles}
+                              loadingFiles={actions.loadingFiles}
+                              fileContents={actions.fileContents}
+                              copiedStates={actions.copiedStates}
+                              languageMap={codeFormatting.languageMap}
+                              getStatusIcon={getStatusIcon}
+                              getStatusColor={getStatusColor}
+                              toggleFileExpansion={actions.toggleFileExpansion}
+                              copyToClipboard={actions.copyToClipboard}
+                              formatCodeContent={codeFormatting.formatCodeContent}
+                              getLanguageColor={codeFormatting.getLanguageColor}
+                              onQuestionUpdate={actions.handleQuestionUpdate}
+                              getFollowUpSuggestions={actions.getFollowUpSuggestions}
+                              handleSelectFollowUp={handleSelectFollowUp}
+                              isPageVisible={isPageVisible}
+                              useConfidenceFilter={filtering.useConfidenceFilter}
+                            />
+                          </div>
                         ))}
-                        
                         {/* Load More Button */}
                         {questionsToShow.length < filtering.filteredQuestions.length && (
                           <div className="text-center pt-6">
                             <button
                               onClick={loadMoreQuestions}
-                              className="px-6 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-colors duration-200 font-medium"
+                              className="px-6 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-colors duration-200 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
                             >
                               Load More Questions ({filtering.filteredQuestions.length - questionsToShow.length} remaining)
                             </button>
@@ -572,7 +560,7 @@ export default function QnAPage() {
                     )}
                   </div>
                 </div>
-              </div>
+              </section>
             </div>
           </div>
         </div>
@@ -580,3 +568,16 @@ export default function QnAPage() {
     </>
   )
 }
+
+/* Add global fadeInUp animation if not present */
+/* In your global CSS (e.g., globals.css):
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translate3d(0, 24px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+Add to your global CSS (e.g., globals.css) for smooth grid resizing:
+.grid-cols-3 > .transition-all {
+  transition-property: grid-column, width, max-width, min-width, padding, margin, background, box-shadow;
+}
+*/

@@ -30,9 +30,13 @@ export default function QnAHeader({
   className = ""
 }: QnAHeaderProps) {
   return (
-    <div className={`flex items-center justify-between ${className}`}>
-      <div className="flex items-center gap-3">
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Questions & Answers</h3>
+      <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4 rounded-t-2xl">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`w-8 h-8 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center animate-pulse`}>
+              <ChatBubbleLeftRightIcon className="w-4 h-4 text-white" />
+            </div>
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Questions & Answers</h2>
         <div className="flex items-center gap-2">
           <div className="text-xs text-slate-500 dark:text-slate-400 bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded-full">
             {questionsCount} questions
@@ -50,6 +54,7 @@ export default function QnAHeader({
             </div>
           )}
         </div>
+      </div>
       </div>
       
       {/* Action Buttons */}

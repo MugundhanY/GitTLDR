@@ -196,6 +196,13 @@ body {
     );
     animation: shimmer 2s infinite;
   }
+  
+  /* Smooth grid column resizing for QnA input/suggestions */
+  .grid-cols-3 > .transition-all {
+    transition-property: grid-column, width, max-width, min-width, padding, margin, background, box-shadow;
+    transition-duration: 900ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
 }
 
 /* Custom animations for enhanced dashboard */
@@ -233,6 +240,12 @@ body {
   50% {
     background-position: 100% 50%;
   }
+}
+
+/* Fade in up animation for QnA cards */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translate3d(0, 24px, 0); }
+  to { opacity: 1; transform: none; }
 }
 
 .animate-shimmer {
