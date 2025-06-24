@@ -241,7 +241,6 @@ export default function ThinkingProcess({
 
       while (true) {
         const { done, value } = await reader.read()
-        
         if (done) break
         if (isPaused) {
           await new Promise(resolve => {
@@ -252,107 +251,89 @@ export default function ThinkingProcess({
             checkPause()
           })
         }
-
         const chunk = decoder.decode(value, { stream: true })
-        buffer += chunk        // Process complete lines
+        buffer += chunk
         const lines = buffer.split('\n')
-        buffer = lines.pop() || '' // Keep incomplete line in buffer
-
+        buffer = lines.pop() || ''
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6))
-                if (data.type === 'thinking_start') {
+              if (data.type === 'thinking_start') {
                 currentBlockId = data.block_id || `block_${Date.now()}`
                 currentBlockContent = ''
               } else if (data.type === 'thinking_chunk') {
-                // Check if this is a new step (starts with ##)
                 const content = data.content || ''
-                if (content.includes('Based on my thinking above') || content.startsWith('Based on')) {
-                  // This is the final answer - handle separately
-                  const answerContent = content.replace(/^Based on my thinking above,?\s*/i, '').trim()
-                  setFinalAnswer(answerContent)
-                  
-                  // Complete the previous thinking block if it has content
-                  if (currentBlockContent.trim()) {
+                // DeepSeek: buffer until logical break, Gemini: push immediately
+                const isDeepSeek = (data.id || currentBlockId || '').toLowerCase().includes('deepseek') || (data.provider === 'DeepSeek')
+                if (isDeepSeek) {
+                  currentBlockContent += content
+                  // Logical break: double newline or markdown step header
+                  if (/\n\n|\*\*Step \d+:/.test(currentBlockContent)) {
+                    const blocks = currentBlockContent.split(/(\n\n|\*\*Step \d+:)/)
+                    let buffer = ''
+                    for (let i = 0; i < blocks.length; i++) {
+                      buffer += blocks[i]
+                      // If this is a break or last block, push
+                      if (/^\*\*Step \d+:/.test(blocks[i]) || i === blocks.length - 1) {
+                        if (buffer.trim().length > 0) {
+                          const blockToAdd = {
+                            id: (data.id || currentBlockId || `block_${Date.now()}`) + '-' + i,
+                            content: buffer.trim(),
+                            timestamp: Date.now(),
+                            isComplete: true
+                          }
+                          setThinkingBlocks(prev => [...prev, blockToAdd])
+                        }
+                        buffer = ''
+                      }
+                    }
+                    currentBlockContent = ''
+                  }
+                  setCurrentThought(currentBlockContent)
+                } else {
+                  // Gemini: push each chunk as a step
+                  if (content.trim()) {
                     const blockToAdd = {
-                      id: currentBlockId,
-                      content: currentBlockContent.trim(),
+                      id: data.id || currentBlockId || `block_${Date.now()}`,
+                      content: content.trim(),
                       timestamp: Date.now(),
                       isComplete: true
                     }
-                    
-                    setThinkingBlocks(prev => {
-                      const exists = prev.some(block => 
-                        block.content.trim() === blockToAdd.content.trim()
-                      )
-                      if (!exists) {
-                        return [...prev, blockToAdd]
-                      }
-                      return prev
-                    })
+                    setThinkingBlocks(prev => [...prev, blockToAdd])
                   }
-                  
-                  // Clear current thought since this is the final answer
+                  setCurrentThought('')
+                }
+              } else if (data.type === 'answer_submitted') {
+                // Finalize and push the current reasoning block if it has content
+                if (currentBlockContent.trim()) {
+                  const blockToAdd = {
+                    id: currentBlockId,
+                    content: currentBlockContent.trim(),
+                    timestamp: Date.now(),
+                    isComplete: true
+                  }
+                  setThinkingBlocks(prev => {
+                    const exists = prev.some(block => 
+                      block.content.trim() === blockToAdd.content.trim()
+                    )
+                    if (!exists) {
+                      return [...prev, blockToAdd]
+                    }
+                    return prev
+                  })
                   currentBlockContent = ''
                   setCurrentThought('')
-                } else if (content.includes('<thinking>') || content.includes('</thinking>')) {
-                  // Handle thinking tags - extract content or skip
-                  const cleanContent = content.replace(/<\/?thinking>/g, '').trim()
-                  if (cleanContent) {
-                    currentBlockContent += cleanContent
-                    setCurrentThought(currentBlockContent)
-                  }
-                } else {
-                  // Check if this starts a new major thought (transition words or paragraph break)
-                  const isNewThought = content.match(/^(Actually|Wait|Hmm|Let me|So|Ok|Now)/i) ||
-                                      (currentBlockContent.trim() && content.match(/^\w+.*\.\s*\w/))
-                  
-                  if (isNewThought && currentBlockContent.trim() && currentBlockContent.length > 50) {
-                    // Complete the previous thinking block
-                    const blockToAdd = {
-                      id: currentBlockId,
-                      content: currentBlockContent.trim(),
-                      timestamp: Date.now(),
-                      isComplete: true
-                    }
-                    
-                    setThinkingBlocks(prev => {
-                      const exists = prev.some(block => 
-                        block.content.trim() === blockToAdd.content.trim()
-                      )
-                      if (!exists) {
-                        return [...prev, blockToAdd]
-                      }
-                      return prev
-                    })
-                    
-                    // Start a new thinking block
-                    currentBlockId = `${data.id || 'thought'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-                    currentBlockContent = content
-                    setCurrentThought(content)
-                  } else {
-                    // Continue building current thinking block
-                    if (!finalAnswer) {
-                      currentBlockContent += content
-                      setCurrentThought(currentBlockContent)
-                    } else {
-                      // If we already have a final answer, append to it
-                      setFinalAnswer(prev => prev + content)
-                    }
-                  }
-                }                } else if (data.type === 'answer_submitted') {
-                  // Handle answer submission notification
-                  const finalAnswer = data.final_answer || ''
-                  if (finalAnswer && onAnswerSubmitted) {
-                    onAnswerSubmitted(finalAnswer)
-                  }
-                  
-                  // Display submission notification
-                  const content = data.content || 'Answer submitted to Q&A database'
-                  currentBlockContent += content
-                  setCurrentThought(currentBlockContent)
-                } else if (data.type === 'thinking_complete') {
+                }
+                // Handle answer submission notification
+                const finalAnswer = data.final_answer || ''
+                if (finalAnswer && onAnswerSubmitted) {
+                  onAnswerSubmitted(finalAnswer)
+                }
+                // Optionally, display the submission message as a separate block (not required)
+                // const content = data.content || 'Answer submitted to Q&A database'
+                // setCurrentThought(content)
+              } else if (data.type === 'thinking_complete') {
                 // Complete the current thinking block
                 if (currentBlockContent.trim()) {
                   const blockToAdd = {
@@ -559,50 +540,67 @@ export default function ThinkingProcess({
             className="max-h-96 overflow-y-auto space-y-4 bg-slate-50 dark:bg-slate-800 rounded-lg p-4"
           >
             {/* Completed thinking blocks */}
-            {thinkingBlocks.map((block, index) => (
-              <div 
-                key={block.id}
-                className="animate-in slide-in-from-bottom duration-300"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-medium">
-                    {index + 1}
-                  </div>                  <div className="flex-1 min-w-0">
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
-                      <div className="text-slate-900 dark:text-white leading-relaxed">
-                        {/* Render content with basic markdown formatting for headers */}
-                        {block.content.split('\n').map((line, lineIndex) => {
-                          if (line.startsWith('## ')) {
-                            return (
-                              <h3 key={lineIndex} className="text-lg font-semibold text-purple-700 dark:text-purple-300 mt-4 mb-2 first:mt-0">
-                                {line.replace('## ', '')}
-                              </h3>
-                            )
-                          } else if (line.startsWith('# ')) {
-                            return (
-                              <h2 key={lineIndex} className="text-xl font-bold text-purple-800 dark:text-purple-200 mt-4 mb-2 first:mt-0">
-                                {line.replace('# ', '')}
-                              </h2>
-                            )
-                          } else if (line.trim() === '') {
-                            return <br key={lineIndex} />
-                          } else {
-                            return (
-                              <p key={lineIndex} className="mb-2 last:mb-0">
-                                {line}
-                              </p>
-                            )
-                          }
-                        })}
-                      </div>
+            {thinkingBlocks.map((block, index) => {
+              // Try to extract provider and step number from block.id or block.content
+              let provider = null;
+              let stepNumber = index + 1;
+              if (block.id && block.id.startsWith('gemini-thinking-')) provider = 'Gemini';
+              if (block.id && block.id.startsWith('thinking-')) provider = 'DeepSeek';
+              if (block.id && block.id.startsWith('deepseek-thinking-')) provider = 'DeepSeek';
+              if (block.id && block.id.startsWith('fallback-')) provider = 'Gemini';
+              if (block.id && block.id.startsWith('answer-submitted')) provider = 'Gemini';
+              if (block.id && block.id.startsWith('step-')) provider = 'DeepSeek';
+              if (block.id && block.id.startsWith('gemini-complete')) provider = 'Gemini';
+              if (block.id && block.id.startsWith('gemini-error')) provider = 'Gemini';
+              if (block.id && block.id.startsWith('thinking_complete')) provider = 'DeepSeek';
+
+              return (
+                <div 
+                  key={block.id}
+                  className="animate-in slide-in-from-bottom duration-300 border-l-4 pl-4 mb-4 bg-white dark:bg-slate-900/60 rounded-lg shadow-sm border-purple-400 relative"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="flex-shrink-0 w-7 h-7 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-base font-bold">
+                      {stepNumber}
                     </div>
-                    <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                      {new Date(block.timestamp).toLocaleTimeString()}
+                    <span className="text-xs font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wide">Step {stepNumber}</span>
+                    {provider && (
+                      <span className={`ml-2 px-2 py-0.5 rounded text-xs font-medium ${provider === 'Gemini' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'}`}>
+                        {provider}
+                      </span>
+                    )}
+                    <span className="ml-auto text-xs text-slate-400 dark:text-slate-500">{new Date(block.timestamp).toLocaleTimeString()}</span>
+                  </div>
+                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <div className="text-slate-900 dark:text-white leading-relaxed">
+                      {block.content.split('\n').map((line, lineIndex) => {
+                        if (line.startsWith('## ')) {
+                          return (
+                            <h3 key={lineIndex} className="text-lg font-semibold text-purple-700 dark:text-purple-300 mt-4 mb-2 first:mt-0">
+                              {line.replace('## ', '')}
+                            </h3>
+                          )
+                        } else if (line.startsWith('# ')) {
+                          return (
+                            <h2 key={lineIndex} className="text-xl font-bold text-purple-800 dark:text-purple-200 mt-4 mb-2 first:mt-0">
+                              {line.replace('# ', '')}
+                            </h2>
+                          )
+                        } else if (line.trim() === '') {
+                          return <br key={lineIndex} />
+                        } else {
+                          return (
+                            <p key={lineIndex} className="mb-2 last:mb-0">
+                              {line}
+                            </p>
+                          )
+                        }
+                      })}
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {/* Current thinking (streaming) */}
             {currentThought && (
