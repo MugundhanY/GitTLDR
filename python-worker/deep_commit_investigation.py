@@ -79,9 +79,30 @@ async def deep_investigate_commit():
                                 full_commit = await github_commit_service.get_commit_details(owner, repo, commit_sha_full)
                                 if full_commit:
                                     print(f"    ✅ Full commit details retrieved!")
-                                    print(f"       Files changed: {len(full_commit.get('files', []))}")
-                                    for file_change in full_commit.get('files', []):
-                                        print(f"         - {file_change.get('filename')} ({file_change.get('status')})")
+                                    files = full_commit.get('files', [])
+                                    print(f"       Files changed: {len(files)}")
+                                    for file_change in files:
+                                        fname = file_change.get('filename')
+                                        status = file_change.get('status')
+                                        additions = file_change.get('additions', 0)
+                                        deletions = file_change.get('deletions', 0)
+                                        print(f"         - {fname} [{status}] (+{additions}/-{deletions})")
+                                        # Show patch/diff summary if available
+                                        patch = file_change.get('patch')
+                                        if patch:
+                                            patch_lines = patch.splitlines()
+                                            # Show actual added/removed lines from the patch
+                                            print("           Patch changes:")
+                                            for line in patch_lines:
+                                                if line.startswith('+') and not line.startswith('+++'):
+                                                    print(f"             {line}")
+                                                elif line.startswith('-') and not line.startswith('---'):
+                                                    print(f"             {line}")
+                                            # Optionally, show a truncation message if patch is very long
+                                            if len(patch_lines) > 50:
+                                                print("             ... [patch truncated]")
+                                        else:
+                                            print("           (No patch/diff available from GitHub API)")
                                 else:
                                     print(f"    ❌ Could not get full commit details")
                                 return commit_sha_full

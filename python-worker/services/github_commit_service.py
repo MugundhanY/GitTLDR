@@ -495,3 +495,5 @@ class GitHubCommitService:
         except Exception as e:
             logger.error(f"Failed to make GitHub API request to {endpoint}: {str(e)}")
             return None
+
+github_commit_service = GitHubCommitService()

@@ -307,6 +307,75 @@ class CommitAnalysisService:
         
         logger.info(f"Retrieved {len(commits)} commits for {params.question_type} query")
         return commits
+    
+    async def get_commits_for_question_github_api(self, repository_id: str, params: CommitQueryParams, github_token: str = None) -> list[dict]:
+        """
+        Always fetch commit info from GitHub API using the provided token, never from DB.
+        Returns normalized commit dicts for Q&A context (with 'files' key for compatibility).
+        Ensures that for each commit, the 'files' array is present by fetching full commit details by SHA if needed.
+        """
+        try:
+            repo_owner, repo_name = await self._get_repository_github_info(repository_id)
+            if not repo_owner or not repo_name:
+                logger.error(f"[GitHub API] Could not determine GitHub repo for {repository_id}")
+                return []
+
+            github_service = GitHubCommitService(user_github_token=github_token)
+            await self._check_rate_limit()
+            effective_limit = min(params.limit, self.MAX_COMMITS_PER_QUERY)
+            commits = []
+
+            # Fetch commit list (may not include file changes)
+            if params.question_type == 'recent':
+                commits = await github_service.get_recent_commits(repo_owner, repo_name, limit=effective_limit)
+            elif params.question_type == 'first':
+                commits = await github_service.get_earliest_commits(repo_owner, repo_name, limit=effective_limit)
+            elif params.question_type == 'date_range':
+                commits = await github_service.get_commits_by_date_range(repo_owner, repo_name, params.start_date, params.end_date, limit=effective_limit)
+            elif params.question_type == 'author':
+                commits = await github_service.get_commits_by_author(repo_owner, repo_name, params.author_pattern, limit=effective_limit)
+            elif params.question_type == 'sha':
+                commit = await github_service.get_commit_by_sha(repo_owner, repo_name, params.commit_sha, include_files=True)
+                commits = [commit] if commit else []
+            elif params.question_type == 'message':
+                commits = await github_service.search_commits_by_message(repo_owner, repo_name, params.message_pattern, limit=effective_limit)
+            elif params.question_type == 'file':
+                commits = await github_service.get_commits_affecting_file(repo_owner, repo_name, params.file_pattern, limit=effective_limit)
+            else:
+                logger.warning(f"[GitHub API] Unknown commit question type: {params.question_type}")
+                commits = []
+
+            # For each commit, fetch full details (with files) if not already present
+            detailed_commits = []
+            for commit in commits:
+                sha = commit.get('sha')
+                files = commit.get('files_changed') or commit.get('files')
+                # If files are missing or empty, fetch full commit details
+                if not files or not isinstance(files, list) or len(files) == 0:
+                    try:
+                        full_commit = await github_service.get_commit_by_sha(repo_owner, repo_name, sha, include_files=True)
+                        if full_commit:
+                            files = full_commit.get('files_changed') or full_commit.get('files') or []
+                            commit = dict(commit)
+                            commit['files'] = files
+                    except Exception as e:
+                        logger.warning(f"[GitHub API] Could not fetch full details for commit {sha}: {str(e)}")
+                        commit = dict(commit)
+                        commit['files'] = []
+                else:
+                    commit = dict(commit)
+                    commit['files'] = files
+                detailed_commits.append(commit)
+
+            if github_service.session and not github_service.session.closed:
+                await github_service.session.close()
+
+            logger.info(f"[GitHub API] get_commits_for_question_github_api: Returning {len(detailed_commits)} commits for {params.question_type}")
+            return detailed_commits
+        except Exception as e:
+            logger.error(f"[GitHub API] Error in get_commits_for_question_github_api: {str(e)}")
+            return []
+
     async def _query_database_for_commits(self, repository_id: str, params: CommitQueryParams, user_id: str = None) -> List[Dict[str, Any]]:
         """Query GitHub API for commits with scalability and rate limiting."""
         try:

@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from services.file_service import FileRetrievalService
 from services.smart_context_builder import SmartContextBuilder
+from services.commit_analysis_service import commit_analysis_service
 from services.database_service import database_service
 from services.enhanced_deepseek_client import deepseek_client
 from services.gemini_client import gemini_client
@@ -221,6 +222,156 @@ class ComprehensiveThinkingService:
                             logger.info(f"🔥 FALLBACK: Loaded {len(fallback_relevant_files)} repository files")
                 else:
                     logger.info("🔥 ATTACHMENT-ONLY MODE: Completely skipping repository file loading")
+                
+                # --- COMMIT QnA LOGIC: Reuse normal QnA commit analysis for deep thinking ---
+                is_commit_question, commit_params = await commit_analysis_service.analyze_question(question)
+                commit_content = []
+                commit_analysis_attempted = False
+                if is_commit_question and commit_params:
+                    commit_analysis_attempted = True
+                    logger.info(f"[Deep Thinking] Detected {commit_params.question_type} commit question (GitHub API only)")
+                    try:
+                        # Get user GitHub token from DB (if available)
+                        user_info = await database_service.get_user_info(None)  # Pass user_id if available
+                        github_token = user_info.get('github_token') if user_info else None
+                        # Fetch commits from GitHub API
+                        commits = await commit_analysis_service.get_commits_for_question_github_api(
+                            repository_id, commit_params, github_token
+                        )
+                        if commits:
+                            summarized_commits = []
+                            for commit in commits:
+                                summary_lines = []
+                                summary_lines.append(f"Commit SHA: {commit.get('sha')}")
+                                summary_lines.append(f"Message: {commit.get('message')}")
+                                author = commit.get('author') or {}
+                                author_name = commit.get('author_name') or author.get('name')
+                                author_email = commit.get('author_email') or author.get('email')
+                                summary_lines.append(f"Author: {author_name} {author_email}")
+                                summary_lines.append(f"Date: {commit.get('created_at') or commit.get('timestamp')}")
+                                files = commit.get('files')
+                                if files and isinstance(files, list) and len(files) > 0:
+                                    summary_lines.append(f"Files Changed ({len(files)}):")
+                                    for f in files:
+                                        if isinstance(f, dict):
+                                            fname = f.get('filename') or f.get('name')
+                                            status = f.get('status')
+                                            additions = f.get('additions')
+                                            deletions = f.get('deletions')
+                                            file_summary = f"  - {fname}"
+                                            if status:
+                                                file_summary += f" [{status}]"
+                                            if additions is not None or deletions is not None:
+                                                file_summary += f" (+{additions or 0}/-{deletions or 0})"
+                                            summary_lines.append(file_summary)
+                                            patch = f.get('patch')
+                                            if patch:
+                                                patch_lines = patch.splitlines()
+                                                summary_lines.append("    Patch changes:")
+                                                shown = 0
+                                                for line in patch_lines:
+                                                    if line.startswith('+') and not line.startswith('+++'):
+                                                        summary_lines.append(f"      {line}")
+                                                        shown += 1
+                                                    elif line.startswith('-') and not line.startswith('---'):
+                                                        summary_lines.append(f"      {line}")
+                                                        shown += 1
+                                                    if shown > 20:
+                                                        summary_lines.append("      ... [patch truncated]")
+                                                        break
+                                            else:
+                                                summary_lines.append("    (No patch/diff available from GitHub API)")
+                                        else:
+                                            summary_lines.append(f"  - {str(f)}")
+                                else:
+                                    summary_lines.append("Files Changed: No file change information is available in the provided context.")
+                                summarized_commits.append("\n".join(summary_lines))
+                            commit_content = summarized_commits
+                            logger.info(f"[Deep Thinking] Found {len(commits)} relevant commits for QnA context")
+                        else:
+                            logger.warning(f"[Deep Thinking] No commits found for {commit_params.question_type} commit question")
+                            commit_content = [
+                                "=" * 60,
+                                "🔄 COMMIT ANALYSIS ATTEMPTED (GitHub API)",
+                                "=" * 60,
+                                f"Analyzed question as {commit_params.question_type} commit query.",
+                                "No matching commits found in the repository via GitHub API.",
+                                "This could be because:",
+                                "- The repository is new or has limited commit data",
+                                "- The GitHub API is not accessible (token issues)",
+                                "- The search criteria were too specific",
+                                "- The repository may be private or not found",
+                                "",
+                                "RECOMMENDATION: Please check if the repository exists and is accessible,",
+                                "or try asking about the repository's code files instead.",
+                                "=" * 60
+                            ]
+                            commit_content = ["\n".join(commit_content)]
+                    except Exception as e:
+                        logger.error(f"[Deep Thinking] Error during commit analysis: {str(e)}")
+                        commit_content = [
+                            "=" * 60,
+                            "🔄 COMMIT ANALYSIS ERROR (GitHub API)",
+                            "=" * 60,
+                            f"Attempted to analyze {commit_params.question_type} commit question.",
+                            f"Error occurred: {str(e)}",
+                            "Falling back to regular file-based analysis.",
+                            "=" * 60
+                        ]
+                        commit_content = ["\n".join(commit_content)]
+                # --- END COMMIT QnA LOGIC ---
+
+                # If commit context exists, prioritize and optimize context size (as in embedding.py)
+                if commit_content:
+                    MAX_COMMIT_CONTEXT_SIZE = 3000
+                    MAX_FILE_CONTENT_FOR_COMMITS = 1000
+                    total_commit_chars = sum(len(content) for content in commit_content)
+                    total_file_chars = sum(len(content) for content in files_content)
+                    if total_commit_chars + total_file_chars > MAX_COMMIT_CONTEXT_SIZE:
+                        if total_commit_chars <= MAX_COMMIT_CONTEXT_SIZE * 0.8:
+                            remaining_budget = min(MAX_FILE_CONTENT_FOR_COMMITS, MAX_COMMIT_CONTEXT_SIZE - total_commit_chars)
+                            if remaining_budget > 200:
+                                optimized_files_content = []
+                                current_size = 0
+                                priority_files = ['readme', 'package.json', 'requirements.txt', '.md']
+                                priority_content = []
+                                other_content = []
+                                for content in files_content:
+                                    content_lower = content.lower()
+                                    if any(pf in content_lower for pf in priority_files):
+                                        priority_content.append(content)
+                                    else:
+                                        other_content.append(content)
+                                for content in priority_content:
+                                    if current_size >= remaining_budget:
+                                        break
+                                    remaining_space = remaining_budget - current_size
+                                    if remaining_space > 100:
+                                        if len(content) <= remaining_space:
+                                            optimized_files_content.append(content)
+                                            current_size += len(content)
+                                        else:
+                                            truncated = content[:remaining_space-30] + "\n... [truncated for commit focus]"
+                                            optimized_files_content.append(truncated)
+                                            current_size += len(truncated)
+                                            break
+                                files_content = optimized_files_content
+                            else:
+                                files_content = []
+                        else:
+                            optimized_commits = []
+                            current_size = 0
+                            for commit_text in commit_content:
+                                if current_size + len(commit_text) <= MAX_COMMIT_CONTEXT_SIZE * 0.9:
+                                    optimized_commits.append(commit_text)
+                                    current_size += len(commit_text)
+                                else:
+                                    break
+                            commit_content = optimized_commits
+                            files_content = []
+                    # Add commits as separate context sections
+                    for commit_text in commit_content:
+                        files_content.append(commit_text)
                 
                 # Check if we have any content to analyze
                 if not files_content:

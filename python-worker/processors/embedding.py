@@ -160,30 +160,124 @@ class EmbeddingProcessor:
             # Check for commit-related questions
             from services.commit_analysis_service import commit_analysis_service
             is_commit_question, commit_params = await commit_analysis_service.analyze_question(question)
-            
             commit_content = []
             commit_analysis_attempted = False
-            
+
             if is_commit_question and commit_params:
                 commit_analysis_attempted = True
-                logger.info(f"Detected {commit_params.question_type} commit question")
-                try:                    # Get relevant commits using the new scalable service
-                    commits = await commit_analysis_service.get_commits_for_question(repository_id, commit_params, user_id)
+                logger.info(f"Detected {commit_params.question_type} commit question (GitHub API only)")
+                try:
+                    # --- Always use GitHub API for commit Q&A, never DB ---
+                    # Get user GitHub token from DB
+                    user_info = await database_service.get_user_info(user_id)
+                    github_token = user_info.get('github_token') if user_info else None
+                    # Use commit_analysis_service to fetch commits from GitHub API only
+                    commits = await commit_analysis_service.get_commits_for_question_github_api(
+                        repository_id, commit_params, github_token
+                    )
                     if commits:
-                        # Format commits for context
-                        commit_content = commit_analysis_service.format_commits_for_context(commits, question)
-                        logger.info(f"✅ Found {len(commits)} relevant commits for Q&A context")
-                        logger.info(f"📊 Sample commit data: {commits[0] if commits else 'None'}")
+                        summarized_commits = []
+                        for commit in commits:
+                            summary_lines = []
+                            summary_lines.append(f"Commit SHA: {commit.get('sha')}")
+                            summary_lines.append(f"Message: {commit.get('message')}")
+                            author = commit.get('author') or {}
+                            author_name = commit.get('author_name') or author.get('name')
+                            author_email = commit.get('author_email') or author.get('email')
+                            summary_lines.append(f"Author: {author_name} {author_email}")
+                            summary_lines.append(f"Date: {commit.get('created_at') or commit.get('timestamp')}")
+                            files = commit.get('files')
+                            if files and isinstance(files, list) and len(files) > 0:
+                                summary_lines.append(f"Files Changed ({len(files)}):")
+                                for f in files:
+                                    if isinstance(f, dict):
+                                        fname = f.get('filename') or f.get('name')
+                                        status = f.get('status')
+                                        additions = f.get('additions')
+                                        deletions = f.get('deletions')
+                                        file_summary = f"  - {fname}"
+                                        if status:
+                                            file_summary += f" [{status}]"
+                                        if additions is not None or deletions is not None:
+                                            file_summary += f" (+{additions or 0}/-{deletions or 0})"
+                                        summary_lines.append(file_summary)
+                                        patch = f.get('patch')
+                                        # --- Advanced Q&A features for requirements.txt and code changes ---
+                                        if fname and fname.lower() == 'requirements.txt' and patch:
+                                            # Extract added/removed packages
+                                            added = []
+                                            removed = []
+                                            for line in patch.splitlines():
+                                                if line.startswith('+') and not line.startswith('+++'):
+                                                    added.append(line[1:].strip())
+                                                elif line.startswith('-') and not line.startswith('---'):
+                                                    removed.append(line[1:].strip())
+                                            if added:
+                                                summary_lines.append(f"    Packages added to requirements.txt:")
+                                                for pkg in added:
+                                                    summary_lines.append(f"      + {pkg}")
+                                            if removed:
+                                                summary_lines.append(f"    Packages removed from requirements.txt:")
+                                                for pkg in removed:
+                                                    summary_lines.append(f"      - {pkg}")
+                                            # Semantic summary using LLM (if available)
+                                            try:
+                                                semantic_summary = await gemini_client.summarize_diff(patch, file_name='requirements.txt')
+                                                if semantic_summary:
+                                                    summary_lines.append(f"    Semantic summary: {semantic_summary}")
+                                            except Exception as e:
+                                                summary_lines.append(f"    (Semantic summary unavailable: {str(e)})")
+                                            # Impact analysis: which files import removed packages?
+                                            try:
+                                                if removed and files_with_content:
+                                                    impacted_files = []
+                                                    for fileinfo in files_with_content:
+                                                        if fileinfo.get('name', '').endswith('.py') and fileinfo.get('content'):
+                                                            for pkg in removed:
+                                                                pkg_base = pkg.split('==')[0].replace('_', '-')
+                                                                if pkg_base in fileinfo['content']:
+                                                                    impacted_files.append(fileinfo['path'])
+                                                    if impacted_files:
+                                                        summary_lines.append(f"    Impact: The following files may import or use removed packages:")
+                                                        for path in set(impacted_files):
+                                                            summary_lines.append(f"      - {path}")
+                                            except Exception as e:
+                                                summary_lines.append(f"    (Impact analysis unavailable: {str(e)})")
+                                            # Changelog entry
+                                            summary_lines.append(f"    Changelog: requirements.txt updated. {'Added: ' + ', '.join(added) if added else ''}{' Removed: ' + ', '.join(removed) if removed else ''}")
+                                        # Show patch/diff summary for all files
+                                        if patch:
+                                            patch_lines = patch.splitlines()
+                                            summary_lines.append("    Patch changes:")
+                                            shown = 0
+                                            for line in patch_lines:
+                                                if line.startswith('+') and not line.startswith('+++'):
+                                                    summary_lines.append(f"      {line}")
+                                                    shown += 1
+                                                elif line.startswith('-') and not line.startswith('---'):
+                                                    summary_lines.append(f"      {line}")
+                                                    shown += 1
+                                                if shown > 20:
+                                                    summary_lines.append("      ... [patch truncated]")
+                                                    break
+                                        else:
+                                            summary_lines.append("    (No patch/diff available from GitHub API)")
+                                    else:
+                                        summary_lines.append(f"  - {str(f)}")
+                            else:
+                                summary_lines.append("Files Changed: No file change information is available in the provided context.")
+                            summarized_commits.append("\n".join(summary_lines))
+                        commit_content = summarized_commits
+                        logger.info(f"✅ [GitHub API] Found {len(commits)} relevant commits for Q&A context")
+                        logger.info(f"📊 [GitHub API] Sample commit data: {commits[0] if commits else 'None'}")
                     else:
-                        logger.warning(f"❌ No commits found for {commit_params.question_type} commit question")
-                        
-                        # Add helpful context explaining why no commits were found
+                        logger.warning(f"❌ [GitHub API] No commits found for {commit_params.question_type} commit question")
                         commit_content = [
                             "=" * 60,
-                            "🔄 COMMIT ANALYSIS ATTEMPTED",
+                            "🔄 COMMIT ANALYSIS ATTEMPTED (GitHub API)",
                             "=" * 60,
                             f"Analyzed question as {commit_params.question_type} commit query.",
-                            "No matching commits found in the repository.",
+                            "No matching commits found in the repository via GitHub API.",
                             "This could be because:",
                             "- The repository is new or has limited commit data",
                             "- The GitHub API is not accessible (token issues)",
@@ -195,14 +289,11 @@ class EmbeddingProcessor:
                             "=" * 60
                         ]
                         commit_content = ["\n".join(commit_content)]
-                        
                 except Exception as e:
-                    logger.error(f"Error during commit analysis: {str(e)}")
-                    
-                    # Add context about the commit analysis failure
+                    logger.error(f"[GitHub API] Error during commit analysis: {str(e)}")
                     commit_content = [
                         "=" * 60,
-                        "🔄 COMMIT ANALYSIS ERROR",
+                        "🔄 COMMIT ANALYSIS ERROR (GitHub API)",
                         "=" * 60,
                         f"Attempted to analyze {commit_params.question_type} commit question.",
                         f"Error occurred: {str(e)}",

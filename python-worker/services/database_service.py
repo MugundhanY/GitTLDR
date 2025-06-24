@@ -607,11 +607,12 @@ class DatabaseService:
     ) -> List[Dict[str, Any]]:
         """
         Get recent commits for a repository with pagination.
-        Uses indexed query for optimal performance. Falls back if commit_files table is missing.
+        Uses indexed query for optimal performance.
         """
         try:
             pool = await self._get_connection_pool()
             async with pool.acquire() as conn:
+                # Optimized query with index on (repository_id, created_at)
                 query = """
                     SELECT c.sha, c.message, c.author_name, c.author_email, 
                            c.created_at, c.url, c.additions, c.deletions,
@@ -624,36 +625,18 @@ class DatabaseService:
                     ORDER BY c.created_at DESC
                     LIMIT $2 OFFSET $3
                 """
-                try:
-                    rows = await conn.fetch(query, repository_id, limit, offset)
-                except Exception as e:
-                    if 'commit_files' in str(e):
-                        logger.warning("commit_files table missing, falling back to legacy query for recent commits")
-                        fallback_query = """
-                            SELECT sha, message, author_name, author_email, created_at, url, additions, deletions
-                            FROM commits
-                            WHERE repository_id = $1
-                            ORDER BY created_at DESC
-                            LIMIT $2 OFFSET $3
-                        """
-                        rows = await conn.fetch(fallback_query, repository_id, limit, offset)
-                        commits = []
-                        for row in rows:
-                            commit_data = dict(row)
-                            commit_data['created_at'] = commit_data['created_at'].isoformat() if commit_data['created_at'] else None
-                            commit_data['files_changed'] = None
-                            commits.append(commit_data)
-                        logger.info(f"[Fallback] Retrieved {len(commits)} recent commits for repository {repository_id}")
-                        return commits
-                    else:
-                        raise
+                
+                rows = await conn.fetch(query, repository_id, limit, offset)
+                
                 commits = []
                 for row in rows:
                     commit_data = dict(row)
                     commit_data['created_at'] = commit_data['created_at'].isoformat() if commit_data['created_at'] else None
                     commits.append(commit_data)
+                
                 logger.info(f"Retrieved {len(commits)} recent commits for repository {repository_id}")
                 return commits
+                
         except Exception as e:
             logger.error(f"Failed to get recent commits: {str(e)}")
             return []
@@ -667,24 +650,29 @@ class DatabaseService:
     ) -> List[Dict[str, Any]]:
         """
         Get commits within a date range with efficient date filtering.
-        Supports flexible date queries like 'today', 'this week', etc. Falls back if commit_files table is missing.
+        Supports flexible date queries like 'today', 'this week', etc.
         """
         try:
             pool = await self._get_connection_pool()
             async with pool.acquire() as conn:
+                # Build dynamic query based on date parameters
                 conditions = ["c.repository_id = $1"]
                 params = [repository_id]
                 param_count = 1
+                
                 if start_date:
                     param_count += 1
                     conditions.append(f"c.created_at >= ${param_count}")
                     params.append(start_date)
+                
                 if end_date:
                     param_count += 1
                     conditions.append(f"c.created_at <= ${param_count}")
                     params.append(end_date)
+                
                 param_count += 1
                 params.append(limit)
+                
                 query = f"""
                     SELECT c.sha, c.message, c.author_name, c.author_email, 
                            c.created_at, c.url, c.additions, c.deletions,
@@ -697,49 +685,18 @@ class DatabaseService:
                     ORDER BY c.created_at DESC
                     LIMIT ${param_count}
                 """
-                try:
-                    rows = await conn.fetch(query, *params)
-                except Exception as e:
-                    if 'commit_files' in str(e):
-                        logger.warning("commit_files table missing, falling back to legacy query for date range commits")
-                        fallback_conditions = ["repository_id = $1"]
-                        fallback_params = [repository_id]
-                        fallback_param_count = 1
-                        if start_date:
-                            fallback_param_count += 1
-                            fallback_conditions.append(f"created_at >= ${fallback_param_count}")
-                            fallback_params.append(start_date)
-                        if end_date:
-                            fallback_param_count += 1
-                            fallback_conditions.append(f"created_at <= ${fallback_param_count}")
-                            fallback_params.append(end_date)
-                        fallback_param_count += 1
-                        fallback_params.append(limit)
-                        fallback_query = f"""
-                            SELECT sha, message, author_name, author_email, created_at, url, additions, deletions
-                            FROM commits
-                            WHERE {' AND '.join(fallback_conditions)}
-                            ORDER BY created_at DESC
-                            LIMIT ${fallback_param_count}
-                        """
-                        rows = await conn.fetch(fallback_query, *fallback_params)
-                        commits = []
-                        for row in rows:
-                            commit_data = dict(row)
-                            commit_data['created_at'] = commit_data['created_at'].isoformat() if commit_data['created_at'] else None
-                            commit_data['files_changed'] = None
-                            commits.append(commit_data)
-                        logger.info(f"[Fallback] Retrieved {len(commits)} commits by date range for repository {repository_id}")
-                        return commits
-                    else:
-                        raise
+                
+                rows = await conn.fetch(query, *params)
+                
                 commits = []
                 for row in rows:
                     commit_data = dict(row)
                     commit_data['created_at'] = commit_data['created_at'].isoformat() if commit_data['created_at'] else None
                     commits.append(commit_data)
+                
                 logger.info(f"Retrieved {len(commits)} commits by date range for repository {repository_id}")
                 return commits
+                
         except Exception as e:
             logger.error(f"Failed to get commits by date range: {str(e)}")
             return []
@@ -751,12 +708,13 @@ class DatabaseService:
         limit: int = 25
     ) -> List[Dict[str, Any]]:
         """
-        Get commits by author pattern with efficient text search. Falls back if commit_files table is missing.
+        Get commits by author pattern with efficient text search.
         Uses ILIKE for case-insensitive pattern matching.
         """
         try:
             pool = await self._get_connection_pool()
             async with pool.acquire() as conn:
+                # Optimized query with index on (repository_id, author_name)
                 query = """
                     SELECT c.sha, c.message, c.author_name, c.author_email, 
                            c.created_at, c.url, c.additions, c.deletions,
@@ -770,37 +728,20 @@ class DatabaseService:
                     ORDER BY c.created_at DESC
                     LIMIT $3
                 """
+                
+                # Add wildcards for pattern matching
                 search_pattern = f"%{author_pattern}%"
-                try:
-                    rows = await conn.fetch(query, repository_id, search_pattern, limit)
-                except Exception as e:
-                    if 'commit_files' in str(e):
-                        logger.warning("commit_files table missing, falling back to legacy query for author commits")
-                        fallback_query = """
-                            SELECT sha, message, author_name, author_email, created_at, url, additions, deletions
-                            FROM commits
-                            WHERE repository_id = $1 AND (author_name ILIKE $2 OR author_email ILIKE $2)
-                            ORDER BY created_at DESC
-                            LIMIT $3
-                        """
-                        rows = await conn.fetch(fallback_query, repository_id, search_pattern, limit)
-                        commits = []
-                        for row in rows:
-                            commit_data = dict(row)
-                            commit_data['created_at'] = commit_data['created_at'].isoformat() if commit_data['created_at'] else None
-                            commit_data['files_changed'] = None
-                            commits.append(commit_data)
-                        logger.info(f"[Fallback] Retrieved {len(commits)} commits by author '{author_pattern}' for repository {repository_id}")
-                        return commits
-                    else:
-                        raise
+                rows = await conn.fetch(query, repository_id, search_pattern, limit)
+                
                 commits = []
                 for row in rows:
                     commit_data = dict(row)
                     commit_data['created_at'] = commit_data['created_at'].isoformat() if commit_data['created_at'] else None
                     commits.append(commit_data)
+                
                 logger.info(f"Retrieved {len(commits)} commits by author '{author_pattern}' for repository {repository_id}")
                 return commits
+                
         except Exception as e:
             logger.error(f"Failed to get commits by author: {str(e)}")
             return []
@@ -812,12 +753,13 @@ class DatabaseService:
         include_files: bool = True
     ) -> Optional[Dict[str, Any]]:
         """
-        Get specific commit by SHA with optional file details. Falls back if commit_files table is missing.
+        Get specific commit by SHA with optional file details.
         Supports partial SHA matching (minimum 6 characters).
         """
         try:
             pool = await self._get_connection_pool()
             async with pool.acquire() as conn:
+                # Base commit query
                 commit_query = """
                     SELECT c.id, c.sha, c.message, c.author_name, c.author_email, 
                            c.created_at, c.url, c.additions, c.deletions
@@ -826,15 +768,22 @@ class DatabaseService:
                     ORDER BY c.created_at DESC
                     LIMIT 1
                 """
+                
+                # Support partial SHA (minimum 6 chars for safety)
                 if len(commit_sha) < 6:
                     logger.warning(f"Commit SHA too short: {commit_sha}")
                     return None
+                
                 sha_pattern = f"{commit_sha}%"
                 commit_row = await conn.fetchrow(commit_query, repository_id, sha_pattern)
+                
                 if not commit_row:
                     return None
+                
                 commit_data = dict(commit_row)
                 commit_data['created_at'] = commit_data['created_at'].isoformat() if commit_data['created_at'] else None
+                
+                # Optionally include changed files
                 if include_files:
                     files_query = """
                         SELECT cf.filename, cf.status, cf.additions, cf.deletions
@@ -842,20 +791,17 @@ class DatabaseService:
                         WHERE cf.commit_id = $1
                         ORDER BY cf.filename
                     """
-                    try:
-                        file_rows = await conn.fetch(files_query, commit_data['id'])
-                        commit_data['files'] = [dict(row) for row in file_rows]
-                        commit_data['files_changed'] = len(commit_data['files'])
-                    except Exception as e:
-                        if 'commit_files' in str(e):
-                            logger.warning("commit_files table missing, falling back to commit without file details")
-                            commit_data['files'] = []
-                            commit_data['files_changed'] = None
-                        else:
-                            raise
+                    
+                    file_rows = await conn.fetch(files_query, commit_data['id'])
+                    commit_data['files'] = [dict(row) for row in file_rows]
+                    commit_data['files_changed'] = len(commit_data['files'])
+                
+                # Remove internal ID from response
                 del commit_data['id']
+                
                 logger.info(f"Retrieved commit {commit_data['sha'][:8]} for repository {repository_id}")
                 return commit_data
+                
         except Exception as e:
             logger.error(f"Failed to get commit by SHA: {str(e)}")
             return None
@@ -867,12 +813,13 @@ class DatabaseService:
         limit: int = 25
     ) -> List[Dict[str, Any]]:
         """
-        Search commits by message content with full-text search capabilities. Falls back if commit_files table is missing.
+        Search commits by message content with full-text search capabilities.
         Uses efficient ILIKE for pattern matching with potential for future GIN indexing.
         """
         try:
             pool = await self._get_connection_pool()
             async with pool.acquire() as conn:
+                # Full-text search on commit messages
                 query = """
                     SELECT c.sha, c.message, c.author_name, c.author_email, 
                            c.created_at, c.url, c.additions, c.deletions,
@@ -885,37 +832,19 @@ class DatabaseService:
                     ORDER BY c.created_at DESC
                     LIMIT $3
                 """
+                
                 search_pattern = f"%{message_pattern}%"
-                try:
-                    rows = await conn.fetch(query, repository_id, search_pattern, limit)
-                except Exception as e:
-                    if 'commit_files' in str(e):
-                        logger.warning("commit_files table missing, falling back to legacy query for message search")
-                        fallback_query = """
-                            SELECT sha, message, author_name, author_email, created_at, url, additions, deletions
-                            FROM commits
-                            WHERE repository_id = $1 AND message ILIKE $2
-                            ORDER BY created_at DESC
-                            LIMIT $3
-                        """
-                        rows = await conn.fetch(fallback_query, repository_id, search_pattern, limit)
-                        commits = []
-                        for row in rows:
-                            commit_data = dict(row)
-                            commit_data['created_at'] = commit_data['created_at'].isoformat() if commit_data['created_at'] else None
-                            commit_data['files_changed'] = None
-                            commits.append(commit_data)
-                        logger.info(f"[Fallback] Retrieved {len(commits)} commits matching message '{message_pattern}' for repository {repository_id}")
-                        return commits
-                    else:
-                        raise
+                rows = await conn.fetch(query, repository_id, search_pattern, limit)
+                
                 commits = []
                 for row in rows:
                     commit_data = dict(row)
                     commit_data['created_at'] = commit_data['created_at'].isoformat() if commit_data['created_at'] else None
                     commits.append(commit_data)
+                
                 logger.info(f"Retrieved {len(commits)} commits matching message '{message_pattern}' for repository {repository_id}")
                 return commits
+                
         except Exception as e:
             logger.error(f"Failed to search commits by message: {str(e)}")
             return []
@@ -927,12 +856,13 @@ class DatabaseService:
         limit: int = 25
     ) -> List[Dict[str, Any]]:
         """
-        Get commits that modified files matching a pattern. Falls back if commit_files table is missing.
+        Get commits that modified files matching a pattern.
         Efficient join with indexed commit_files table.
         """
         try:
             pool = await self._get_connection_pool()
             async with pool.acquire() as conn:
+                # Join with commit_files for file-specific commits
                 query = """
                     SELECT DISTINCT c.sha, c.message, c.author_name, c.author_email, 
                            c.created_at, c.url, c.additions, c.deletions,
@@ -945,37 +875,19 @@ class DatabaseService:
                     ORDER BY c.created_at DESC
                     LIMIT $3
                 """
+                
                 file_search_pattern = f"%{file_pattern}%"
-                try:
-                    rows = await conn.fetch(query, repository_id, file_search_pattern, limit)
-                except Exception as e:
-                    if 'commit_files' in str(e):
-                        logger.warning("commit_files table missing, falling back to legacy query for file affecting commits")
-                        fallback_query = """
-                            SELECT sha, message, author_name, author_email, created_at, url, additions, deletions
-                            FROM commits
-                            WHERE repository_id = $1 AND message ILIKE $2
-                            ORDER BY created_at DESC
-                            LIMIT $3
-                        """
-                        rows = await conn.fetch(fallback_query, repository_id, file_search_pattern, limit)
-                        commits = []
-                        for row in rows:
-                            commit_data = dict(row)
-                            commit_data['created_at'] = commit_data['created_at'].isoformat() if commit_data['created_at'] else None
-                            commit_data['matching_files'] = None
-                            commits.append(commit_data)
-                        logger.info(f"[Fallback] Retrieved {len(commits)} commits affecting files matching '{file_pattern}' for repository {repository_id}")
-                        return commits
-                    else:
-                        raise
+                rows = await conn.fetch(query, repository_id, file_search_pattern, limit)
+                
                 commits = []
                 for row in rows:
                     commit_data = dict(row)
                     commit_data['created_at'] = commit_data['created_at'].isoformat() if commit_data['created_at'] else None
                     commits.append(commit_data)
+                
                 logger.info(f"Retrieved {len(commits)} commits affecting files matching '{file_pattern}' for repository {repository_id}")
                 return commits
+                
         except Exception as e:
             logger.error(f"Failed to get commits affecting file: {str(e)}")
             return []
