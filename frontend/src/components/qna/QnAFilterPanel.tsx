@@ -70,42 +70,30 @@ export default function QnAFilterPanel({
   
   return (
     <div>
-      {/* Filter Toggle Button */}
-      <div className="flex items-center justify-between mb-3">
-        <button
-          onClick={onToggleFilters}
-          className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-          title="Toggle filters"
-        >
-          <FunnelIcon className="w-4 h-4" />
-        </button>
-      </div>
-
       {/* Filters Panel */}
       {showFilters && (
-        <div className="space-y-3 border-t border-slate-200 dark:border-slate-700 pt-3">
+        <div className="space-y-6 bg-white/70 dark:bg-green-950/60 border border-green-200 dark:border-green-800 shadow-2xl rounded-2xl p-6 mt-3 backdrop-blur-md transition-all duration-300">
           {/* Basic Filters Row */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-4 flex-wrap">
               {/* Favorites Filter */}
               <button
                 onClick={onToggleFavorites}
-                className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                className={`flex items-center gap-2 px-4 py-2 text-base rounded-xl font-semibold transition-all shadow-sm border-2 ${
                   filterFavorites 
-                    ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 border-yellow-300 dark:border-yellow-600'
+                    : 'bg-white/80 dark:bg-green-950/40 text-green-700 dark:text-green-200 border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-800/40'
                 }`}
               >
-                <StarIcon className="w-4 h-4" />
-                Favorites Only
+                <StarIcon className="w-5 h-5" />
+                Favorites
               </button>
-              
               {/* Category Filter */}
               {categories.length > 0 && (
                 <select
                   value={selectedCategory}
                   onChange={(e) => onCategoryChange(e.target.value)}
-                  className="px-2 py-1.5 text-sm bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white"
+                  className="px-3 py-2 text-base bg-white/80 dark:bg-green-950/40 border-2 border-green-200 dark:border-green-800 rounded-xl text-green-900 dark:text-green-100 focus:ring-2 focus:ring-green-400 focus:border-green-400 shadow-sm font-semibold"
                 >
                   <option value="">All Categories</option>
                   {categories.map(category => (
@@ -114,146 +102,146 @@ export default function QnAFilterPanel({
                 </select>
               )}
             </div>
-            
             {/* Clear All Button */}
             <button
               onClick={onClearFilters}
-              className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+              className="text-sm text-green-700 dark:text-green-200 hover:text-green-900 dark:hover:text-green-100 font-bold px-4 py-2 rounded-xl border-2 border-green-200 dark:border-green-800 bg-green-100 dark:bg-green-900/30 transition-all shadow-sm"
             >
               Clear All
             </button>
           </div>
-          
           {/* Tag Filter */}
           {allTags.length > 0 && (
             <div>
-              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-bold text-green-800 dark:text-green-200 mb-2 uppercase tracking-wide">
                 Tags
               </label>
-              <div className="flex flex-wrap gap-1">
+              <div className="flex flex-wrap gap-2">
                 {allTags.slice(0, 10).map(tag => (
                   <button
                     key={tag}
                     onClick={() => onToggleTag(tag)}
-                    className={`px-2 py-1 text-xs rounded transition-colors ${
+                    className={`px-3 py-1.5 text-sm rounded-xl transition-all shadow font-semibold ${
                       selectedTags.includes(tag)
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        ? 'bg-green-500 text-white border-2 border-green-600 scale-105'
+                        : 'bg-white/80 dark:bg-green-950/40 text-green-700 dark:text-green-200 border-2 border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-800/40'
                     }`}
                   >
                     {tag}
                   </button>
                 ))}
                 {allTags.length > 10 && (
-                  <span className="text-xs text-slate-400 py-1">+{allTags.length - 10} more</span>
+                  <span className="text-xs text-green-400 py-1">+{allTags.length - 10} more</span>
                 )}
               </div>
             </div>
           )}
-
           {/* File Type Filter */}
           {allFileTypes.length > 0 && (
             <div>
-              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-bold text-green-800 dark:text-green-200 mb-2 uppercase tracking-wide">
                 File Types
               </label>
-              <div className="flex flex-wrap gap-1">
+              <div className="flex flex-wrap gap-2">
                 {allFileTypes.slice(0, 10).map(fileType => (
                   <button
                     key={fileType}
                     onClick={() => onToggleFileType(fileType)}
-                    className={`px-2 py-1 text-xs rounded transition-colors font-mono ${
+                    className={`px-3 py-1.5 text-sm rounded-xl transition-all shadow font-mono font-semibold ${
                       selectedFileTypes.includes(fileType)
-                        ? 'bg-green-500 text-white'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        ? 'bg-green-600 text-white border-2 border-green-700 scale-105'
+                        : 'bg-white/80 dark:bg-green-950/40 text-green-700 dark:text-green-200 border-2 border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-800/40'
                     }`}
                   >
                     .{fileType}
                   </button>
                 ))}
                 {allFileTypes.length > 10 && (
-                  <span className="text-xs text-slate-400 py-1">+{allFileTypes.length - 10} more</span>
+                  <span className="text-xs text-green-400 py-1">+{allFileTypes.length - 10} more</span>
                 )}
               </div>
             </div>
           )}
-
           {/* Confidence Level Filter */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-xs font-bold text-green-800 dark:text-green-200 uppercase tracking-wide">
                 AI Confidence Level
               </label>
               <button
                 onClick={onToggleConfidenceFilter}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
+                className={`px-3 py-1.5 text-sm rounded-xl transition-all font-bold shadow border-2 ${
                   useConfidenceFilter
-                    ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    ? 'bg-green-200 dark:bg-green-800 text-green-900 dark:text-green-100 border-green-400 dark:border-green-700'
+                    : 'bg-white/80 dark:bg-green-950/40 text-green-700 dark:text-green-200 border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-800/40'
                 }`}
                 title="Filter answers by AI confidence scores. Higher confidence indicates more reliable answers."
               >
                 {useConfidenceFilter ? 'Enabled' : 'Disabled'}
               </button>
             </div>
-            
             {!useConfidenceFilter && (
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+              <p className="text-xs text-green-700 dark:text-green-200 mb-2">
                 Filter answers by AI confidence scores (0-100%). Higher confidence indicates more reliable answers.
               </p>
             )}
-            
             {useConfidenceFilter && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-500 dark:text-slate-400 w-8">Min:</span>
+              <div className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <span className="text-xs text-green-700 dark:text-green-200 w-10 font-semibold">Min:</span>
                   <input
                     type="range"
                     min="0"
                     max="1"
-                    step="0.1"
+                    step="0.01"
                     value={minConfidence}
                     onChange={(e) => onConfidenceChange(parseFloat(e.target.value), maxConfidence)}
-                    className="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer slider"
+                    className="flex-1 h-3 accent-green-500 bg-green-200 dark:bg-green-800 rounded-full appearance-none cursor-pointer slider border-2 border-green-300 dark:border-green-700"
+                    style={{
+                      background: 'linear-gradient(90deg, #22c55e 0%, #bbf7d0 100%)',
+                      boxShadow: '0 2px 8px 0 #22c55e33',
+                    }}
                   />
-                  <span className="text-xs text-slate-500 dark:text-slate-400 w-8 text-right">
+                  <span className="text-xs text-green-700 dark:text-green-200 w-10 text-right font-semibold">
                     {Math.round(minConfidence * 100)}%
                   </span>
                 </div>
-                
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-500 dark:text-slate-400 w-8">Max:</span>
+                <div className="flex items-center gap-4">
+                  <span className="text-xs text-green-700 dark:text-green-200 w-10 font-semibold">Max:</span>
                   <input
                     type="range"
                     min="0"
                     max="1"
-                    step="0.1"
+                    step="0.01"
                     value={maxConfidence}
                     onChange={(e) => onConfidenceChange(minConfidence, parseFloat(e.target.value))}
-                    className="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer slider"
+                    className="flex-1 h-3 accent-green-500 bg-green-200 dark:bg-green-800 rounded-full appearance-none cursor-pointer slider border-2 border-green-300 dark:border-green-700"
+                    style={{
+                      background: 'linear-gradient(90deg, #bbf7d0 0%, #22c55e 100%)',
+                      boxShadow: '0 2px 8px 0 #22c55e33',
+                    }}
                   />
-                  <span className="text-xs text-slate-500 dark:text-slate-400 w-8 text-right">
+                  <span className="text-xs text-green-700 dark:text-green-200 w-10 text-right font-semibold">
                     {Math.round(maxConfidence * 100)}%
                   </span>
                 </div>
-                
                 {/* Quick filter buttons */}
-                <div className="flex gap-2 text-xs">
+                <div className="flex gap-3 text-xs mt-2">
                   <button
                     onClick={() => onConfidenceChange(0.8, 1.0)}
-                    className="px-2 py-1 text-xs bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-800/40 text-green-700 dark:text-green-300 rounded transition-colors"
+                    className="px-3 py-1.5 text-xs bg-green-500 hover:bg-green-600 dark:bg-green-700 dark:hover:bg-green-600 text-white rounded-xl transition-all shadow font-bold"
                   >
                     High (80-100%)
                   </button>
                   <button
                     onClick={() => onConfidenceChange(0.5, 0.8)}
-                    className="px-2 py-1 text-xs bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:hover:bg-yellow-800/40 text-yellow-700 dark:text-yellow-300 rounded transition-colors"
+                    className="px-3 py-1.5 text-xs bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:hover:bg-yellow-800/40 text-yellow-700 dark:text-yellow-300 rounded-xl transition-all shadow font-bold"
                   >
                     Medium (50-80%)
                   </button>
                   <button
                     onClick={() => onConfidenceChange(0.0, 0.5)}
-                    className="px-2 py-1 text-xs bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-800/40 text-red-700 dark:text-red-300 rounded transition-colors"
+                    className="px-3 py-1.5 text-xs bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-800/40 text-red-700 dark:text-red-300 rounded-xl transition-all shadow font-bold"
                   >
                     Low (0-50%)
                   </button>

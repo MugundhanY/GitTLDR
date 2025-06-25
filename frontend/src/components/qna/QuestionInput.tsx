@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
 import { 
   QuestionMarkCircleIcon,
@@ -48,7 +48,13 @@ export default function QuestionInput({
   const [isRecording, setIsRecording] = useState(false)
   const [interimTranscript, setInterimTranscript] = useState('')
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false)
+  const [localAttachments, setLocalAttachments] = useState<QuestionAttachment[]>(attachments)
   const recognitionRef = useRef<any>(null)
+
+  // Sync prop changes (if any) to local state
+  useEffect(() => {
+    setLocalAttachments(attachments)
+  }, [attachments])
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -222,8 +228,8 @@ export default function QuestionInput({
                 Attachments (Optional)
               </label>
               <AttachmentUploader
-                attachments={attachments}
-                onAttachmentsChange={onAttachmentsChange}
+                attachments={localAttachments}
+                onAttachmentsChange={setLocalAttachments}
                 disabled={isAsking}
                 repositoryId={repository.id}
                 onUploadingChange={setIsUploadingAttachment}

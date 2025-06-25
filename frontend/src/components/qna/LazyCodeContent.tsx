@@ -52,13 +52,15 @@ const LazyCodeContent = memo(({
           Copied!
         </div>
       )}
-      <CodeViewer
-        code={fileContent.content}
-        language={fileContent.language}
-        initialTheme={0}
-        initialFontSize={14}
-        showLineNumbers={true}
-      />
+      <div className="my-2">
+        <CodeViewer
+          code={fileContent.content}
+          language={fileContent.language}
+          initialTheme={0}
+          initialFontSize={14}
+          showLineNumbers={true}
+        />
+      </div>
     </div>
   )
 })

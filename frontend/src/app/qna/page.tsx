@@ -102,8 +102,25 @@ export default function QnAPage() {
       name: selectedRepository.name 
     } : undefined,
     onQuestionsUpdate: (newQuestions: Question[] | Question) => {
-      // Invalidate and refetch questions via React Query
-      refetchQuestions()
+      // Optimistically update the local state for instant UI
+      setOptimisticQuestions(prev => {
+        if (Array.isArray(newQuestions)) {
+          // Replace or merge all
+          const byId = new Map(prev.map(q => [q.id, q]))
+          for (const q of newQuestions) byId.set(q.id, q)
+          return Array.from(byId.values())
+        } else {
+          // Update or insert single question
+          const found = prev.find(q => q.id === newQuestions.id)
+          if (found) {
+            return prev.map(q => q.id === newQuestions.id ? newQuestions : q)
+          } else {
+            return [newQuestions, ...prev]
+          }
+        }
+      })
+      // Optionally, schedule a refetch after a short delay to sync with server
+      // setTimeout(() => refetchQuestions(), 2000)
     },
     incrementQuestionCount,
     triggerStatsRefreshOnCompletion
@@ -476,6 +493,7 @@ export default function QnAPage() {
                       showSuggestions={showSuggestions}
                       onExport={handleExport}
                       onToggleSuggestions={() => setShowSuggestions(!showSuggestions)}
+                      onToggleFilters={() => filtering.setShowFilters(!filtering.showFilters)}
                     />
                     {/* Search Bar */}
                     <QnASearchBar

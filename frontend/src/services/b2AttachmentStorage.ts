@@ -185,5 +185,4 @@ class B2AttachmentStorage {
   }
 }
 
-export default B2AttachmentStorage;
 export type { AttachmentUploadResult, PreSignedUploadResult };

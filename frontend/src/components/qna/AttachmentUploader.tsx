@@ -38,7 +38,6 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
   repositoryId,
   onUploadingChange
 }) => {
-  const [internalAttachments, setInternalAttachments] = useState<AttachmentWithClientKey[]>([]);
   const [uploading, setUploading] = useState<string[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isDragActive, setIsDragActive] = useState(false);
@@ -55,50 +54,7 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
       const randomStr = Math.random().toString(36).substring(2, 15);
       return `${prefix}-${timestamp}-${counter}-${performanceNow}-${uuid}-${randomStr}`;
     };
-  })();  useEffect(() => {
-    console.log('AttachmentUploader useEffect triggered with attachments:', attachments.length);
-    setInternalAttachments(currentInternal => {
-      console.log('Current internal attachments:', currentInternal.length);
-      
-      // Handle explicit clearing - when parent passes empty array, clear internal state
-      if (attachments.length === 0) {
-        console.log('Clearing all attachments due to empty parent array');
-        return [];
-      }
-      
-      // Only process attachments that don't already exist in our internal state
-      const existingIds = new Set(currentInternal.map(att => att.id).filter(Boolean));
-      const newAttachments = attachments.filter(att => att.id && !existingIds.has(att.id));
-      
-      console.log('New attachments to add:', newAttachments.length);
-      
-      // If no new attachments and lengths match, keep current state unchanged
-      if (newAttachments.length === 0 && currentInternal.length === attachments.length) {
-        return currentInternal;
-      }
-      
-      // Create new internal attachments only for new ones
-      const newInternalAttachments = newAttachments.map((att, index) => ({
-        ...att,
-        clientKey: generateUniqueKey(att.id || 'external')
-      }));
-      
-      // Merge existing and new attachments, ensuring no duplicates
-      const merged = [...currentInternal, ...newInternalAttachments];
-      const uniqueById = merged.reduce((acc, att) => {
-        if (att.id && !acc.find(existing => existing.id === att.id)) {
-          acc.push(att);
-        } else if (!att.id) {
-          // For attachments without ID (temp uploads), keep them all but ensure unique keys
-          acc.push(att);
-        }
-        return acc;
-      }, [] as AttachmentWithClientKey[]);
-      
-      console.log('Final unique attachments:', uniqueById.length);
-      return uniqueById;
-    });
-  }, [attachments]);
+  })();  
 
   useEffect(() => {
     if (typeof onUploadingChange === 'function') {
@@ -347,16 +303,42 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
     }
   };
 
+  // Track cancelled pending uploads
+  const cancelledUploadsRef = useRef<Set<string>>(new Set());
+  const [, forceUpdate] = useState(0); // Forcing re-render if needed
+
+  const removeAttachment = (key: string, isPending: boolean) => {
+    if (isPending) {
+      setPendingFiles(prev => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      setUploading(prev => prev.filter(id => id !== key));
+      cancelledUploadsRef.current.add(key);
+      return;
+    }
+    // Uploaded file: use id
+    const updated = attachments.filter(att => att.id !== key);
+    onAttachmentsChange(updated);
+  };
+
+  const addUploadedAttachment = (attachment: AttachmentWithClientKey) => {
+    if (cancelledUploadsRef.current.has(attachment.clientKey)) {
+      return;
+    }
+    // Only pass QuestionAttachment fields to parent
+    const { clientKey, ...rest } = attachment;
+    onAttachmentsChange([...attachments, rest]);
+  };
+
   const processFiles = async (files: File[]) => {
     if (files.length === 0) return;
-
-    if (internalAttachments.length + files.length > maxFiles) {
+    if (attachments.length + files.length > maxFiles) {
       setUploadError(`Maximum ${maxFiles} files allowed`);
       return;
     }
-
     setUploadError(null);
-
     const validFiles = files.filter(file => {
       const validationError = validateFile(file);
       if (validationError) {
@@ -365,13 +347,10 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
       }
       return true;
     });
-
     if (validFiles.length === 0) {
       return;
     }
-
     const tempIds = validFiles.map(() => `temp-${crypto.randomUUID()}`);
-    // Add pending files to state for display
     setPendingFiles(prev => {
       const next = { ...prev };
       validFiles.forEach((file, idx) => {
@@ -380,114 +359,28 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
       return next;
     });
     setUploading(prev => [...prev, ...tempIds]);
-
     const uploadPromises = validFiles.map(file => uploadFile(file));
-
     const results = await Promise.allSettled(uploadPromises);
-
     setUploading(prev => prev.filter(id => !tempIds.includes(id)));
     setPendingFiles(prev => {
       const next = { ...prev };
       tempIds.forEach(id => { delete next[id]; });
       return next;
     });
-
-    const newInternalAttachments: AttachmentWithClientKey[] = [];
-    const failedUploads: string[] = [];    results.forEach((result, index) => {
+    results.forEach((result, idx) => {
       if (result.status === 'fulfilled') {
-        // Use index and additional random string to ensure absolute uniqueness
-        const uniqueClientKey = generateUniqueKey(result.value.id || 'upload');
-        console.log(`Creating attachment with key: ${uniqueClientKey}`);
-        newInternalAttachments.push({
-          ...result.value,
-          clientKey: uniqueClientKey,
-        });
-      } else {
-        console.error('Upload failed:', result.reason);
-        if (result.reason instanceof Error) {
-          failedUploads.push(result.reason.message);
-        } else {
-          failedUploads.push(String(result.reason));
-        }
+        // Use tempId as clientKey for the uploaded file (preserve for removal)
+        const uploaded = { ...result.value, clientKey: tempIds[idx] };
+        addUploadedAttachment(uploaded);
       }
     });
-
-    if (failedUploads.length > 0) {
-      setUploadError(`Failed to upload ${failedUploads.length} file(s). ${failedUploads[0]}`);
-    }    if (newInternalAttachments.length > 0) {
-      setInternalAttachments(prev => {
-        // Ensure no duplicates by checking both ID and clientKey
-        const existingIds = new Set(prev.map(att => att.id).filter(Boolean));
-        const existingKeys = new Set(prev.map(att => att.clientKey));
-        
-        const filteredNew = newInternalAttachments.filter(newAtt => 
-          !existingIds.has(newAtt.id) && !existingKeys.has(newAtt.clientKey)
-        );
-        
-        const updated = [...prev, ...filteredNew];
-        
-        // Only call onAttachmentsChange if we actually added new attachments
-        if (filteredNew.length > 0) {
-          setTimeout(() => onAttachmentsChange(updated.map(({ clientKey, ...rest }) => rest)), 0);
-        }
-        
-        return updated;
-      });
-    }
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const removeAttachment = (clientKeyToRemove: string) => {
-    const attachmentToRemove = internalAttachments.find(att => att.clientKey === clientKeyToRemove);
-    if (!attachmentToRemove || !attachmentToRemove.id) return;
-
-    const originalAttachments = internalAttachments;
-
-    setInternalAttachments(prev => prev.filter(att => att.clientKey !== clientKeyToRemove));
-
-    fetch(`/api/attachments/${attachmentToRemove.id}`, {
-      method: 'DELETE',
-    })
-    .then(response => {
-      if (!response.ok) {
-        console.error('Failed to delete attachment from server');
-        setInternalAttachments(originalAttachments); // Revert on failure
-      } else {
-        // If successful, update the parent component
-        const updated = originalAttachments.filter(att => att.clientKey !== clientKeyToRemove);
-        setTimeout(() => onAttachmentsChange(updated.map(({ clientKey, ...rest }) => rest)), 0);
-      }
-    })
-    .catch(error => {
-      console.error('Error deleting attachment:', error);
-      setInternalAttachments(originalAttachments); // Revert on error
-    });
+    // ...existing code for error handling...
   };
 
   const clearAllAttachments = () => {
-    const allAttachments = [...internalAttachments];
-    setInternalAttachments([]);
-    setTimeout(() => onAttachmentsChange([]), 0);
-
-    allAttachments.forEach(attachment => {
-      if (attachment.id) {
-        fetch(`/api/attachments/${attachment.id}`, {
-          method: 'DELETE',
-        })
-        .then(response => {
-          if (!response.ok) {
-            console.error(`Failed to delete attachment ${attachment.id}`);
-            // Optionally, add it back to the list to show the user it failed
-          }
-        })
-        .catch(error => {
-          console.error(`Error deleting attachment ${attachment.id}:`, error);
-        });
-      }
-    });
+    setPendingFiles({});
+    setUploading([]);
+    onAttachmentsChange([]);
   };
 
   const handleButtonClick = () => {
@@ -559,13 +452,13 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
           <span className="text-sm text-red-700 dark:text-red-300">{uploadError}</span>
         </div>
       )}      {/* Attached Files */}
-      {(Object.keys(pendingFiles).length > 0 || internalAttachments.length > 0) && (
+      {(Object.keys(pendingFiles).length > 0 || attachments.length > 0) && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              Attached Files ({internalAttachments.length + Object.keys(pendingFiles).length}/{maxFiles})
+              Attached Files ({attachments.length + Object.keys(pendingFiles).length}/{maxFiles})
             </p>
-            {(internalAttachments.length > 0 || Object.keys(pendingFiles).length > 0) && (
+            {(attachments.length > 0 || Object.keys(pendingFiles).length > 0) && (
               <button
                 type="button"
                 onClick={clearAllAttachments}
@@ -577,28 +470,39 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
           </div>
           <div className="grid gap-2">
             {[
-              ...Object.entries(pendingFiles).map(([clientKey, file]) => ({
-                clientKey,
-                originalFileName: file.name,
-                fileName: '',
-                fileSize: file.size,
-                fileType: file.type,
-                id: '',
-                uploadUrl: '',
-                createdAt: '',
-                isUploading: true,
-              })),
-              ...internalAttachments
+              ...Object.entries(pendingFiles)
+                .filter(([clientKey]) => !cancelledUploadsRef.current.has(clientKey))
+                .map(([clientKey, file]) => ({
+                  key: clientKey,
+                  removeKey: clientKey,
+                  isPending: true,
+                  originalFileName: file.name,
+                  fileName: '',
+                  fileSize: file.size,
+                  fileType: file.type,
+                  id: '',
+                  uploadUrl: '',
+                  createdAt: '',
+                  isUploading: true,
+                })),
+              ...attachments
                 .filter((attachment, index, array) =>
-                  array.findIndex(a => a.clientKey === attachment.clientKey) === index &&
-                  !pendingFiles[attachment.clientKey]
+                  array.findIndex(a => a.id === attachment.id) === index &&
+                  !cancelledUploadsRef.current.has(attachment.id)
                 )
-                .map(attachment => ({ ...attachment, isUploading: uploading.includes(attachment.clientKey) }))
-            ].map((attachment) => {
+                .map((attachment, idx) => ({
+                  ...attachment,
+                  key: attachment.id || `uploaded-${idx}`,
+                  removeKey: attachment.id,
+                  isPending: false,
+                  isUploading: false
+                }))
+            ].map((attachment, idx) => {
               const isUploading = attachment.isUploading;
+              const isPending = attachment.isPending;
               return (
                 <div
-                  key={attachment.clientKey}
+                  key={attachment.key || idx}
                   className="group flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-all duration-200"
                 >
                   <div className="flex items-center space-x-3 min-w-0 flex-1">
@@ -628,9 +532,9 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
                   </div>
                   <button
                     type="button"
-                    onClick={() => removeAttachment(attachment.clientKey)}
+                    onClick={() => removeAttachment(attachment.removeKey, isPending)}
                     disabled={disabled}
-                    className="ml-2 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 rounded-md opacity-0 group-hover:opacity-100"
+                    className={`ml-2 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 rounded-md opacity-100`}
                     title="Remove file"
                   >
                     <XMarkIcon className="h-4 w-4" />

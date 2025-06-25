@@ -81,25 +81,3 @@ class PerformanceMonitor {
 }
 
 export const performanceMonitor = new PerformanceMonitor();
-
-// React hook for measuring component render times
-export function usePerformanceMonitor(componentName: string) {
-  const { useEffect, useRef } = require('react');
-  const renderCount = useRef(0);
-
-  useEffect(() => {
-    renderCount.current++;
-    const name = `${componentName}-render-${renderCount.current}`;
-    
-    performanceMonitor.start(name);
-    
-    return () => {
-      performanceMonitor.end(name);
-    };
-  });
-
-  return {
-    measure: (operationName: string, fn: () => Promise<any>) => 
-      performanceMonitor.measure(`${componentName}-${operationName}`, fn)
-  };
-}
