@@ -209,13 +209,17 @@ const QuestionCard = memo(({
     <article
       ref={cardRef}
       data-question-id={question.id}
-      className="border-2 border-green-200 dark:border-green-800 rounded-2xl bg-white/70 dark:bg-green-950/60 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-300 focus-within:ring-2 focus-within:ring-green-400 outline-none scale-100 hover:scale-[1.02]"
+      className={
+        `border-2 border-slate-200 dark:border-slate-800 rounded-2xl ` +
+        `bg-white dark:bg-slate-900 ` + // Changed from green to neutral backgrounds
+        `backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-300 focus-within:ring-2 focus-within:ring-green-400 outline-none scale-100 hover:scale-[1.02]`
+      }
       tabIndex={0}
       aria-labelledby={`question-title-${question.id}`}
     >
       {/* Question Header - Always Visible */}
       <div
-        className="p-4 cursor-pointer flex items-center justify-between hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors rounded-t-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
+        className="p-4 cursor-pointer flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-t-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
         onClick={() => setIsExpanded(!isExpanded)}
         aria-expanded={isExpanded}
         aria-controls={`question-details-${question.id}`}
@@ -225,9 +229,9 @@ const QuestionCard = memo(({
         <div className="flex-1 flex items-start gap-2">
           <div className="flex items-center gap-2 mt-1">
             {isExpanded ? (
-              <ChevronDownIcon className="w-5 h-5 text-green-500" />
+              <ChevronDownIcon className="w-5 h-5 text-slate-400" />
             ) : (
-              <ChevronRightIcon className="w-5 h-5 text-green-500" />
+              <ChevronRightIcon className="w-5 h-5 text-slate-400" />
             )}
             {getStatusIcon(question.status)}
           </div>
@@ -236,7 +240,7 @@ const QuestionCard = memo(({
               {showFullQuestion || question.query.length < 120 ? question.query : `${question.query.slice(0, 120)}...`}
               {question.query.length >= 120 && (
                 <button
-                  className="ml-2 text-xs text-green-600 underline hover:text-green-800 focus:outline-none"
+                  className="ml-2 text-xs text-slate-500 underline hover:text-slate-700 focus:outline-none"
                   onClick={e => { e.stopPropagation(); setShowFullQuestion(v => !v) }}
                   tabIndex={-1}
                 >
@@ -245,12 +249,12 @@ const QuestionCard = memo(({
               )}
             </h4>
             {/* Removed repo name */}
-            <div className="flex items-center gap-2 text-sm text-green-800 dark:text-green-200 font-medium">
+            <div className="flex items-center gap-2 text-sm text-slate-800 dark:text-slate-400 font-medium">
               <span>{new Date(question.createdAt).toLocaleString()}</span>
               {question.category && (
                 <>
                   <span>•</span>
-                  <span className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide">
+                  <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide">
                     {question.category}
                   </span>
                 </>
@@ -279,7 +283,7 @@ const QuestionCard = memo(({
         <span className={`ml-3 px-3 py-1 text-sm font-semibold rounded-full shadow-sm ${getStatusColor(question.status)}`}>{question.status}</span>
       </div>
       {/* Visual separation between question and answer */}
-      <div className="h-1 bg-gradient-to-r from-green-200/60 via-green-100/0 to-green-200/60 dark:from-green-900/60 dark:to-green-900/60" />
+      <div className="h-1 bg-gradient-to-r from-slate-100 via-white to-slate-100 dark:from-slate-800 dark:to-slate-800" />
       {/* Question Details - Expandable with animation */}
       <div
         id={`question-details-${question.id}`}
@@ -301,8 +305,8 @@ const QuestionCard = memo(({
             <div className="relative max-h-[32rem] overflow-y-auto rounded-b-2xl">
               {/* Answer Section */}
               {question.answer && (
-                <div className="p-0 bg-gradient-to-br from-white/90 via-green-50/80 to-green-100/60 dark:from-green-950/80 dark:via-green-900/60 dark:to-green-950/80">
-                  <div className="px-4 pt-4 pb-2 flex items-center gap-2 border-b border-green-100 dark:border-green-900/40">
+                <div className="p-0 bg-white dark:bg-slate-900">
+                  <div className="px-4 pt-4 pb-2 flex items-center gap-2 border-b border-slate-100 dark:border-slate-800">
                     <CheckCircleIcon className="w-5 h-5 text-green-500" />
                     <h5 className="text-sm font-bold text-slate-700 dark:text-slate-200">Answer</h5>
                     {useConfidenceFilter && typeof question.confidence === 'number' && (
@@ -324,7 +328,7 @@ const QuestionCard = memo(({
                     </div>
                   </div>
                   {/* Modern Action Bar with loading spinners */}
-                  <div className="flex flex-wrap items-center gap-2 px-4 py-3 mt-2 bg-white/60 dark:bg-green-950/60 rounded-xl shadow-sm border border-green-100 dark:border-green-900/40 mx-4 mb-4">
+                  <div className="flex flex-wrap items-center gap-2 px-4 py-3 mt-2 bg-bg-green-50/60 dark:bg-green-950/60 rounded-xl shadow-sm border border-green-100 dark:border-green-900/40 mx-4 mb-4">
                     {/* Play/Stop Button */}
                     {!isSpeaking ? (
                       <button
@@ -394,7 +398,7 @@ const QuestionCard = memo(({
               )}
               {/* Relevant Files - modern card style with more padding and gap */}
               {(question.relevantFiles?.length ?? 0) > 0 && (
-                <div className="border-t border-green-100 dark:border-green-900/40 p-6 mt-6 rounded-2xl bg-gradient-to-br from-blue-50/60 via-white/60 to-green-50/60 dark:from-blue-950/40 dark:via-green-950/40 dark:to-green-950/60 shadow-md space-y-4">
+                <div className="border-t border-slate-200 dark:border-slate-700 p-6 mt-6 rounded-2xl bg-white dark:bg-slate-900 shadow-md space-y-4">
                   <div className="flex items-center gap-3 mb-4">
                     <DocumentTextIcon className="w-6 h-6 text-blue-500" />
                     <h5 className="text-lg font-bold text-slate-700 dark:text-slate-200">
@@ -448,13 +452,38 @@ const QuestionCard = memo(({
                                 </span>
                               )}
                               {fileContent && (
+                                <>
                                 <button
                                   onClick={() => copyToClipboard(fileContent.content, pathString)}
                                   className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors rounded"
                                   title="Copy file content"
                                 >
-                                  <ClipboardDocumentIcon className="w-4 h-4" />
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                  </svg>
                                 </button>
+                                <button
+                                  onClick={() => {
+                                    if (!fileContent.content) return;
+                                    const blob = new Blob([fileContent.content], { type: 'text/plain' });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = pathString.split('/').pop() || 'file.txt';
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                    URL.revokeObjectURL(url);
+                                  }}
+                                  disabled={!fileContent}
+                                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title="Download file"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                  </svg>
+                                </button>
+                                </>
                               )}
                             </div>
                           </div>
@@ -488,7 +517,7 @@ const QuestionCard = memo(({
                 </div>
               )}
               {/* Question Metadata - modern card style with more padding and gap */}
-              <div className="border-t border-green-100 dark:border-green-900/40 pt-6 mt-6 rounded-2xl bg-gradient-to-br from-green-50/60 via-white/60 to-blue-50/60 dark:from-green-950/40 dark:via-blue-950/40 dark:to-green-950/60 shadow-md px-6 pb-4">
+              <div className="border-t border-slate-200 dark:border-slate-700 pt-6 mt-6 rounded-2xl bg-white dark:bg-slate-900 shadow-md px-6 pb-4">
                 <QuestionMetadata
                   question={question}
                   onUpdate={onQuestionUpdate}
@@ -497,7 +526,7 @@ const QuestionCard = memo(({
               </div>
               {/* Follow-up Questions Suggestions - modern card style with more padding and gap */}
               {question.status === 'completed' && question.answer && (
-                <div className="border-t border-green-100 dark:border-green-900/40 pt-6 mt-6 rounded-2xl bg-gradient-to-br from-blue-50/60 via-white/60 to-green-50/60 dark:from-blue-950/40 dark:via-green-950/40 dark:to-green-950/60 shadow-md px-6 pb-4">
+                <div className="border-t border-slate-200 dark:border-slate-700 pt-6 mt-6 rounded-2xl bg-white dark:bg-slate-900 shadow-md px-6 pb-4">
                   <div className="flex items-center justify-between mb-4">
                     <h5 className="text-lg font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
                       <ChatBubbleLeftRightIcon className="w-5 h-5" />
@@ -509,7 +538,12 @@ const QuestionCard = memo(({
                       <button
                         key={idx}
                         onClick={() => handleSelectFollowUp(question, suggestion, () => {})}
-                        className="text-xs px-4 py-2 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-800/30 text-blue-700 dark:text-blue-300 rounded-lg transition-colors duration-200 border border-blue-200 dark:border-blue-800"
+                        className="text-xs px-4 py-2 rounded-xl font-semibold shadow transition-all duration-200 border-2
+                          bg-white hover:bg-green-50 text-green-800 border-green-200
+                          dark:bg-slate-800 dark:hover:bg-green-900/30 dark:text-green-100 dark:border-green-800"
+                        style={{
+                          boxShadow: '0 2px 8px 0 #22c55e22',
+                        }}
                       >
                         {suggestion}
                       </button>

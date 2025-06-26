@@ -51,8 +51,8 @@ export default function QnAHeader({
                 </div>
               )}
               {selectedFileTypes.length > 0 && (
-                <div className="text-xs bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 px-2 py-1 rounded-full flex items-center gap-1">
-                  <CodeBracketIcon className="w-3 h-3" />
+                <div className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-1 rounded-full flex items-center gap-1">
+                  <CodeBracketIcon className="w-3 h-3 text-green-500" />
                   Files: {selectedFileTypes.slice(0, 3).map(ft => `.${ft}`).join(', ')}{selectedFileTypes.length > 3 ? ` +${selectedFileTypes.length - 3}` : ''}
                 </div>
               )}

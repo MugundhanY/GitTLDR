@@ -502,7 +502,7 @@ export default function ThinkingProcess({
               )}
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Deep reasoning for: "{question.slice(0, 50)}{question.length > 50 ? '...' : ''}"
+              Deep reasoning for: &quot;{question.slice(0, 50)}{question.length > 50 ? '...' : ''}&quot;
             </p>
           </div>
         </div>

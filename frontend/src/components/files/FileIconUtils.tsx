@@ -71,7 +71,7 @@ export const getFileIcon = (file: FileItem) => {
   if (extension === 'json') {
     return (
       <svg className="w-4 h-4 text-yellow-600" fill="currentColor" viewBox="0 0 24 24">
-        <path d="M5.843 8.357c0-.637.322-1.155.903-1.155.58 0 .902.518.902 1.155v1.111c0 .725.398 1.099 1.091 1.099.693 0 1.091-.374 1.091-1.099V8.357c0-1.848-1.294-3.357-3.084-3.357S3.662 6.509 3.662 8.357v7.286c0 1.848 1.294 3.357 3.084 3.357 1.79 0 3.084-1.509 3.084-3.357v-1.111c0-.725-.398-1.099-1.091-1.099-.693 0-1.091.374-1.091 1.099v1.111c0 .637-.322 1.155-.902 1.155-.581 0-.903-.518-.903-1.155V8.357zm12.314 7.286c0-.637-.322-1.155-.903-1.155-.58 0-.902.518-.902 1.155v1.111c0 .725-.398 1.099-1.091 1.099-.693 0-1.091-.374-1.091-1.099V8.357c0-1.848 1.294-3.357 3.084-3.357 1.79 0 3.084 1.509 3.084 3.357v7.286c0 1.848-1.294 3.357-3.084 3.357-1.79 0-3.084-1.509-3.084-3.357v-1.111c0-.725.398-1.099 1.091-1.099.693 0 1.091.374 1.091 1.099v1.111c0 .637.322 1.155.902 1.155.581 0 .903-.518.903-1.155V15.643z"/>
+        <path d="M5.843 8.357c0-.637.322-1.155.903-1.155.58 0 .902.518.902 1.155v1.111c0 .725.398 1.099 1.091 1.099.693 0 1.091-.374 1.091-1.099V8.357c0-1.848-1.294-3.357-3.084-3.357S3.662 6.509 3.662 8.357v7.286c0 1.848 1.294 3.357 3.084 3.357 1.79 0 3.084-1.509 3.084-3.357v-1.111c0-.725-.398-1.099-1.091-1.099-.693 0-1.091.374-1.091 1.099v1.111c0 .637-.322 1.155-.903 1.155-.581 0-.903-.518-.903-1.155V8.357zm12.314 7.286c0-.637-.322-1.155-.903-1.155-.58 0-.902.518-.902 1.155v1.111c0 .725-.398 1.099-1.091 1.099-.693 0-1.091-.374-1.091-1.099V8.357c0-1.848 1.294-3.357 3.084-3.357 1.79 0 3.084 1.509 3.084 3.357v7.286c0 1.848-1.294 3.357-3.084 3.357-1.79 0-3.084-1.509-3.084-3.357v-1.111c0-.725.398-1.099 1.091-1.099.693 0 1.091.374 1.091 1.099v1.111c0 .637.322 1.155.902 1.155.581 0 .903-.518.903-1.155V15.643z"/>
       </svg>
     )
   }
@@ -179,27 +179,42 @@ export const formatDate = (dateString?: string) => {
 }
 
 export const getLanguageForHighlighter = (language: string) => {
+  if (!language) return 'text';
+  const lang = language.toLowerCase();
   const langMap: { [key: string]: string } = {
-    'typescript': 'typescript',
-    'javascript': 'javascript',
-    'python': 'python',
+    // Core web
+    'typescript': 'typescript', 'ts': 'typescript', 'tsx': 'tsx',
+    'javascript': 'javascript', 'js': 'javascript', 'jsx': 'jsx',
+    'css': 'css', 'scss': 'scss', 'less': 'less', 'sass': 'sass',
+    'html': 'html', 'htm': 'html',
+    // Data/config
+    'json': 'json', 'yaml': 'yaml', 'yml': 'yaml', 'toml': 'toml', 'ini': 'ini',
+    // Markdown
+    'markdown': 'markdown', 'md': 'markdown', 'mdx': 'markdown',
+    // Programming
+    'python': 'python', 'py': 'python',
     'java': 'java',
-    'css': 'css',
-    'scss': 'scss',
-    'html': 'html',
-    'json': 'json',
-    'xml': 'xml',
-    'yaml': 'yaml',
-    'yml': 'yaml',
-    'markdown': 'markdown',
-    'md': 'markdown',
-    'sql': 'sql',
-    'php': 'php',
-    'ruby': 'ruby',
+    'c': 'c', 'cpp': 'cpp', 'c++': 'cpp', 'h': 'cpp', 'hpp': 'cpp',
     'go': 'go',
-    'rust': 'rust',
-    'cpp': 'cpp',
-    'c': 'c'
-  }
-  return langMap[language.toLowerCase()] || 'text'
+    'php': 'php',
+    'ruby': 'ruby', 'rb': 'ruby',
+    'rust': 'rust', 'rs': 'rust',
+    'swift': 'swift',
+    'kotlin': 'kotlin', 'kt': 'kotlin',
+    'scala': 'scala',
+    'r': 'r',
+    'sql': 'sql',
+    'shell': 'bash', 'bash': 'bash', 'sh': 'bash', 'zsh': 'bash',
+    'dockerfile': 'docker',
+    'makefile': 'makefile',
+    'xml': 'xml',
+    // Misc
+    'vue': 'vue',
+    'log': 'text',
+    'txt': 'text',
+    'config': 'ini',
+    'env': 'ini',
+    'gitignore': 'bash',
+  };
+  return langMap[lang] || 'text';
 }
