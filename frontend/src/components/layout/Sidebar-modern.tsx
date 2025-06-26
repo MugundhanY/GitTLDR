@@ -174,8 +174,8 @@ export default function Sidebar({ selectedRepository }: SidebarProps) {
       status: null
     },  ];  return (
     <div className={`flex h-full flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 ${
-      isCollapsed ? 'w-16' : 'w-72'
-    }`}>      {/* Repository Selector */}
+      isCollapsed ? 'w-16' : 'w-40 md:w-52 lg:w-72'
+    } md:flex hidden`}>      {/* Repository Selector */}
       <div className="p-4 border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center justify-between mb-3">
           {!isCollapsed && (

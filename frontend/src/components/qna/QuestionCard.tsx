@@ -538,12 +538,7 @@ const QuestionCard = memo(({
                       <button
                         key={idx}
                         onClick={() => handleSelectFollowUp(question, suggestion, () => {})}
-                        className="text-xs px-4 py-2 rounded-xl font-semibold shadow transition-all duration-200 border-2
-                          bg-white hover:bg-green-50 text-green-800 border-green-200
-                          dark:bg-slate-800 dark:hover:bg-green-900/30 dark:text-green-100 dark:border-green-800"
-                        style={{
-                          boxShadow: '0 2px 8px 0 #22c55e22',
-                        }}
+                        className="text-xs px-4 py-2 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-800/30 text-blue-700 dark:text-blue-300 rounded-lg transition-colors duration-200 border border-blue-200 dark:border-blue-800"
                       >
                         {suggestion}
                       </button>
