@@ -275,32 +275,54 @@ export default function FileBrowser({
             {node.name}
           </span>
 
-          {/* Directory file count with animation */}
-          {node.type === 'dir' && node.children.length > 0 && (
-            <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded mr-2 transition-all duration-200 group-hover:bg-slate-200 dark:group-hover:bg-slate-600 animate-in fade-in delay-100">
-              {node.children.length}
-            </span>
-          )}
-
-          {/* File Size (for files only) - Enhanced with color coding and animations */}
-          {node.file && node.file.size && (
-            <span className={`text-xs px-2 py-0.5 rounded-full transition-all duration-200 mr-2 animate-in fade-in delay-200 group-hover:scale-105 ${
-              node.file.size > 1000000 
-                ? 'text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50' // Large files (>1MB)
-                : node.file.size > 100000 
-                ? 'text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-900/30 hover:bg-amber-200 dark:hover:bg-amber-900/50' // Medium files (>100KB)
-                : 'text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50' // Small files
-            }`}>
-              {formatFileSize(node.file.size)}
-            </span>
-          )}
-
-          {/* File Language Badge with enhanced animations */}
-          {node.file && node.file.language && (
-            <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full mr-2 transition-all duration-200 group-hover:bg-slate-200 dark:group-hover:bg-slate-600 animate-in fade-in delay-300 group-hover:scale-105">
-              {node.file.language}
-            </span>
-          )}
+          {/* Inline badges for desktop/tablet, stacked for mobile/tablet portrait */}
+          <div className="flex-row items-center gap-1 hidden min-[480px]:flex">
+            {node.type === 'dir' && node.children.length > 0 && (
+              <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded mr-2 transition-all duration-200 group-hover:bg-slate-200 dark:group-hover:bg-slate-600 animate-in fade-in delay-100">
+                {node.children.length}
+              </span>
+            )}
+            {node.file && node.file.size && (
+              <span className={`text-xs px-2 py-0.5 rounded-full transition-all duration-200 mr-2 animate-in fade-in delay-200 group-hover:scale-105 ${
+                node.file.size > 1000000 
+                  ? 'text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50'
+                  : node.file.size > 100000 
+                  ? 'text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-900/30 hover:bg-amber-200 dark:hover:bg-amber-900/50'
+                  : 'text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50'
+              }`}>
+                {formatFileSize(node.file.size)}
+              </span>
+            )}
+            {node.file && node.file.language && (
+              <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full mr-2 transition-all duration-200 group-hover:bg-slate-200 dark:group-hover:bg-slate-600 animate-in fade-in delay-300 group-hover:scale-105">
+                {node.file.language}
+              </span>
+            )}
+          </div>
+          {/* Stacked badges for mobile/tablet portrait */}
+          <div className="flex flex-wrap gap-1 mt-1 min-[480px]:hidden">
+            {node.type === 'dir' && node.children.length > 0 && (
+              <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded transition-all duration-200 group-hover:bg-slate-200 dark:group-hover:bg-slate-600 animate-in fade-in delay-100">
+                {node.children.length}
+              </span>
+            )}
+            {node.file && node.file.size && (
+              <span className={`text-xs px-2 py-0.5 rounded-full transition-all duration-200 animate-in fade-in delay-200 group-hover:scale-105 ${
+                node.file.size > 1000000 
+                  ? 'text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50'
+                  : node.file.size > 100000 
+                  ? 'text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-900/30 hover:bg-amber-200 dark:hover:bg-amber-900/50'
+                  : 'text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50'
+              }`}>
+                {formatFileSize(node.file.size)}
+              </span>
+            )}
+            {node.file && node.file.language && (
+              <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full transition-all duration-200 group-hover:bg-slate-200 dark:group-hover:bg-slate-600 animate-in fade-in delay-300 group-hover:scale-105">
+                {node.file.language}
+              </span>
+            )}
+          </div>
         </div>        {/* Children (if directory is expanded) */}
         {node.type === 'dir' && isExpanded && node.children.length > 0 && (
           <div className="animate-in slide-in-from-top duration-300 ease-out">

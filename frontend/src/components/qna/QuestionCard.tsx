@@ -211,23 +211,24 @@ const QuestionCard = memo(({
       data-question-id={question.id}
       className={
         `border-2 border-slate-200 dark:border-slate-800 rounded-2xl ` +
-        `bg-white dark:bg-slate-900 ` + // Changed from green to neutral backgrounds
-        `backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-300 focus-within:ring-2 focus-within:ring-green-400 outline-none scale-100 hover:scale-[1.02]`
+        `bg-white dark:bg-slate-900 ` +
+        `backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-300 focus-within:ring-2 focus-within:ring-green-400 outline-none scale-100 hover:scale-[1.02] ` +
+        `overflow-x-auto`
       }
       tabIndex={0}
       aria-labelledby={`question-title-${question.id}`}
     >
       {/* Question Header - Always Visible */}
       <div
-        className="p-4 cursor-pointer flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-t-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
+        className="p-3 sm:p-4 cursor-pointer flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-t-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
         onClick={() => setIsExpanded(!isExpanded)}
         aria-expanded={isExpanded}
         aria-controls={`question-details-${question.id}`}
         tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setIsExpanded(v => !v) }}
       >
-        <div className="flex-1 flex items-start gap-2">
-          <div className="flex items-center gap-2 mt-1">
+        <div className="flex-1 flex flex-col sm:flex-row items-start sm:items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2 mt-1 flex-shrink-0">
             {isExpanded ? (
               <ChevronDownIcon className="w-5 h-5 text-slate-400" />
             ) : (
@@ -235,8 +236,8 @@ const QuestionCard = memo(({
             )}
             {getStatusIcon(question.status)}
           </div>
-          <div className="flex-1">
-            <h4 id={`question-title-${question.id}`} className="text-base font-semibold text-slate-900 dark:text-white mb-1 line-clamp-2">
+          <div className="flex-1 min-w-0">
+            <h4 id={`question-title-${question.id}`} className="text-base font-semibold text-slate-900 dark:text-white mb-1 line-clamp-2 break-words">
               {showFullQuestion || question.query.length < 120 ? question.query : `${question.query.slice(0, 120)}...`}
               {question.query.length >= 120 && (
                 <button
@@ -248,8 +249,7 @@ const QuestionCard = memo(({
                 </button>
               )}
             </h4>
-            {/* Removed repo name */}
-            <div className="flex items-center gap-2 text-sm text-slate-800 dark:text-slate-400 font-medium">
+            <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-slate-800 dark:text-slate-400 font-medium break-words">
               <span>{new Date(question.createdAt).toLocaleString()}</span>
               {question.category && (
                 <>
@@ -263,24 +263,26 @@ const QuestionCard = memo(({
           </div>
         </div>
         {/* Modern Favorite Button - blazing fast, no loader */}
-        <button
-          onClick={handleToggleFavorite}
-          className={`relative p-2 rounded-full shadow-md bg-white/60 dark:bg-green-900/40 border border-yellow-200 dark:border-yellow-700 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400 ${
-            question.isFavorite
-              ? 'text-yellow-400 dark:text-yellow-300 scale-110'
-              : 'text-slate-400 hover:text-yellow-400 dark:hover:text-yellow-300'
-          }`}
-          title={question.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-          aria-label={question.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-          style={{ boxShadow: question.isFavorite ? '0 2px 8px 0 rgba(255, 193, 7, 0.15)' : undefined }}
-        >
-          {question.isFavorite ? (
-            <StarIconSolid className="w-6 h-6" />
-          ) : (
-            <StarIcon className="w-6 h-6" />
-          )}
-        </button>
-        <span className={`ml-3 px-3 py-1 text-sm font-semibold rounded-full shadow-sm ${getStatusColor(question.status)}`}>{question.status}</span>
+        <div className="flex items-center gap-2 mt-2 sm:mt-0 flex-shrink-0">
+          <button
+            onClick={handleToggleFavorite}
+            className={`relative p-2 rounded-full shadow-md bg-white/60 dark:bg-green-900/40 border border-yellow-200 dark:border-yellow-700 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400 ${
+              question.isFavorite
+                ? 'text-yellow-400 dark:text-yellow-300 scale-110'
+                : 'text-slate-400 hover:text-yellow-400 dark:hover:text-yellow-300'
+            }`}
+            title={question.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            aria-label={question.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            style={{ boxShadow: question.isFavorite ? '0 2px 8px 0 rgba(255, 193, 7, 0.15)' : undefined }}
+          >
+            {question.isFavorite ? (
+              <StarIconSolid className="w-6 h-6" />
+            ) : (
+              <StarIcon className="w-6 h-6" />
+            )}
+          </button>
+          <span className={`px-2 py-1 text-xs font-semibold rounded-full shadow-sm ${getStatusColor(question.status)}`}>{question.status}</span>
+        </div>
       </div>
       {/* Visual separation between question and answer */}
       <div className="h-1 bg-gradient-to-r from-slate-100 via-white to-slate-100 dark:from-slate-800 dark:to-slate-800" />
@@ -322,8 +324,8 @@ const QuestionCard = memo(({
                     )}
                   </div>
                   {/* Scrollable answer with fade for long content */}
-                  <div className="relative px-4 pt-2 pb-0">
-                    <div className="prose prose-slate dark:prose-invert max-w-none">
+                  <div className="relative px-2 sm:px-4 pt-2 pb-0 overflow-x-auto">
+                    <div className="prose prose-slate dark:prose-invert max-w-none break-words">
                       <MarkdownContent content={question.answer} />
                     </div>
                   </div>
@@ -439,7 +441,7 @@ const QuestionCard = memo(({
                                 <ChevronRightIcon className="w-4 h-4 text-slate-400" />
                               )}
                               <CodeBracketIcon className="w-4 h-4 text-slate-500" />
-                              <span className="text-sm text-slate-700 dark:text-slate-300 text-left truncate font-mono">
+                              <span className="text-sm text-slate-700 dark:text-slate-300 text-left truncate font-mono break-all max-w-[120px] sm:max-w-[220px] md:max-w-[320px] lg:max-w-[420px] xl:max-w-[520px]">
                                 {pathString}
                               </span>
                             </button>

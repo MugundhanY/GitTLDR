@@ -172,9 +172,9 @@ export default function FileSearchAndFilters({
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-4 items-center">
+      <div className="flex gap-4 items-center flex-row max-sm:flex-col max-sm:items-stretch max-sm:gap-2">
         {/* Search Input with enhanced animations */}
-        <div className="relative flex-1 group">
+        <div className="relative flex-1 group max-sm:w-full">
           <input
             type="text"
             placeholder={`Search files and folders${searchInContent ? ' + summaries' : ''}... ${searchMode === 'regex' ? '(Regex mode)' : searchMode === 'exact' ? '(Exact match)' : ''}`}
@@ -197,13 +197,14 @@ export default function FileSearchAndFilters({
               </svg>
             </button>
           )}
-        </div>        {/* Language Filter with enhanced styling */}
+        </div>
+        {/* Language Filter with enhanced styling */}
         {availableLanguages.length > 0 && (
-          <div className="flex-shrink-0">
+          <div className="flex-shrink-0 max-sm:w-full">
             <select
               value={selectedLanguage}
               onChange={(e) => onLanguageChange(e.target.value)}
-              className="h-9 px-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 cursor-pointer shadow-sm min-w-[120px] hover:shadow-md focus:shadow-lg [&>option]:bg-emerald-50 [&>option]:text-emerald-900 dark:[&>option]:bg-emerald-900 dark:[&>option]:text-emerald-100 [&>option:checked]:bg-emerald-500 [&>option:checked]:text-white"
+              className="h-9 px-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 cursor-pointer shadow-sm min-w-[120px] hover:shadow-md focus:shadow-lg [&>option]:bg-emerald-50 [&>option]:text-emerald-900 dark:[&>option]:bg-emerald-900 dark:[&>option]:text-emerald-100 [&>option:checked]:bg-emerald-500 [&>option:checked]:text-white w-full"
             >
               <option value="all" className="bg-emerald-50 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-100">All Languages</option>
               {availableLanguages.map(lang => (
@@ -211,15 +212,16 @@ export default function FileSearchAndFilters({
               ))}
             </select>
           </div>
-        )}        {/* Advanced Filters Button with status indicator */}
-        <div className="flex-shrink-0">
+        )}
+        {/* Advanced Filters Button with status indicator */}
+        <div className="flex-shrink-0 max-sm:w-full">
           <button
             onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
             className={`relative h-9 px-3 rounded-lg text-sm font-medium transition-all duration-300 shadow-sm hover:shadow-md flex items-center gap-2 ${
               isAdvancedOpen || selectedExtensions.length > 0 || searchMode !== 'normal' || caseSensitive || searchInContent || minFileSize || maxFileSize
                 ? 'bg-amber-500 text-white hover:bg-amber-600 scale-105'
                 : 'bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600'
-            }`}
+            } w-full`}
             title="Advanced Filters"
           >
             <svg className={`h-4 w-4 transition-all duration-300 ${isAdvancedOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">

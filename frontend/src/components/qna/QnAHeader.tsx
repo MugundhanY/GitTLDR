@@ -34,24 +34,24 @@ export default function QnAHeader({
   className = ""
 }: QnAHeaderProps) {
   return (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className={`w-8 h-8 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center animate-pulse`}>
+        <div className="flex items-center justify-between flex-wrap gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-wrap">
+            <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center animate-pulse shrink-0">
               <ChatBubbleLeftRightIcon className="w-4 h-4 text-white" />
             </div>
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Questions & Answers</h2>
-            <div className="flex items-center gap-2 ml-2">
-              <div className="text-xs text-slate-500 dark:text-slate-400 bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded-full">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white truncate max-w-[120px] sm:max-w-[200px] md:max-w-[320px]">Questions & Answers</h2>
+            <div className="flex items-center gap-1 sm:gap-2 ml-2 flex-wrap min-w-0">
+              <div className="text-xs text-slate-500 dark:text-slate-400 bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded-full truncate max-w-[80px] sm:max-w-[120px] md:max-w-[180px]">
                 {questionsCount} questions
               </div>
               {useConfidenceFilter && (
-                <div className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 px-2 py-1 rounded-full flex items-center gap-1">
+                <div className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 px-2 py-1 rounded-full flex items-center gap-1 truncate max-w-[120px] sm:max-w-[180px]">
                   <SparklesIcon className="w-3 h-3" />
                   Confidence: {Math.round(minConfidence * 100)}-{Math.round(maxConfidence * 100)}%
                 </div>
               )}
               {selectedFileTypes.length > 0 && (
-                <div className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-1 rounded-full flex items-center gap-1">
+                <div className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-1 rounded-full flex items-center gap-1 truncate max-w-[120px] sm:max-w-[180px]">
                   <CodeBracketIcon className="w-3 h-3 text-green-500" />
                   Files: {selectedFileTypes.slice(0, 3).map(ft => `.${ft}`).join(', ')}{selectedFileTypes.length > 3 ? ` +${selectedFileTypes.length - 3}` : ''}
                 </div>
@@ -59,7 +59,7 @@ export default function QnAHeader({
             </div>
           </div>
           {/* Action Buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 mt-2 sm:mt-0 flex-wrap">
             {/* Suggestions Toggle */}
             <button
               onClick={onToggleSuggestions}

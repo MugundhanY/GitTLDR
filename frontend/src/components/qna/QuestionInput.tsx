@@ -109,33 +109,37 @@ export default function QuestionInput({
   return (
     <div className={`bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl hover:shadow-2xl transition-shadow duration-300 ${className}`}>
       {/* Header */}
-      <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4 rounded-t-2xl">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+      <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 sm:px-6 py-4 rounded-t-2xl">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between w-full gap-2 lg:gap-0">
+          <div className="flex items-center gap-3 flex-shrink-0">
             <div className={`w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center animate-pulse`}>
               <QuestionMarkCircleIcon className="w-4 h-4 text-white" />
             </div>
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Ask a Question</h2>
-          </div>          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white whitespace-nowrap">Ask a Question</h2>
+          </div>
+          <div className="flex flex-row flex-wrap gap-2 mt-3 lg:mt-0 lg:flex-nowrap lg:ml-auto">
             <button
-          onClick={onToggleSuggestions}
-          className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
-            showSuggestions
-              ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 border border-yellow-300 dark:border-yellow-600'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-700'
-          }`}
-        >
-          <SparklesIcon className="w-4 h-4" />
-          {showSuggestions ? 'Hide Suggestions' : 'Show Suggestions'}
-        </button>            {onToggleDeepResearch && (
+              onClick={onToggleSuggestions}
+              className={`px-3 py-2 lg:px-4 lg:py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${
+                showSuggestions
+                  ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 border border-yellow-300 dark:border-yellow-600'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+              style={{ minWidth: 'unset' }}
+            >
+              <SparklesIcon className="w-4 h-4" />
+              {showSuggestions ? 'Hide Suggestions' : 'Show Suggestions'}
+            </button>
+            {onToggleDeepResearch && (
               <div className="relative group">
                 <button
                   onClick={onToggleDeepResearch}
-                  className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-all duration-200 ${
+                  className={`flex items-center gap-2 px-3 py-2 lg:px-4 lg:py-2 text-sm rounded-lg transition-all duration-200 whitespace-nowrap ${
                     enableDeepResearch
                       ? 'bg-purple-100 hover:bg-purple-200 dark:bg-purple-900/30 dark:hover:bg-purple-800/50 text-purple-600 dark:text-purple-400 ring-2 ring-purple-200 dark:ring-purple-700/50'
                       : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400'
                   }`}
+                  style={{ minWidth: 'unset' }}
                 >
                   <CogIcon className="w-4 h-4" />
                   <span className="font-medium">Thinking Mode</span>
@@ -143,9 +147,9 @@ export default function QuestionInput({
                     <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></div>
                   )}
                 </button>
-                
                 {/* Tooltip */}
-                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-slate-900 dark:bg-slate-700 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50 whitespace-nowrap">                  {enableDeepResearch 
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-slate-900 dark:bg-slate-700 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50 whitespace-nowrap">
+                  {enableDeepResearch 
                     ? 'Thinking Mode: ON - Shows AI reasoning process'
                     : 'Enable to see step-by-step AI thinking'
                   }

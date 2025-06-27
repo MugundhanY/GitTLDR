@@ -472,11 +472,14 @@ export default function FilesPage() {
       <div className="fixed inset-0 w-screen h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 -z-50 animate-gradient-x"></div>
       
       <DashboardLayout>
-        <div className="min-h-screen relative z-0">          {/* Header */}          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-700/50 animate-in slide-in-from-top duration-700">
+        <div className="min-h-screen relative z-0">
+          {/* Header */}
+          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-700/50 animate-in slide-in-from-top duration-700">
             <div className={`mx-auto px-8 py-[30px] transition-all duration-300 ${
               isCollapsed ? 'max-w-none' : 'max-w-7xl'
-            }`}>
-              <div className="flex items-center justify-between"><div className="flex items-center gap-6">
+            } md:px-8 md:py-[30px] sm:px-4 sm:py-3`}>
+              <div className="flex flex-row items-center justify-between gap-6 max-sm:flex-col max-sm:items-stretch max-sm:gap-3">
+                <div className="flex items-center gap-6 max-sm:gap-3">
                   <div className="relative group">
                     {selectedRepository.owner?.avatar_url ? (
                       <Image
@@ -484,10 +487,10 @@ export default function FilesPage() {
                         alt={`${selectedRepository.name} avatar`}
                         width={48}
                         height={48}
-                        className="w-12 h-12 rounded-2xl object-cover shadow-lg border-2 border-white/20 transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in"
+                        className="w-12 h-12 rounded-2xl object-cover shadow-lg border-2 border-white/20 transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in max-sm:w-10 max-sm:h-10"
                       />
                     ) : (
-                      <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in">
+                      <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in max-sm:w-10 max-sm:h-10">
                         <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2 2z" />
                         </svg>
@@ -495,17 +498,17 @@ export default function FilesPage() {
                     )}
                     <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl opacity-0 group-hover:opacity-20 blur transition-opacity duration-300"></div>
                   </div>
-                    <div className="animate-in slide-in-from-left duration-700 delay-200">
-                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight transition-colors duration-200">
+                  <div className="animate-in slide-in-from-left duration-700 delay-200">
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight transition-colors duration-200 max-sm:text-lg">
                       {selectedRepository.name}
                     </h1>
                     {/* Only render AnimatedHeaderStats if stats is defined */}
                     {filesData?.stats && <AnimatedHeaderStats stats={filesData.stats} />}
                   </div>
                 </div>
-                  <button
+                <button
                   onClick={() => refetchFiles()}
-                  className="group flex items-center gap-3 px-6 py-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all duration-200 animate-in slide-in-from-right"
+                  className="group flex items-center gap-3 px-6 py-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all duration-200 animate-in slide-in-from-right max-sm:w-full max-sm:justify-center max-sm:px-4 max-sm:py-2 max-sm:text-sm"
                 >
                   <svg className="w-4 h-4 text-slate-600 dark:text-slate-300 group-hover:rotate-180 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -514,12 +517,17 @@ export default function FilesPage() {
                 </button>
               </div>
             </div>
-          </div>          {/* Main Content */}
+          </div>
+          {/* Main Content */}
           <div className={`mx-auto p-8 transition-all duration-300 ${
             isCollapsed ? 'max-w-none' : 'max-w-7xl'
-          }`}>            <div className="grid grid-cols-12 gap-6 auto-rows-max">              {/* Search & Controls */}
+          }`}>  
+            {/* Desktop/Tablet: Grid Layout (only for large screens and above) */}
+            <div className="hidden lg:grid grid-cols-12 gap-6 auto-rows-max">
+              {/* Search & Controls */}
               <div className="col-span-12 animate-in fade-in slide-in-from-bottom duration-500 delay-100">
-        <div className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl p-4 hover:shadow-2xl transition-shadow duration-300">                  <FileSearchAndFilters
+                <div className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl p-4 hover:shadow-2xl transition-shadow duration-300">
+                  <FileSearchAndFilters
                     searchQuery={searchState.query}
                     selectedLanguage={selectedLanguage}
                     availableLanguages={availableLanguages}
@@ -539,11 +547,10 @@ export default function FilesPage() {
                     selectedExtensions={searchState.selectedExtensions}
                   />
                 </div>
-              </div>              {/* File Explorer */}
-              <div className={`animate-in fade-in slide-in-from-left duration-600 delay-200 ${
-                isCollapsed ? 'col-span-4' : 'col-span-4'
-              }`}>
-                <div className="h-[110vh] bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden hover:shadow-2xl transition-shadow duration-300">
+              </div>
+              {/* File Explorer */}
+              <div className="col-span-4 animate-in fade-in slide-in-from-left duration-600 delay-200">
+                <div className="h-[110vh] bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden hover:shadow-2xl transition-shadow duration-300 flex flex-col">
                   <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg flex items-center justify-center animate-pulse">
@@ -557,7 +564,7 @@ export default function FilesPage() {
                       </div>
                     </div>
                   </div>
-                  <div className="h-[calc(100%-4rem)]">
+                  <div className="flex-1 overflow-y-auto">
                     <FileBrowser
                       files={filesData?.files || []}
                       filteredFiles={filteredFiles}
@@ -568,11 +575,10 @@ export default function FilesPage() {
                     />
                   </div>
                 </div>
-              </div>              {/* File Content Viewer */}
-              <div className={`animate-in fade-in slide-in-from-right duration-600 delay-300 ${
-                isCollapsed ? 'col-span-8' : 'col-span-8'
-              }`}>
-                <div className="h-[110vh] bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden hover:shadow-2xl transition-shadow duration-300">
+              </div>
+              {/* File Content Viewer */}
+              <div className="col-span-8 animate-in fade-in slide-in-from-right duration-600 delay-300">
+                <div className="h-[110vh] bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden hover:shadow-2xl transition-shadow duration-300 flex flex-col">
                   <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center animate-pulse">
@@ -583,7 +589,8 @@ export default function FilesPage() {
                       {selectedFile ? (
                         <div className="flex items-center gap-2 flex-1 animate-in slide-in-from-left duration-300">
                           {getFileIcon(selectedFile)}
-                          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{selectedFile.name}</h2>                          <div className="ml-auto flex items-center gap-2">
+                          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{selectedFile.name}</h2>
+                          <div className="ml-auto flex items-center gap-2">
                             {fileContentData?.content && (
                               <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 px-3 py-1 rounded-full animate-in fade-in duration-500 delay-100 hover:scale-105 transition-transform cursor-pointer">
                                 {fileContentData.content.split('\n').length.toLocaleString()} lines
@@ -604,7 +611,7 @@ export default function FilesPage() {
                       )}
                     </div>
                   </div>
-                  <div className="h-[calc(100%-4rem)]">
+                  <div className="flex-1 overflow-y-auto">
                     <FileContentViewer
                       selectedFile={selectedFile}
                       fileContent={fileContentData?.content}
@@ -612,9 +619,11 @@ export default function FilesPage() {
                     />
                   </div>
                 </div>
-              </div>              {/* Language Distribution */}
+              </div>
+              {/* Language Distribution */}
               {stats?.languages?.length > 0 && (
-                <div className="col-span-12 animate-in fade-in slide-in-from-bottom duration-700 delay-400">                  <div className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl hover:shadow-2xl transition-shadow duration-300">
+                <div className="col-span-12 animate-in fade-in slide-in-from-bottom duration-700 delay-400">
+                  <div className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl hover:shadow-2xl transition-shadow duration-300">
                     <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4 rounded-t-2xl">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center animate-pulse">
@@ -632,14 +641,127 @@ export default function FilesPage() {
                 </div>
               )}
             </div>
-          </div>          {/* Error Display */}
-          {error && (
-            <div className="fixed bottom-8 left-8 right-8 max-w-md mx-auto z-50 animate-in slide-in-from-bottom duration-300">
-              <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border border-red-200 dark:border-red-800 rounded-2xl shadow-2xl">
-                <ErrorDisplay error={error} onRetry={refetchFiles} />
+            {/* Mobile/Tablet Portrait: File Explorer above File Viewer (visible up to md) */}
+            <div className="flex flex-col gap-4 mt-0 lg:hidden">
+              {/* Search Bar for mobile/tablet */}
+              <div className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl p-3 mt-0 hover:shadow-2xl transition-shadow duration-300">
+                <FileSearchAndFilters
+                  searchQuery={searchState.query}
+                  selectedLanguage={selectedLanguage}
+                  availableLanguages={availableLanguages}
+                  files={filesData?.files || []}
+                  onSearchChange={query => setSearchState(prev => ({ ...prev, query }))}
+                  onSearchClear={() => setSearchState(prev => ({ ...prev, query: '' }))}
+                  onLanguageChange={handleLanguageChange}
+                  onAdvancedFiltersApply={handleAdvancedSearch}
+                  onAdvancedFiltersClear={handleClearAdvancedSearch}
+                  onSearchModeChange={handleSearchModeChange}
+                  onFileFiltersChange={handleFileFiltersChange}
+                  searchMode={searchState.mode}
+                  caseSensitive={searchState.caseSensitive}
+                  searchInContent={searchState.searchInSummaries}
+                  minFileSize={searchState.minFileSize}
+                  maxFileSize={searchState.maxFileSize}
+                  selectedExtensions={searchState.selectedExtensions}
+                />
               </div>
+              {/* File Explorer */}
+              <div className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden hover:shadow-2xl transition-shadow duration-300">
+                <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg flex items-center justify-center animate-pulse">
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
+                      </svg>
+                    </div>
+                    <h2 className="text-base font-semibold text-slate-900 dark:text-white">File Explorer</h2>
+                    <div className="ml-auto text-xs text-slate-500 dark:text-slate-400 bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded-full transition-colors duration-200">
+                      {filteredFiles.length} items
+                    </div>
+                  </div>
+                </div>
+                <div className="max-h-[40vh] overflow-y-auto">
+                  <FileBrowser
+                    files={filesData?.files || []}
+                    filteredFiles={filteredFiles}
+                    selectedFile={selectedFile}
+                    isLoading={isFilesLoading}
+                    currentPath={filesData?.currentPath || '/'}
+                    onFileClick={handleFileClick}
+                  />
+                </div>
+              </div>
+              {/* File Content Viewer */}
+              <div className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden hover:shadow-2xl transition-shadow duration-300 min-h-[40vh] max-h-[80vh]">
+                <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 py-3 flex flex-row items-center gap-3 sm:flex-row sm:gap-3 xs:flex-col xs:items-start xs:gap-2">
+                  <div className="flex items-center gap-2 sm:gap-3 xs:mb-2">
+                    <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center animate-pulse">
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+                    {selectedFile ? (
+                      <h2 className="text-base font-semibold text-slate-900 dark:text-white truncate max-w-[60vw] sm:max-w-none">{selectedFile.name}</h2>
+                    ) : (
+                      <h2 className="text-base font-semibold text-slate-500 dark:text-slate-400">Select a file to view</h2>
+                    )}
+                  </div>
+                  {selectedFile && (
+                    <div className="flex flex-wrap gap-1 sm:ml-auto xs:ml-0">
+                      {fileContentData?.content && (
+                        <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded-full animate-in fade-in duration-500 delay-100 hover:scale-105 transition-transform cursor-pointer">
+                          {fileContentData.content.split('\n').length.toLocaleString()} lines
+                        </span>
+                      )}
+                      {selectedFile.size && (
+                        <span className="text-xs text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded-full animate-in fade-in duration-500 delay-200 hover:scale-105 transition-transform cursor-pointer">
+                          {(selectedFile.size / 1024).toFixed(1)} KB
+                        </span>
+                      )}
+                      <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded-full animate-in fade-in duration-500 delay-300 hover:scale-105 transition-transform cursor-pointer">
+                        {selectedFile.language || 'Text'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="min-h-[40vh] max-h-[80vh] overflow-y-auto px-1 sm:px-4">
+                  <FileContentViewer
+                    selectedFile={selectedFile}
+                    fileContent={fileContentData?.content}
+                    isLoadingContent={isFileContentLoading}
+                  />
+                </div>
+              </div>
+              {/* Language Distribution for mobile/tablet */}
+              {stats?.languages?.length > 0 && (
+                <div className="animate-in fade-in slide-in-from-bottom duration-700 delay-400">
+                  <div className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl hover:shadow-2xl transition-shadow duration-300 p-3">
+                    <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 py-3 rounded-t-2xl">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center animate-pulse">
+                          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                          </svg>
+                        </div>
+                        <h2 className="text-base font-semibold text-slate-900 dark:text-white">Language Distribution</h2>
+                      </div>
+                    </div>
+                    <div className="p-4 rounded-b-2xl">
+                      <LanguageDistribution stats={stats} />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+            {/* Error Display */}
+            {error && (
+              <div className="fixed bottom-8 left-8 right-8 max-w-md mx-auto z-50 animate-in slide-in-from-bottom duration-300">
+                <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border border-red-200 dark:border-red-800 rounded-2xl shadow-2xl">
+                  <ErrorDisplay error={error} onRetry={refetchFiles} />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </DashboardLayout>
     </>

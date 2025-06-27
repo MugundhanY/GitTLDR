@@ -101,7 +101,7 @@ export default function LanguageDistribution({ stats }: LanguageDistributionProp
           })}
         </div>
       </div>      {/* Enhanced legend with interactive highlighting */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
         {sortedLanguages.slice(0, 6).map((lang, index) => {
           const percentage = ((lang.count / stats.totalFiles) * 100).toFixed(1)
           const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4']
@@ -159,7 +159,7 @@ export default function LanguageDistribution({ stats }: LanguageDistributionProp
               </div>
               
               {/* Language name with enhanced typography */}
-              <span className={`font-medium truncate transition-all duration-300 ${
+              <span className={`font-medium transition-all duration-300 ${
                 isHovered 
                   ? 'text-slate-900 dark:text-white transform scale-105' 
                   : 'text-slate-700 dark:text-slate-300'

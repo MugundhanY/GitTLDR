@@ -372,11 +372,11 @@ export default function QnAPage() {
         <div className="min-h-screen relative z-0">
           {/* Header */}
           <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-700/50 animate-in slide-in-from-top duration-700">
-            <div className={`mx-auto px-8 py-7 transition-all duration-300 ${
+            <div className={`mx-auto px-4 py-5 sm:px-8 sm:py-7 transition-all duration-300 ${
               isCollapsed ? 'max-w-none' : 'max-w-7xl'
             }`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
+                <div className="flex items-center gap-3 sm:gap-6">
                   <div className="relative group">
                     {selectedRepository.owner?.avatar_url ? (
                       <Image
@@ -384,23 +384,25 @@ export default function QnAPage() {
                         alt={`${selectedRepository.name} avatar`}
                         width={48}
                         height={48}
-                        className="w-12 h-12 rounded-2xl object-cover shadow-lg border-2 border-white/20 transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in"
+                        className="w-12 h-12 sm:w-12 sm:h-12 rounded-2xl object-cover shadow-lg border-2 border-white/20 transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in"
                       />
                     ) : (
-                      <div className={`w-12 h-12 bg-gradient-to-br from-${enableDeepResearch ? 'purple' : 'blue'}-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in`}>
+                      <div className={`w-12 h-12 sm:w-12 sm:h-12 bg-gradient-to-br from-${enableDeepResearch ? 'purple' : 'blue'}-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in`}>
                         <ChatBubbleLeftRightIcon className="w-6 h-6 text-white" />
                       </div>
                     )}
                   </div>
-                  <div className="animate-in slide-in-from-left duration-500 delay-200">                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
+                  <div className="animate-in slide-in-from-left duration-500 delay-200">
+                    <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2 sm:gap-3">
                       <SparklesIcon className={`w-6 h-6 text-${enableDeepResearch ? 'purple' : 'blue'}-500`} />
-                      Q&A Assistant                      {enableDeepResearch && (
-                        <span className="text-sm px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-full font-medium">
+                      Q&A Assistant
+                      {enableDeepResearch && (
+                        <span className="text-xs sm:text-sm px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-full font-medium">
                           Thinking Mode
                         </span>
                       )}
                     </h1>
-                    <p className="text-slate-600 dark:text-slate-400 mt-1">
+                    <p className="text-slate-600 dark:text-slate-400 mt-1 text-xs sm:text-base">
                       Ask questions about {selectedRepository.name} and get AI-powered answers
                     </p>
                   </div>
@@ -483,7 +485,7 @@ export default function QnAPage() {
               <section className="col-span-12 animate-in fade-in slide-in-from-bottom duration-600 delay-200" aria-label="Questions and Answers">
                 <div className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl hover:shadow-2xl transition-shadow duration-300">
                   {/* Header */}
-                  <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4 rounded-t-2xl">
+                  <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 sm:px-6 py-3 sm:py-4 rounded-t-2xl">
                     <QnAHeader
                       questionsCount={filtering.filteredQuestions.length}
                       useConfidenceFilter={filtering.useConfidenceFilter}
@@ -499,7 +501,7 @@ export default function QnAPage() {
                     <QnASearchBar
                       searchQuery={filtering.searchQuery}
                       onSearchChange={filtering.setSearchQuery}
-                      className="mb-3 mt-3"
+                      className="mb-2 mt-2 sm:mb-3 sm:mt-3"
                     />
                     {/* Filters */}
                     <QnAFilterPanel
@@ -527,7 +529,7 @@ export default function QnAPage() {
                     />
                   </div>
                   {/* Questions List */}
-                  <div className="p-6 rounded-b-2xl">
+                  <div className="p-3 sm:p-6 rounded-b-2xl">
                     {filtering.filteredQuestions.length === 0 ? (
                       <QnAEmptyState repositoryName={selectedRepository.name} />
                     ) : (
@@ -565,10 +567,10 @@ export default function QnAPage() {
                         ))}
                         {/* Load More Button */}
                         {questionsToShow.length < filtering.filteredQuestions.length && (
-                          <div className="text-center pt-6">
+                          <div className="text-center pt-4 sm:pt-6">
                             <button
                               onClick={loadMoreQuestions}
-                              className="px-6 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-colors duration-200 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                              className="px-4 py-2 sm:px-6 sm:py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-colors duration-200 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 text-sm sm:text-base"
                             >
                               Load More Questions ({filtering.filteredQuestions.length - questionsToShow.length} remaining)
                             </button>
