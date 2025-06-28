@@ -13,6 +13,8 @@ uvicorn[standard]
 httpx
 aiohttp
 azure-ai-inference
+structlog
+rich
 
 # Optional dependencies for better performance
 torch

@@ -1,7 +1,6 @@
 """
 Configuration management for GitTLDR Python Worker.
 """
-import os
 from typing import Optional
 from pydantic_settings import BaseSettings
 
@@ -31,6 +30,10 @@ class Settings(BaseSettings):
     # Embedding Configuration
     embedding_dimension: int = 768
     collection_name: str = "gittldr_embeddings"
+    # Meeting Summarization Embedding Collection
+    meeting_qdrant_collection: str = "meeting_segments"  # Only source of truth for meeting segment embeddings
+    # Meeting Summarization Embedding Dimension
+    embedding_dimension_meeting: int = 384  # Separate dimension for meeting segment embeddings
     
     # B2 Storage Configuration
     b2_application_key_id: Optional[str] = None
@@ -38,6 +41,8 @@ class Settings(BaseSettings):
     b2_bucket_name: Optional[str] = None
     b2_endpoint_url: Optional[str] = None
     b2_region: Optional[str] = None
+    # Add B2 meeting audio bucket config
+    b2_meeting_audio_bucket: str = "gittldr-meeting-audio"
     
     # Logging
     log_level: str = "INFO"

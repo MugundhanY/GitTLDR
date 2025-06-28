@@ -332,6 +332,25 @@ class QuadrantVectorClient:
             logger.error(f"Failed to delete repository embeddings: {str(e)}")
             return False
 
+    async def search_meeting_segments(
+        self,
+        query_embedding: List[float],
+        meeting_id: str,
+        segment_index: int = None,
+        limit: int = 10,
+        score_threshold: float = 0.3
+    ) -> List[Dict[str, Any]]:
+        """Search for similar meeting segments by meeting_id (and optionally segment_index)."""
+        filter_conditions = {"meeting_id": meeting_id}
+        if segment_index is not None:
+            filter_conditions["segment_index"] = segment_index
+        return await self.search_similar(
+            query_embedding=query_embedding,
+            limit=limit,
+            score_threshold=score_threshold,
+            filter_conditions=filter_conditions
+        )
+
 
 # Global Qdrant client instance
 qdrant_client = QuadrantVectorClient()

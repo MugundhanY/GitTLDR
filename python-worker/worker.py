@@ -20,6 +20,7 @@ from services.qdrant_client import qdrant_client
 from processors.embedding import EmbeddingProcessor
 from processors.summarization import SummarizationProcessor
 from processors.file_processor import FileProcessor
+from processors.meeting_summarizer import MeetingSummarizerProcessor
 
 # Setup logging
 setup_logging()
@@ -36,6 +37,7 @@ class GitTLDRWorker:
             "embedding": EmbeddingProcessor(),
             "summarization": SummarizationProcessor(),
             "file_processing": FileProcessor(),
+            "meeting_summarizer": MeetingSummarizerProcessor(),
         }
         
     async def start(self) -> None:
@@ -151,7 +153,9 @@ class GitTLDRWorker:
             return await self.processors["embedding"].answer_question(task_data, logger)
             
         elif task_type == "process_meeting":
-            return await self.processors["summarization"].process_meeting(task_data, logger)
+            return await self.processors["meeting_summarizer"].process_meeting(task_data, logger)
+        elif task_type == "meeting_qa":
+            return await self.processors["meeting_summarizer"].process_meeting_qa(task_data, logger)
             
         else:
             raise ValueError(f"Unknown task type: {task_type}")
