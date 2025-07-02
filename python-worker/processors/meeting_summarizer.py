@@ -383,10 +383,12 @@ class MeetingProcessor:
                     "summary": summaries[i],
                     "segment_text": s["segment_text"]
                 })
+                summary = " ".join(summaries)
             # Send all final data before returning
             completed_payload = {
                 "num_segments": len(segments),
                 "transcript": full_transcript,
+                "summary": summary,
                 "full_transcript": full_transcript,
                 "meeting_title": meeting_title,
                 "meeting_length": meeting_length,

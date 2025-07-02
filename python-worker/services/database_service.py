@@ -1213,6 +1213,102 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Failed to get user info: {str(e)}")
             return None
+        
+    async def get_meeting_info(self, meeting_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get meeting information from the database.
+        
+        Args:
+            meeting_id: Meeting ID
+            
+        Returns:
+            Meeting info dict or None if not found
+        """
+        try:
+            pool = await self._get_connection_pool()
+            
+            async with pool.acquire() as connection:
+                # Get meeting data with segments
+                meeting_row = await connection.fetchrow(
+                    """
+                    SELECT 
+                        id,
+                        title,
+                        full_transcript,
+                        summary,
+                        status,
+                        created_at,
+                        updated_at,
+                        source,
+                        language,
+                        raw_audio_path,
+                        num_segments,
+                        meeting_length
+                    FROM meetings 
+                    WHERE id = $1
+                    """,
+                    meeting_id
+                )
+                
+                if not meeting_row:
+                    logger.warning(f"Meeting {meeting_id} not found in database")
+                    return None
+                
+                # Get meeting segments
+                segments_rows = await connection.fetch(
+                    """
+                    SELECT 
+                        id,
+                        segment_index,
+                        title,
+                        summary,
+                        excerpt,
+                        segment_text,
+                        start_time,
+                        end_time
+                    FROM meeting_segments 
+                    WHERE meeting_id = $1
+                    ORDER BY segment_index
+                    """,
+                    meeting_id
+                )
+                
+                # Format the response
+                meeting_info = {
+                    'id': meeting_row['id'],
+                    'title': meeting_row['title'],
+                    'full_transcript': meeting_row['full_transcript'],
+                    'summary': meeting_row['summary'],
+                    'status': meeting_row['status'],
+                    'created_at': meeting_row['created_at'],
+                    'updated_at': meeting_row['updated_at'],
+                    'source': meeting_row['source'],
+                    'language': meeting_row['language'],
+                    'raw_audio_path': meeting_row['raw_audio_path'],
+                    'num_segments': meeting_row['num_segments'],
+                    'duration': meeting_row['meeting_length'],  # Use meeting_length as duration
+                    'segments': []
+                }
+                
+                # Add segments
+                for segment_row in segments_rows:
+                    meeting_info['segments'].append({
+                        'id': segment_row['id'],
+                        'segment_index': segment_row['segment_index'],
+                        'title': segment_row['title'],
+                        'summary': segment_row['summary'],
+                        'excerpt': segment_row['excerpt'],
+                        'segment_text': segment_row['segment_text'],
+                        'start_time': segment_row['start_time'],
+                        'end_time': segment_row['end_time']
+                    })
+                
+                logger.info(f"Successfully retrieved meeting info for {meeting_id} with {len(meeting_info['segments'])} segments")
+                return meeting_info
+                
+        except Exception as e:
+            logger.error(f"Failed to get meeting info for {meeting_id}: {str(e)}")
+            return None
 
 # Global instance
 database_service = DatabaseService()

@@ -56,6 +56,7 @@ interface Meeting {
   language?: string
   source?: string
   segmentCount: number
+  raw_audio_path?: string
   segments: MeetingSegment[]
   user?: {
     id: string
@@ -117,6 +118,8 @@ export default function MeetingDetailPage() {
   const [showShareModal, setShowShareModal] = useState(false)
   const [isFavorite, setIsFavorite] = useState(false)
 
+  
+  
   // Fetch meeting data
   const { data: meeting, isLoading, error } = useQuery<Meeting>({
     queryKey: ['meeting', meetingId],
@@ -400,8 +403,10 @@ ${comment.user} (${formatTime(comment.timestamp)}): ${comment.text}
 
   // Format time display
   const formatTime = (time: number) => {
-    const minutes = Math.floor(time / 60)
-    const seconds = Math.floor(time % 60)
+    if (!time || isNaN(time) || time < 0) return '0:00'
+    const totalSeconds = Math.floor(time)
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
     return `${minutes}:${seconds.toString().padStart(2, '0')}`
   }
 
@@ -530,7 +535,7 @@ ${comment.user} (${formatTime(comment.timestamp)}): ${comment.text}
               <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                    <SpeakerWaveIcon className="w-5 h-5" />
+                    <SpeakerWaveIcon className="w-5 h-5"/>
                     Audio Player
                   </h2>
                   <div className="flex items-center gap-2">

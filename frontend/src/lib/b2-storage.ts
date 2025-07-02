@@ -295,4 +295,46 @@ export class B2StorageService {
       fileInfo: uploadResult
     };
   }
+  async getSignedDownloadUrl(fileKey: string, validForSeconds: number = 3600): Promise<string> {
+    if (!this.authToken || !this.apiUrl) {
+      await this.authorize();
+    }
+
+    console.log('Generating signed download URL for:', fileKey);
+
+    try {
+      // Get signed download URL from B2
+      const response = await fetch(`${this.apiUrl}/b2api/v3/b2_get_download_authorization`, {
+        method: 'POST',
+        headers: {
+          'Authorization': this.authToken!,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          bucketId: this.bucketId,
+          fileNamePrefix: fileKey,
+          validDurationInSeconds: validForSeconds
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Failed to get download authorization:', errorText);
+        throw new Error(`Failed to get download authorization: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      const authData = await response.json();
+      console.log('Download authorization response:', authData);
+
+      // Create signed URL with authorization token
+      const signedUrl = `${this.downloadUrl}/file/${this.bucketName}/${fileKey}?Authorization=${authData.authorizationToken}`;
+      console.log('Generated signed URL:', signedUrl);
+      
+      return signedUrl;
+
+    } catch (error) {
+      console.error('Error generating signed URL:', error);
+      throw error;
+    }
+  }
 }
