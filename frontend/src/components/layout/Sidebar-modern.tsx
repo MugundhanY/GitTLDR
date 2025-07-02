@@ -10,6 +10,7 @@ import { useRepository, Repository } from '@/contexts/RepositoryContext';
 import { useQnA } from '@/contexts/QnAContext';
 import { useUserData } from '@/hooks/useUserData';
 import { useQuery } from '@tanstack/react-query';
+import { useMeetingCount } from '@/hooks/useMeetings';
 import Tooltip from '@/components/ui/Tooltip';
 import {
   HomeIcon,
@@ -57,6 +58,7 @@ export default function Sidebar({ selectedRepository }: SidebarProps) {
   const { repositories, selectRepository } = useRepository();
   const { isCollapsed, toggleSidebar } = useSidebar();
   const { statsRefreshTrigger } = useQnA();
+  const { data: meetingCount, isLoading: meetingCountLoading } = useMeetingCount();
   const [showRepoDropdown, setShowRepoDropdown] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');const dropdownRef = useRef<HTMLDivElement>(null);
   // Refresh stats when QnA context triggers an update (with throttling)
@@ -122,8 +124,8 @@ export default function Sidebar({ selectedRepository }: SidebarProps) {
       href: '/meetings', 
       icon: VideoCameraIcon,
       description: 'Recorded sessions',
-      badge: '3',
-      count: null
+      badge: null,
+      count: meetingCount?.toString() || (meetingCountLoading ? '...' : null)
     },
     { 
       name: 'Q&A', 

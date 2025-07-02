@@ -37,6 +37,7 @@ model User {
   uploadedAttachments QuestionAttachment[] @relation("AttachmentUploadedBy")
 
   @@map("users")
+  Meeting Meeting[]
 }
 
 model Repository {
@@ -165,20 +166,44 @@ model Transaction {
 }
 
 model Meeting {
-  id           String        @id @default(cuid())
-  title        String
-  transcript   String?
-  audioUrl     String?       @map("audio_url")
-  summary      String?
-  status       MeetingStatus @default(UPLOADED)
-  createdAt    DateTime      @default(now()) @map("created_at")
-  updatedAt    DateTime      @updatedAt @map("updated_at")
-  userId       String        @map("user_id")
-  repositoryId String        @map("repository_id")
-  createdBy    User          @relation("MeetingCreatedBy", fields: [userId], references: [id], onDelete: Cascade)
-  repository   Repository    @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  id               String        @id @default(uuid())
+  title            String
+  full_transcript  String?
+  summary          String?
+  status           MeetingStatus @default(UPLOADED)
+  created_at       DateTime      @default(now())
+  updated_at       DateTime      @updatedAt
+  source           String?
+  language         String?
+  raw_audio_path   String?
+  num_segments     Int?
+  meeting_length   Float?        // Duration in seconds
+  participants String[] // Array of participant names or IDs
+  meeting_segments MeetingSegment[]
+  userId           String?       @map("user_id")
+  user             User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("meetings")
+  Repository Repository[]
+  User User[] @relation("MeetingCreatedBy")
+}
+
+model MeetingSegment {
+  id           String   @id @default(uuid())
+  meeting_id   String
+  meeting      Meeting  @relation(fields: [meeting_id], references: [id])
+  segment_index Int
+  title        String
+  summary      String
+  excerpt      String
+  segment_text String
+  start_time   Float
+  end_time     Float
+  embedding    String? // or Bytes? or reference to Qdrant
+  created_at   DateTime @default(now())
+
+  @@unique([meeting_id, segment_index], name: "meeting_id_segment_index")
+  @@map("meeting_segments")
 }
 
 model Feedback {
@@ -212,6 +237,8 @@ enum TransactionType {
 enum MeetingStatus {
   UPLOADED
   PROCESSING
+  TRANSCRIBING
+  SUMMARIZING
   COMPLETED
   FAILED
 }

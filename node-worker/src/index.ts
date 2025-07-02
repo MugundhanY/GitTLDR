@@ -6,6 +6,7 @@ import { FileMetadataProcessor } from './processors/fileMetadataProcessor';
 import { RepositoryCompletionProcessor } from './processors/repositoryCompletionProcessor';
 import { ResultProcessor } from './processors/resultProcessor';
 import { FileSummaryProcessor } from './processors/fileSummaryProcessor';
+import { createMeetingRecord, updateMeetingStatus } from './processors/meetingProcessor';
 
 // Load environment variables
 dotenv.config();
@@ -16,6 +17,24 @@ const PORT = process.env.PORT || 3001;
 // Redis connections
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 const subscriber = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+
+// Subscribe to meeting status updates
+subscriber.subscribe('meeting_status_updates');
+subscriber.on('message', async (channel, message) => {
+  if (channel === 'meeting_status_updates') {
+    try {
+      const statusUpdate = JSON.parse(message);
+      const { meeting_id, status, ...result } = statusUpdate;
+      
+      console.log(`📅 Received meeting status update: ${meeting_id} -> ${status}`);
+      
+      // Update meeting status in database with full result data
+      await updateMeetingStatus(`meeting_${meeting_id}_`, status, result);
+    } catch (error) {
+      console.error('Error processing meeting status update:', error);
+    }
+  }
+});
 
 // Middleware
 app.use(cors({
@@ -147,7 +166,7 @@ app.post('/process-meeting', async (req: Request, res: Response) => {
     // Create job record
     await redis.hset(`job:${jobId}`, {
       id: jobId,
-      type: 'meeting',
+      type: 'process_meeting',
       meetingId,
       userId,
       audioUrl,
@@ -160,7 +179,7 @@ app.post('/process-meeting', async (req: Request, res: Response) => {
     // Queue job for Python worker
     await redis.lpush(process.env.QUEUE_NAME || 'gittldr_tasks', JSON.stringify({
       jobId,
-      type: 'meeting',
+      type: 'process_meeting',
       meetingId,
       userId,
       audioUrl,
@@ -244,29 +263,59 @@ app.get('/task-status/:taskId', async (req: Request, res: Response) => {
   }
 });
 
-// Listen for job updates from Python worker
+// Endpoint to register a meeting audio after upload (using B2 pre-signed URL)
+app.post('/register-meeting-audio', async (req: Request, res: Response) => {
+  try {
+    const { meetingId, userId, b2FileKey, participants, title, source } = req.body;
+    if (!meetingId || !userId || !b2FileKey || !title) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    await createMeetingRecord({ meetingId, userId, b2FileKey, participants, title, source });
+    const jobId = `meeting_${meetingId}_${Date.now()}`;
+    await redis.hset(`job:${jobId}`, {
+      id: jobId,
+      type: 'process_meeting',
+      meetingId,
+      userId,
+      b2FileKey,
+      participants: JSON.stringify(participants || []),
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      progress: '0'
+    });
+    await redis.lpush(process.env.QUEUE_NAME || 'gittldr_tasks', JSON.stringify({
+      jobId,
+      type: 'process_meeting',
+      meetingId,
+      userId,
+      b2FileKey,
+      participants,
+      timestamp: new Date().toISOString()
+    }));
+    res.json({ jobId, status: 'pending', b2FileKey });
+  } catch (error) {
+    console.error('Error registering meeting audio:', error);
+    res.status(500).json({ error: 'Failed to register meeting audio' });
+  }
+});
+
+// Listen for job updates from Python worker and update DB (and Redis)
 subscriber.subscribe('job_updates');
 subscriber.on('message', async (channel, message) => {
   if (channel === 'job_updates') {
     try {
       const update = JSON.parse(message);
       const { jobId, status, progress, result, error } = update;
-      
-      // Update job status in Redis
       const updateData: any = {
         status,
         updatedAt: new Date().toISOString()
       };
-      
       if (progress !== undefined) updateData.progress = progress;
       if (result) updateData.result = JSON.stringify(result);
       if (error) updateData.error = error;
-      
       await redis.hset(`job:${jobId}`, updateData);
-      
+      await updateMeetingStatus(jobId, status, result, error);
       console.log(`📊 Job ${jobId} updated: ${status} (${progress}%)`);
-      
-      // If job is complete, optionally notify frontend via webhook or WebSocket
       if (status === 'completed' || status === 'failed') {
         console.log(`✅ Job ${jobId} finished with status: ${status}`);
       }

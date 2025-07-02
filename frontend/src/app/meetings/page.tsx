@@ -1,453 +1,432 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { useRepository } from '@/contexts/RepositoryContext'
-import { Button } from '@/components/ui/Button'
-import { Card } from '@/components/ui/Card'
-import { Input } from '@/components/ui/Input'
-
-interface Meeting {
-  id: string
-  title: string
-  audioUrl?: string
-  transcript?: string
-  summary?: string
-  participants: string[]
-  duration?: number
-  status: 'pending' | 'processing' | 'completed' | 'failed'
-  createdAt: string
-}
+import { useMeetings, Meeting } from '@/hooks/useMeetings'
+import { 
+  VideoCameraIcon, 
+  MagnifyingGlassIcon, 
+  FunnelIcon, 
+  PlusIcon,
+  CheckCircleIcon,
+  ClockIcon,
+  ExclamationTriangleIcon,
+  PlayIcon,
+  DocumentArrowDownIcon,
+  TagIcon,
+  CalendarIcon,
+  UserIcon,
+  SparklesIcon,
+  ArrowUpTrayIcon
+} from '@heroicons/react/24/outline'
+import { useSidebar } from '@/contexts/SidebarContext'
+import Image from 'next/image'
+import Link from 'next/link'
+import MeetingUploader from '@/components/meetings/MeetingUploader'
 
 export default function MeetingsPage() {
   const { selectedRepository } = useRepository()
-  const [meetings, setMeetings] = useState<Meeting[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [isUploading, setIsUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
-  const [meetingTitle, setMeetingTitle] = useState('')
-  const [participants, setParticipants] = useState('')
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const { isCollapsed } = useSidebar()
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterStatus, setFilterStatus] = useState<'all' | 'processing' | 'completed' | 'failed' | 'transcribing' | 'summarizing'>('all')
+  const [showUploader, setShowUploader] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
 
-  useEffect(() => {
-    fetchMeetings()
-  }, [])
-  const fetchMeetings = async () => {
-    try {
-      // Mock data for demonstration - replace with actual API call
-      const mockMeetings: Meeting[] = [
-        {
-          id: '1',
-          title: 'Sprint Planning Meeting',
-          participants: ['Alice Johnson', 'Bob Smith', 'Charlie Davis'],
-          duration: 3600,
-          status: 'completed',
-          createdAt: '2024-01-15T10:00:00Z',
-          summary: 'Discussed upcoming sprint goals, estimated story points for new features including user authentication and dashboard improvements. Assigned tasks to team members and identified potential blockers.',
-          transcript: 'Alice: Good morning everyone, let\'s start with our sprint planning...\nBob: I think we should prioritize the authentication system first...\nCharlie: Agreed, that\'s a foundational piece for other features...'
-        },
-        {
-          id: '2',
-          title: 'Code Review Session',
-          participants: ['Alice Johnson', 'Charlie Davis'],
-          duration: 1800,
-          status: 'completed',
-          createdAt: '2024-01-14T14:30:00Z',
-          summary: 'Reviewed pull requests for the new API endpoints. Discussed code quality improvements and identified areas for refactoring. All PRs approved with minor suggestions.',
-          transcript: 'Alice: Let\'s go through the API changes first...\nCharlie: The error handling looks good, but we might want to add more detailed logging...'
-        },
-        {
-          id: '3',
-          title: 'Weekly Standup',
-          participants: ['Alice Johnson', 'Bob Smith', 'Charlie Davis', 'Diana Wilson'],
-          duration: 900,
-          status: 'processing',
-          createdAt: '2024-01-16T09:00:00Z',
-        }
-      ]
-      
-      // Filter meetings by repository if needed
-      setMeetings(selectedRepository ? mockMeetings : [])
-    } catch (error) {
-      console.error('Error fetching meetings:', error)
-      setMeetings([])
-    } finally {
-      setIsLoading(false)
-    }
+  // Use React Query for fetching meetings
+  const { data: meetings = [], isLoading, refetch } = useMeetings(selectedRepository?.id)
+
+  const handleMeetingUpload = (meeting: any) => {
+    console.log('Meeting uploaded:', meeting)
+    // Refresh the meetings list
+    refetch()
+    setShowUploader(false)
   }
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      // Check file type
-      const allowedTypes = ['audio/mp3', 'audio/wav', 'audio/m4a', 'audio/ogg', 'video/mp4', 'video/webm']
-      if (!allowedTypes.some(type => file.type.includes(type.split('/')[1]))) {
-        alert('Please select a valid audio or video file (MP3, WAV, M4A, OGG, MP4, WebM)')
-        return
-      }
-      
-      // Check file size (max 100MB)
-      if (file.size > 100 * 1024 * 1024) {
-        alert('File size must be less than 100MB')
-        return
-      }
-      
-      setSelectedFile(file)
-    }
-  }
-
-  const handleUpload = async () => {
-    if (!selectedFile || !meetingTitle.trim()) {
-      alert('Please provide a title and select a file')
-      return
-    }
-
-    setIsUploading(true)
-    setUploadProgress(0)
-
-    try {
-      // Simulate upload progress
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(progressInterval)
-            return 90
-          }
-          return prev + 10
-        })
-      }, 200)
-
-      // Create form data
-      const formData = new FormData()
-      formData.append('audio', selectedFile)
-      formData.append('title', meetingTitle.trim())
-      formData.append('participants', participants.trim())
-      formData.append('userId', '1') // Mock user ID
-
-      const response = await fetch('/api/meetings', {
-        method: 'POST',
-        body: formData,
-      })
-
-      clearInterval(progressInterval)
-      setUploadProgress(100)
-
-      if (response.ok) {
-        const data = await response.json()
-        setMeetings([data.meeting, ...meetings])
-        
-        // Reset form
-        setMeetingTitle('')
-        setParticipants('')
-        setSelectedFile(null)
-        if (fileInputRef.current) {
-          fileInputRef.current.value = ''
-        }
-        
-        setTimeout(() => setUploadProgress(0), 1000)
-      } else {
-        throw new Error('Failed to upload meeting')
-      }
-    } catch (error) {
-      console.error('Error uploading meeting:', error)
-      alert('Failed to upload meeting. Please try again.')
-    } finally {
-      setIsUploading(false)
-    }
-  }
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed': return 'bg-green-900/20 text-green-400 border-green-800'
-      case 'processing': return 'bg-yellow-900/20 text-yellow-400 border-yellow-800'
-      case 'failed': return 'bg-red-900/20 text-red-400 border-red-800'
-      default: return 'bg-gray-800 text-gray-400 border-gray-700'
-    }
-  }
-
-  const formatDuration = (seconds?: number) => {
-    if (!seconds) return 'Unknown'
+  const formatDuration = (seconds: number) => {
+    if (!seconds) return '0:00'
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
-  // Re-fetch meetings when repository changes
-  useEffect(() => {
-    fetchMeetings()
-  }, [selectedRepository])
 
-  if (isLoading) {
-    return (
-      <DashboardLayout>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-gray-400">Loading meetings...</p>
-          </div>
-        </div>
-      </DashboardLayout>
-    )
+  // Filter and search meetings with better logic
+  const filteredMeetings = useMemo(() => {
+    return meetings.filter(meeting => {
+      const matchesSearch = !searchQuery || 
+        meeting.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        meeting.summary?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        meeting.transcript?.toLowerCase().includes(searchQuery.toLowerCase())
+      
+      const matchesFilter = filterStatus === 'all' || meeting.status === filterStatus
+      
+      return matchesSearch && matchesFilter
+    })
+  }, [meetings, searchQuery, filterStatus])
+
+  // Calculate enhanced stats
+  const stats = useMemo(() => {
+    const totalMeetings = meetings.length
+    const totalDuration = meetings.reduce((sum, m) => {
+      if (m.segments && m.segments.length > 0) {
+        return sum + m.segments.reduce((segSum, seg) => segSum + (seg.endTime - seg.startTime), 0)
+      }
+      return sum
+    }, 0)
+
+    const statusCounts = meetings.reduce((acc, meeting) => {
+      acc[meeting.status] = (acc[meeting.status] || 0) + 1
+      return acc
+    }, {} as Record<string, number>)
+
+    return {
+      totalMeetings,
+      totalDuration,
+      completed: statusCounts.completed || 0,
+      processing: (statusCounts.processing || 0) + (statusCounts.transcribing || 0) + (statusCounts.summarizing || 0),
+      failed: statusCounts.failed || 0,
+      transcribing: statusCounts.transcribing || 0,
+      summarizing: statusCounts.summarizing || 0
+    }
+  }, [meetings])
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <CheckCircleIcon className="w-5 h-5 text-green-500" />
+      case 'processing':
+      case 'transcribing':
+      case 'summarizing':
+        return <ClockIcon className="w-5 h-5 text-yellow-500" />
+      case 'failed':
+        return <ExclamationTriangleIcon className="w-5 h-5 text-red-500" />
+      default:
+        return <ClockIcon className="w-5 h-5 text-slate-500" />
+    }
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+      case 'processing':
+      case 'transcribing':
+      case 'summarizing':
+        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+      case 'failed':
+        return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+      default:
+        return 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-400'
+    }
   }
 
   if (!selectedRepository) {
     return (
       <DashboardLayout>
-        <div className="text-center py-12">
-          <div className="w-16 h-16 bg-gray-800 rounded-xl flex items-center justify-center mx-auto mb-6">
-            <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-            </svg>
+        <div className="h-screen bg-slate-50 dark:bg-slate-900 flex flex-col">
+          <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-slate-300 dark:bg-slate-600 rounded-md flex items-center justify-center">
+                <VideoCameraIcon className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+              </div>
+              <div>
+                <h1 className="text-lg font-medium text-slate-900 dark:text-white">Meetings</h1>
+                <p className="text-xs text-slate-500 dark:text-slate-400">No repository selected</p>
+              </div>
+            </div>
           </div>
-          <h3 className="text-xl font-semibold text-white mb-2">Select a Repository</h3>
-          <p className="text-gray-400">Choose a repository from the dropdown above to view and manage meeting recordings.</p>
+          <div className="flex-1 flex items-center justify-center p-6">
+            <div className="text-center max-w-sm">
+              <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center mx-auto mb-6">
+                <VideoCameraIcon className="w-8 h-8 text-slate-400 dark:text-slate-500" />
+              </div>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">
+                Select a Repository
+              </h2>
+              <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
+                Choose a repository from the navigation above to view and manage meeting recordings.
+              </p>
+            </div>
+          </div>
         </div>
       </DashboardLayout>
     )
   }
+
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
-        {/* Repository Header */}
-        <div className="border-b border-gray-800 pb-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-              </svg>
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-white">Meeting Recordings</h1>
-              <p className="text-gray-400">{selectedRepository.full_name}</p>
-            </div>
-          </div>
-          <p className="text-gray-300">
-            Upload and transcribe meeting recordings for your team. AI-powered transcription and summaries help you track decisions and action items.
-          </p>
-        </div>{/* Upload Section */}
-        <div className="bg-gray-900 border border-gray-700 rounded-lg p-6">
-          <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
-            <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-            </svg>
-            Upload Meeting Recording
-          </h2>
-          
-          <div className="space-y-4">
-            {/* Meeting Title */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Meeting Title *
-              </label>
-              <input
-                type="text"
-                placeholder="Weekly Team Standup, Product Review, etc."
-                value={meetingTitle}
-                onChange={(e) => setMeetingTitle(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-
-            {/* Participants */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Participants (optional)
-              </label>
-              <input
-                type="text"
-                placeholder="John Doe, Jane Smith, Alex Johnson"
-                value={participants}
-                onChange={(e) => setParticipants(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-
-            {/* File Upload */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Audio/Video File *
-              </label>
-              <div className="flex items-center gap-4">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="audio/*,video/*"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center gap-2 px-4 py-2 bg-gray-800 border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 transition-colors"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                  Choose File
-                </button>
-                {selectedFile && (
-                  <span className="text-sm text-gray-400">
-                    {selectedFile.name} ({(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)
-                  </span>
-                )}
-              </div>
-              <p className="text-sm text-gray-500 mt-1">
-                Supported formats: MP3, WAV, M4A, OGG, MP4, WebM (max 100MB)
-              </p>
-            </div>
-
-            {/* Upload Progress */}
-            {isUploading && (
-              <div className="mt-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-300">Uploading...</span>
-                  <span className="text-sm text-gray-400">{uploadProgress}%</span>
-                </div>
-                <div className="w-full bg-gray-700 rounded-full h-2">
-                  <div 
-                    className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${uploadProgress}%` }}
-                  ></div>
-                </div>
-              </div>
-            )}
-
-            {/* Submit Button */}
-            <button
-              onClick={handleUpload}
-              disabled={isUploading || !selectedFile || !meetingTitle.trim()}
-              className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {isUploading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                  Upload & Transcribe
-                </>
-              )}
-            </button>
-          </div>
-        </div>        {/* Meetings List */}
-        <div className="bg-gray-900 border border-gray-700 rounded-lg p-6">
-          <h3 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
-            <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-            </svg>
-            Recent Meetings
-          </h3>
-          
-          {meetings.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 bg-gray-800 rounded-xl flex items-center justify-center mx-auto mb-6">
-                <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                </svg>
-              </div>
-              <h4 className="text-lg font-medium text-white mb-2">No meetings yet</h4>
-              <p className="text-gray-400">Upload your first meeting recording to get started!</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {meetings.map((meeting) => (
-                <div key={meeting.id} className="bg-gray-800 border border-gray-700 rounded-lg p-6 hover:border-gray-600 transition-colors">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h4 className="text-lg font-semibold text-white mb-2">{meeting.title}</h4>
-                      <div className="flex items-center gap-4 text-sm text-gray-400">
-                        <span>{new Date(meeting.createdAt).toLocaleString()}</span>
-                        {meeting.duration && (
-                          <>
-                            <span>•</span>
-                            <span>{formatDuration(meeting.duration)}</span>
-                          </>
-                        )}
-                        {meeting.participants.length > 0 && (
-                          <>
-                            <span>•</span>
-                            <span>{meeting.participants.length} participants</span>
-                          </>
-                        )}
+    <>
+      {/* Background */}
+      <div className="fixed inset-0 w-screen h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 -z-50 animate-gradient-x"></div>
+      
+      <DashboardLayout>
+        <div className="min-h-screen relative z-0">
+          {/* Header */}
+          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-700/50 animate-in slide-in-from-top duration-700">
+            <div className={`mx-auto px-4 py-5 sm:px-8 sm:py-7 transition-all duration-300 ${
+              isCollapsed ? 'max-w-none' : 'max-w-7xl'
+            }`}>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
+                <div className="flex items-center gap-3 sm:gap-6">
+                  <div className="relative group">
+                    {selectedRepository.owner?.avatar_url ? (
+                      <>
+                        <Image
+                          src={selectedRepository.owner.avatar_url}
+                          alt={`${selectedRepository.name} avatar`}
+                          width={48}
+                          height={48}
+                          className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl object-cover shadow-lg border-2 border-white/20 transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in"
+                        />
+                        <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl opacity-0 group-hover:opacity-20 blur transition-opacity duration-300"></div>
+                      </>
+                    ) : (
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in">
+                        <VideoCameraIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                        <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl opacity-0 group-hover:opacity-20 blur transition-opacity duration-300"></div>
                       </div>
-                    </div>
-                    <span className={`px-3 py-1 text-xs font-medium rounded-full border ${getStatusColor(meeting.status)}`}>
-                      {meeting.status}
-                    </span>
+                    )}
                   </div>
-
-                  {meeting.participants.length > 0 && (
-                    <div className="mb-4">
-                      <span className="text-sm font-medium text-gray-300">Participants: </span>
-                      <span className="text-sm text-gray-400">{meeting.participants.join(', ')}</span>
-                    </div>
-                  )}
-
-                  {meeting.status === 'processing' && (
-                    <div className="bg-yellow-900/20 border border-yellow-800 rounded-lg p-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin"></div>
-                        <span className="text-yellow-400 font-medium">Processing audio...</span>
-                      </div>
-                      <p className="text-yellow-300/80 text-sm mt-1">
-                        AI is transcribing your meeting and generating a summary. This may take a few minutes.
-                      </p>
-                    </div>
-                  )}
-
-                  {meeting.status === 'failed' && (
-                    <div className="bg-red-900/20 border border-red-800 rounded-lg p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span className="text-red-400 font-medium">Processing failed</span>
-                      </div>
-                      <p className="text-red-300/80 text-sm">
-                        There was an issue processing this meeting. Please try uploading again.
-                      </p>
-                    </div>
-                  )}
-
-                  {meeting.status === 'completed' && meeting.summary && (
-                    <div className="space-y-4">
-                      {/* Summary */}
-                      <div className="bg-blue-900/20 border border-blue-800 rounded-lg p-4">
-                        <h5 className="font-medium text-blue-400 mb-2 flex items-center gap-2">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                          AI Summary
-                        </h5>
-                        <p className="text-gray-300 text-sm leading-relaxed">{meeting.summary}</p>
-                      </div>
-
-                      {/* Transcript */}
-                      {meeting.transcript && (
-                        <details className="group">
-                          <summary className="cursor-pointer font-medium text-gray-300 hover:text-white flex items-center gap-2 select-none">
-                            <svg className="w-4 h-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
-                            View Full Transcript
-                          </summary>
-                          <div className="mt-3 bg-gray-950 border border-gray-700 rounded-lg p-4">
-                            <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap font-mono">
-                              {meeting.transcript}
-                            </p>
-                          </div>
-                        </details>
-                      )}
-                    </div>
-                  )}
+                  <div className="animate-in slide-in-from-left duration-500 delay-200">
+                    <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2 sm:gap-3">
+                      <VideoCameraIcon className="w-6 h-6 text-blue-500" />
+                      Meetings
+                    </h1>
+                    <p className="text-slate-600 dark:text-slate-400 mt-1 text-xs sm:text-base">
+                      View, upload, and analyze meetings for {selectedRepository.name}
+                    </p>
+                  </div>
                 </div>
-              ))}
+                
+                {/* Quick Actions */}
+                <div className="flex items-center gap-3">
+                  <Link
+                    href="/meetings/upload"
+                    className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <PlusIcon className="w-4 h-4" />
+                    <span className="hidden sm:inline">Upload Meeting</span>
+                    <span className="sm:hidden">Upload</span>
+                  </Link>
+                  <button
+                    onClick={() => setShowUploader(!showUploader)}
+                    className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <ArrowUpTrayIcon className="w-4 h-4" />
+                    <span className="hidden sm:inline">Quick Upload</span>
+                    <span className="sm:hidden">Quick</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Stats Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4 mt-6">
+                <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-slate-200/50 dark:border-slate-700/50">
+                  <div className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">{stats.totalMeetings}</div>
+                  <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Total</div>
+                </div>
+                <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-slate-200/50 dark:border-slate-700/50">
+                  <div className="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400">{stats.completed}</div>
+                  <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Completed</div>
+                </div>
+                <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-slate-200/50 dark:border-slate-700/50">
+                  <div className="text-xl sm:text-2xl font-bold text-yellow-600 dark:text-yellow-400">{stats.processing}</div>
+                  <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Processing</div>
+                </div>
+                <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-slate-200/50 dark:border-slate-700/50">
+                  <div className="text-xl sm:text-2xl font-bold text-red-600 dark:text-red-400">{stats.failed}</div>
+                  <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Failed</div>
+                </div>
+                <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-slate-200/50 dark:border-slate-700/50">
+                  <div className="text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400">{formatDuration(stats.totalDuration)}</div>
+                  <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Duration</div>
+                </div>
+              </div>
             </div>
-          )}
+          </div>
+          
+          {/* Content */}
+          <div className={`mx-auto px-4 sm:px-8 py-6 sm:py-8 transition-all duration-300 ${
+            isCollapsed ? 'max-w-none' : 'max-w-7xl'
+          }`}>
+            <div className="flex flex-col gap-6">
+              {/* Upload Section - Only show when toggled */}
+              {showUploader && (
+                <div className="animate-in slide-in-from-top duration-300">
+                  <MeetingUploader onUploadComplete={handleMeetingUpload} />
+                </div>
+              )}
+
+              {/* Meetings Section */}
+              <section className="animate-in fade-in slide-in-from-bottom duration-600 delay-200" aria-label="Meetings">
+                <div className="bg-white dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl hover:shadow-2xl transition-shadow duration-300">
+                  {/* Header */}
+                  <div className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 sm:px-6 py-3 sm:py-4 rounded-t-2xl">
+                    <div className="flex items-center justify-between flex-wrap gap-2 sm:gap-3">
+                      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-wrap">
+                        <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center animate-pulse shrink-0">
+                          <VideoCameraIcon className="w-4 h-4 text-white" />
+                        </div>
+                        <h2 className="text-lg font-semibold text-slate-900 dark:text-white truncate max-w-[120px] sm:max-w-[200px] md:max-w-[320px]">Meeting Recordings</h2>
+                        <div className="flex items-center gap-1 sm:gap-2 ml-2 flex-wrap min-w-0">
+                          <div className="text-xs text-slate-500 dark:text-slate-400 bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded-full truncate max-w-[80px] sm:max-w-[120px] md:max-w-[180px]">
+                            {filteredMeetings.length} meetings
+                          </div>
+                        </div>
+                      </div>
+                      {/* Action Buttons */}
+                      <div className="flex items-center gap-2 mt-2 sm:mt-0 flex-wrap">
+                        {/* Filter Button */}
+                        <button
+                          onClick={() => setShowFilters(!showFilters)}
+                          className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                          title="Show filters"
+                        >
+                          <FunnelIcon className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* Search Bar */}
+                    <div className="flex flex-col sm:flex-row gap-4 mt-4">
+                      <div className="flex-1 relative">
+                        <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+                        <input
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="Search meetings, summaries, transcripts..."
+                          className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Filters */}
+                    {showFilters && (
+                      <div className="bg-white/80 dark:bg-slate-950/80 rounded-2xl shadow p-4 border border-slate-200 dark:border-slate-800 flex flex-wrap gap-2 items-center mt-4">
+                        <div className="flex items-center justify-between mb-2 w-full">
+                          <div className="flex items-center gap-4 flex-wrap">
+                            {/* Status Filter */}
+                            <div className="relative">
+                              <select
+                                value={filterStatus}
+                                onChange={(e) => setFilterStatus(e.target.value as any)}
+                                className="pl-3 pr-8 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm min-w-[140px]"
+                              >
+                                <option value="all">All Status</option>
+                                <option value="completed">Completed</option>
+                                <option value="processing">Processing</option>
+                                <option value="transcribing">Transcribing</option>
+                                <option value="summarizing">Summarizing</option>
+                                <option value="failed">Failed</option>
+                              </select>
+                            </div>
+                          </div>
+                          {/* Clear All Button */}
+                          <button
+                            onClick={() => {
+                              setSearchQuery('')
+                              setFilterStatus('all')
+                            }}
+                            className="text-sm text-blue-700 dark:text-blue-200 hover:text-blue-900 dark:hover:text-blue-100 font-bold px-4 py-2 rounded-xl border-2 border-blue-200 dark:border-blue-800 bg-blue-100 dark:bg-blue-900/30 transition-all shadow-sm"
+                          >
+                            Clear All
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Search Results Info */}
+                    {searchQuery && (
+                      <div className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                        Found {filteredMeetings.length} meeting{filteredMeetings.length !== 1 ? 's' : ''} matching "{searchQuery}"
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Meetings List */}
+                  <div className="p-3 sm:p-6 rounded-b-2xl">
+                    {isLoading ? (
+                      <div className="text-center py-12">
+                        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                        <p className="text-slate-500 dark:text-slate-400">Loading meetings...</p>
+                      </div>
+                    ) : filteredMeetings.length === 0 ? (
+                      <div className="text-center py-12">
+                        <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center mx-auto mb-6">
+                          <VideoCameraIcon className="w-8 h-8 text-slate-400 dark:text-slate-500" />
+                        </div>
+                        <h4 className="text-lg font-medium text-slate-900 dark:text-white mb-2">No meetings found</h4>
+                        <p className="text-slate-600 dark:text-slate-400">
+                          {searchQuery ? `No meetings match "${searchQuery}"` : 'Upload your first meeting to get started!'}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {filteredMeetings.map((meeting: Meeting, idx: number) => (
+                          <div
+                            key={meeting.id}
+                            style={{
+                              animation: `fadeInUp 0.5s cubic-bezier(0.4,0,0.2,1) both`,
+                              animationDelay: `${idx * 60}ms`,
+                            }}
+                            className="border-2 border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-300 focus-within:ring-2 focus-within:ring-blue-400 outline-none hover:scale-[1.01] overflow-hidden"
+                          >
+                            <div className="p-4 sm:p-6">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    {getStatusIcon(meeting.status)}
+                                    <span className={`px-2 py-1 text-xs font-semibold rounded-full shadow-sm ${getStatusColor(meeting.status)}`}>
+                                      {meeting.status}
+                                    </span>
+                                  </div>
+                                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2 line-clamp-2">
+                                    {meeting.title}
+                                  </h3>
+                                  {meeting.summary && (
+                                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-3 line-clamp-2">
+                                      {meeting.summary}
+                                    </p>
+                                  )}
+                                  <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+                                    <div className="flex items-center gap-1">
+                                      <CalendarIcon className="w-4 h-4" />
+                                      {new Date(meeting.createdAt).toLocaleDateString()}
+                                    </div>
+                                    {meeting.segments && meeting.segments.length > 0 && (
+                                      <div className="flex items-center gap-1">
+                                        <ClockIcon className="w-4 h-4" />
+                                        {formatDuration(meeting.segments.reduce((sum, seg) => sum + (seg.endTime - seg.startTime), 0))}
+                                      </div>
+                                    )}
+                                    <div className="flex items-center gap-1">
+                                      <DocumentArrowDownIcon className="w-4 h-4" />
+                                      {meeting.segmentCount || 0} segments
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
+                                  <Link 
+                                    href={`/meetings/${meeting.id}`}
+                                    className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                                  >
+                                    <PlayIcon className="w-4 h-4" />
+                                    View
+                                  </Link>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
         </div>
-      </div>
-    </DashboardLayout>
+      </DashboardLayout>
+    </>
   )
 }

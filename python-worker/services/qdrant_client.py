@@ -137,16 +137,39 @@ class QuadrantVectorClient:
             logger.error("Failed to ensure collection exists", error=str(e))
             raise
             
+    def ensure_collection_exists(self, collection_name: str, dimension: int) -> None:
+        """Ensure a collection with the given name and dimension exists."""
+        collections = self.client.get_collections()
+        collection_names = [c.name for c in collections.collections]
+        if collection_name not in collection_names:
+            self.client.create_collection(
+                collection_name=collection_name,
+                vectors_config=VectorParams(
+                    size=dimension,
+                    distance=Distance.COSINE
+                ),
+            )
+            logger.info(f"Created collection {collection_name} with dimension {dimension}")
+        else:
+            logger.info(f"Collection {collection_name} already exists")
+
     async def store_embedding(
         self,
         embedding: List[float],
         metadata: Dict[str, Any],
-        point_id: Optional[str] = None
+        point_id: Optional[str] = None,
+        collection_name: Optional[str] = None,
+        dimension: Optional[int] = None
     ) -> str:
-        """Store embedding with metadata."""
+        """Store embedding with metadata in the specified collection."""
         if not self.client:
             raise RuntimeError("Quadrant client not connected")
-            
+        if not collection_name:
+            collection_name = self.settings.collection_name
+        if not dimension:
+            dimension = self.settings.embedding_dimension
+        # Ensure collection exists
+        self.ensure_collection_exists(collection_name, dimension)
         try:
             # Generate ID if not provided
             if not point_id:
@@ -161,14 +184,15 @@ class QuadrantVectorClient:
             
             # Store point
             self.client.upsert(
-                collection_name=self.settings.collection_name,
-                points=[point]            )
+                collection_name=collection_name,
+                points=[point]
+            )
             
-            logger.debug("Stored embedding", point_id=point_id, metadata_keys=list(metadata.keys()))
+            logger.info(f"Stored embedding in collection {collection_name}")
             return point_id
             
         except Exception as e:
-            logger.error("Failed to store embedding", error=str(e))
+            logger.error(f"Failed to store embedding: {str(e)}")
             raise
             
     async def search_similar(
@@ -286,7 +310,9 @@ class QuadrantVectorClient:
         point_id: Optional[str] = None,
         repo_id: Optional[str] = None,
         file_path: Optional[str] = None,
-        text: Optional[str] = None
+        text: Optional[str] = None,
+        collection_name: Optional[str] = None,
+        dimension: Optional[int] = None
     ) -> str:
         """Store embedding with metadata (flexible parameter support)."""
         # Support both calling patterns:
@@ -304,7 +330,7 @@ class QuadrantVectorClient:
         else:
             # New style call - use provided metadata
             final_metadata = metadata
-        return await self.store_embedding(embedding, final_metadata, point_id)
+        return await self.store_embedding(embedding, final_metadata, point_id, collection_name=collection_name, dimension=dimension)
     
     async def search_similar_in_repo(
         self,

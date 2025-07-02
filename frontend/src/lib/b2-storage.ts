@@ -1,3 +1,5 @@
+import crypto from 'crypto';
+
 export class B2StorageService {
   private authToken: string | null = null;
   private downloadUrl: string | null = null;
@@ -247,6 +249,50 @@ export class B2StorageService {
       authorizationToken: data.authorizationToken,
       fileName: fileName,
       downloadUrl: downloadUrl,
+    };
+  }
+  async uploadFile(fileName: string, fileBuffer: Buffer, contentType: string): Promise<{
+    fileId: string;
+    fileName: string;
+    fileInfo: any;
+  }> {
+    if (!this.authToken || !this.apiUrl || !this.bucketId) {
+      await this.authorize();
+    }
+
+    console.log('Uploading file directly to B2:', fileName);
+
+    // Calculate SHA1 hash of the file
+    const sha1Hash = crypto.createHash('sha1').update(fileBuffer).digest('hex');
+    console.log('File SHA1 hash:', sha1Hash);
+
+    // Get upload URL first
+    const uploadUrlData = await this.getUploadUrl(fileName, contentType);
+
+    // Upload the file using the upload URL
+    const response = await fetch(uploadUrlData.uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': uploadUrlData.authorizationToken,
+        'X-Bz-File-Name': fileName,
+        'Content-Type': contentType,
+        'X-Bz-Content-Sha1': sha1Hash
+      },
+      body: fileBuffer as any // Buffer is compatible with BodyInit
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to upload file to B2: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const uploadResult = await response.json();
+    console.log('B2 upload result:', uploadResult);
+
+    return {
+      fileId: uploadResult.fileId,
+      fileName: uploadResult.fileName,
+      fileInfo: uploadResult
     };
   }
 }

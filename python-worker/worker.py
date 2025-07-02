@@ -20,7 +20,7 @@ from services.qdrant_client import qdrant_client
 from processors.embedding import EmbeddingProcessor
 from processors.summarization import SummarizationProcessor
 from processors.file_processor import FileProcessor
-from processors.meeting_summarizer import MeetingSummarizerProcessor
+from processors.meeting_summarizer import MeetingProcessor
 
 # Setup logging
 setup_logging()
@@ -37,7 +37,7 @@ class GitTLDRWorker:
             "embedding": EmbeddingProcessor(),
             "summarization": SummarizationProcessor(),
             "file_processing": FileProcessor(),
-            "meeting_summarizer": MeetingSummarizerProcessor(),
+            "meeting_summarizer": MeetingProcessor(),
         }
         
     async def start(self) -> None:

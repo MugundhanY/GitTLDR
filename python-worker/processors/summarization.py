@@ -139,39 +139,39 @@ Context: This is a git commit representing changes made to a codebase. Analyze t
             logger.error(f"Failed to summarize commit: {str(e)}")
             raise
     
-    async def process_meeting(self, task_data: Dict[str, Any], logger) -> Dict[str, Any]:
-        """Process meeting audio/transcript for summarization."""
-        logger.info("Processing meeting summarization")
+    # async def process_meeting(self, task_data: Dict[str, Any], logger) -> Dict[str, Any]:
+    #     """Process meeting audio/transcript for summarization."""
+    #     logger.info("Processing meeting summarization")
         
-        meeting_id = task_data.get("meetingId")
-        audio_url = task_data.get("audioUrl")
-        transcript = task_data.get("transcript", "")
+    #     meeting_id = task_data.get("meetingId")
+    #     audio_url = task_data.get("audioUrl")
+    #     transcript = task_data.get("transcript", "")
         
-        if not meeting_id:
-            raise ValueError("Meeting ID is required")
+    #     if not meeting_id:
+    #         raise ValueError("Meeting ID is required")
         
-        try:
-            # For now, just summarize any transcript content
-            # In a full implementation, you'd handle audio processing here
+    #     try:
+    #         # For now, just summarize any transcript content
+    #         # In a full implementation, you'd handle audio processing here
             
-            if transcript:
-                content_to_summarize = transcript
-            else:
-                content_to_summarize = f"Meeting {meeting_id} - audio content at {audio_url}"
+    #         if transcript:
+    #             content_to_summarize = transcript
+    #         else:
+    #             content_to_summarize = f"Meeting {meeting_id} - audio content at {audio_url}"
             
-            # Generate summary using Gemini
-            summary = await gemini_client.generate_summary(
-                text=content_to_summarize,
-                context="meeting transcript"
-            )
+    #         # Generate summary using Gemini
+    #         summary = await gemini_client.generate_summary(
+    #             text=content_to_summarize,
+    #             context="meeting transcript"
+    #         )
             
-            return {
-                "status": "completed",
-                "meeting_id": meeting_id,
-                "summary": summary,
-                "has_transcript": bool(transcript)
-            }
+    #         return {
+    #             "status": "completed",
+    #             "meeting_id": meeting_id,
+    #             "summary": summary,
+    #             "has_transcript": bool(transcript)
+    #         }
             
-        except Exception as e:
-            logger.error(f"Failed to process meeting: {str(e)}")
-            raise
+    #     except Exception as e:
+    #         logger.error(f"Failed to process meeting: {str(e)}")
+    #         raise

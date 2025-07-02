@@ -127,6 +127,12 @@ class TaskStatusResponse(BaseModel):
     result: Optional[dict] = None
     error: Optional[str] = None
 
+class MeetingQARequest(BaseModel):
+    """Request model for meeting Q&A endpoint."""
+    meeting_id: str
+    question: str
+    user_id: str = "anonymous"
+
 @app.post("/pure-thinking")
 async def pure_thinking_endpoint(request: PureThinkingRequest):
     """
@@ -358,6 +364,38 @@ async def process_repository_endpoint(request: dict):
         raise
     except Exception as e:
         logger.error(f"Failed to process repository: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/meeting-qa")
+async def meeting_qa_endpoint(request: MeetingQARequest):
+    """
+    Process Q&A queries for meetings using stored embeddings.
+    """
+    try:
+        from processors.meeting_summarizer import MeetingProcessor
+        
+        logger.info(f"Processing meeting Q&A for meeting {request.meeting_id}")
+        
+        # Create meeting processor
+        meeting_processor = MeetingProcessor()
+        
+        # Process the meeting question
+        result = await meeting_processor.process_meeting_qa(
+            task_data={
+                "meetingId": request.meeting_id,
+                "question": request.question,
+                "userId": request.user_id
+            },
+            logger=logger
+        )
+        
+        return {
+            "status": "success",
+            "result": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to process meeting Q&A: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Add WebSocket support for real-time updates

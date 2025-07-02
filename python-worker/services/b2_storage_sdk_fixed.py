@@ -183,3 +183,22 @@ class B2StorageService:
         except Exception as e:
             logger.error(f"Failed to list repository files: {str(e)}")
             return []
+
+    def download_file_bytes(self, file_key: str) -> bytes:
+        """Download file as raw bytes from B2 using the official SDK."""
+        try:
+            logger.info(f"Downloading file as bytes from B2 using SDK: {file_key}")
+            downloaded_file = self.bucket.download_file_by_name(file_key)
+            content_io = BytesIO()
+            downloaded_file.save(content_io)
+            content_bytes = content_io.getvalue()
+            logger.info(f"Successfully downloaded file as bytes from B2: {file_key}")
+            return content_bytes
+        except Exception as e:
+            error_str = str(e)
+            if "not_found" in error_str.lower() or "404" in error_str:
+                logger.error(f"File not found: {file_key}")
+                raise FileNotFoundError(f"File not found: {file_key}")
+            else:
+                logger.error(f"Download error: {error_str}")
+                raise Exception(f"Failed to download file from B2: {error_str}")

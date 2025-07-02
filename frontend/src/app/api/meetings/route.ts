@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 // POST /api/meetings - Process meeting audio
 export async function POST(request: NextRequest) {
@@ -73,40 +76,53 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // TODO: Fetch meetings from database using Prisma
-    // For now, return mock data
-    const meetings = [
-      {
-        id: '1',
-        title: 'Weekly Team Standup',
-        participants: ['John Doe', 'Jane Smith', 'Bob Johnson'],
-        duration: '00:45:30',
-        createdAt: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
-        status: 'completed',
-        summary: 'Team discussed current sprint progress, blockers, and upcoming tasks. Key decisions were made regarding the new feature rollout.',
-        keyPoints: [
-          'Sprint is on track for Friday delivery',
-          'Database migration needs additional testing',
-          'New UI components ready for review'
-        ]
+    // Fetch meetings from database using Prisma
+    const meetings = await prisma.meeting.findMany({
+      where: {
+        userId: userId
       },
-      {
-        id: '2',
-        title: 'Product Planning Session',
-        participants: ['Alice Brown', 'Charlie Wilson'],
-        duration: '01:20:15',
-        createdAt: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
-        status: 'completed',
-        summary: 'Roadmap planning for Q2, feature prioritization, and resource allocation discussions.',
-        keyPoints: [
-          'Q2 focus on mobile app improvements',
-          'AI features to be prioritized',
-          'Need additional backend resources'
-        ]
+      include: {
+        meeting_segments: {
+          select: {
+            id: true,
+            title: true,
+            summary: true,
+            start_time: true,
+            end_time: true,
+            segment_index: true
+          },
+          orderBy: {
+            segment_index: 'asc'
+          }
+        }
+      },
+      orderBy: {
+        created_at: 'desc'
       }
-    ];
+    });
 
-    return NextResponse.json({ meetings });
+    // Transform the data to match the frontend interface
+    const transformedMeetings = meetings.map(meeting => ({
+      id: meeting.id,
+      title: meeting.title,
+      transcript: meeting.full_transcript || undefined,
+      summary: meeting.summary || undefined,
+      status: meeting.status.toLowerCase(),
+      createdAt: meeting.created_at.toISOString(),
+      updatedAt: meeting.updated_at.toISOString(),
+      language: meeting.language || undefined,
+      segmentCount: meeting.num_segments || 0,
+      segments: meeting.meeting_segments.map(segment => ({
+        id: segment.id,
+        title: segment.title,
+        summary: segment.summary,
+        startTime: segment.start_time,
+        endTime: segment.end_time,
+        index: segment.segment_index
+      }))
+    }));
+
+    return NextResponse.json({ meetings: transformedMeetings });
 
   } catch (error) {
     console.error('Error fetching meetings:', error);

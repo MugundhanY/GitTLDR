@@ -21,6 +21,7 @@ import { clientCache, CACHE_KEYS } from '@/lib/client-cache';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
+import NotificationDropdown from '@/components/notifications/NotificationDropdown';
 
 const MobileSidebar = dynamic(() => import('./MobileSidebar'), { ssr: false });
 
@@ -43,9 +44,13 @@ export function Header() {
   const [showThemeDropdown, setShowThemeDropdown] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const themeDropdownRef = useRef<HTMLDivElement>(null);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
+  const searchDropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -56,11 +61,89 @@ export function Header() {
       if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target as Node)) {
         setShowProfileDropdown(false);
       }
+      if (searchDropdownRef.current && !searchDropdownRef.current.contains(event.target as Node)) {
+        setShowSearchResults(false);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Handle search functionality
+  useEffect(() => {
+    const handleSearch = async () => {
+      if (!globalSearchQuery.trim() || !selectedRepository?.id) {
+        setSearchResults([]);
+        setShowSearchResults(false);
+        return;
+      }
+
+      setIsSearching(true);
+      try {
+        // Search in multiple areas
+        const [filesRes, questionsRes, meetingsRes] = await Promise.allSettled([
+          fetch(`/api/repositories/${selectedRepository.id}/files?search=${encodeURIComponent(globalSearchQuery)}`),
+          fetch(`/api/qna?repositoryId=${selectedRepository.id}&search=${encodeURIComponent(globalSearchQuery)}`),
+          fetch(`/api/meetings?repositoryId=${selectedRepository.id}&search=${encodeURIComponent(globalSearchQuery)}`)
+        ]);
+
+        const results: any[] = [];
+
+        // Add file results
+        if (filesRes.status === 'fulfilled' && filesRes.value.ok) {
+          const filesData = await filesRes.value.json();
+          if (filesData.files) {
+            results.push(...filesData.files.slice(0, 3).map((file: any) => ({
+              type: 'file',
+              title: file.name,
+              path: file.path,
+              href: `/files?file=${file.id}`,
+              description: file.summary || `${file.language} file`
+            })));
+          }
+        }
+
+        // Add Q&A results
+        if (questionsRes.status === 'fulfilled' && questionsRes.value.ok) {
+          const questionsData = await questionsRes.value.json();
+          if (questionsData.questions) {
+            results.push(...questionsData.questions.slice(0, 3).map((question: any) => ({
+              type: 'question',
+              title: question.query,
+              href: `/qna#question-${question.id}`,
+              description: question.answer ? question.answer.substring(0, 100) + '...' : 'Q&A'
+            })));
+          }
+        }
+
+        // Add meeting results
+        if (meetingsRes.status === 'fulfilled' && meetingsRes.value.ok) {
+          const meetingsData = await meetingsRes.value.json();
+          if (meetingsData.meetings) {
+            results.push(...meetingsData.meetings.slice(0, 3).map((meeting: any) => ({
+              type: 'meeting',
+              title: meeting.title,
+              href: `/meetings/${meeting.id}`,
+              description: meeting.summary || 'Meeting recording'
+            })));
+          }
+        }
+
+        setSearchResults(results);
+        setShowSearchResults(results.length > 0);
+      } catch (error) {
+        console.error('Search error:', error);
+        setSearchResults([]);
+        setShowSearchResults(false);
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    const timeoutId = setTimeout(handleSearch, 300);
+    return () => clearTimeout(timeoutId);
+  }, [globalSearchQuery, selectedRepository?.id]);
 
   const themeOptions = [
     { 
@@ -122,12 +205,12 @@ export function Header() {
                 <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center">
                   <CodeBracketIcon className="w-5 h-5 text-white" />
                 </div>
-                <span className="ml-2 text-xl font-bold text-slate-900 dark:text-white">GitTLDR</span>
+                <span className="ml-2 text-xl font-bold text-slate-900 dark:text-white hidden sm:block">GitTLDR</span>
               </Link>
             </div>
 
-            {/* Search Bar */}
-            <div className="flex-1 max-w-md mx-8">
+            {/* Search Bar - Hidden on small screens, shown in mobile menu */}
+            <div className="hidden md:flex flex-1 max-w-md mx-4 lg:mx-8 relative" ref={searchDropdownRef}>
               <div className="relative">
                 <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
@@ -136,17 +219,99 @@ export function Header() {
                   className="w-full pl-10 pr-4 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
                   value={globalSearchQuery}
                   onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                  onFocus={() => globalSearchQuery && setShowSearchResults(true)}
                 />
                 <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                  <kbd className="inline-flex items-center px-2 py-1 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono text-slate-600 dark:text-slate-400">
+                  <kbd className="hidden lg:inline-flex items-center px-2 py-1 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono text-slate-600 dark:text-slate-400">
                     ⌘K
                   </kbd>
                 </div>
               </div>
+              
+              {/* Search Results Dropdown */}
+              {showSearchResults && (searchResults.length > 0 || isSearching) && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 z-50 max-h-96 overflow-y-auto">
+                  {isSearching ? (
+                    <div className="p-4 text-center">
+                      <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">Searching...</p>
+                    </div>
+                  ) : (
+                    <div className="py-2">
+                      {searchResults.length === 0 ? (
+                        <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">
+                          No results found for "{globalSearchQuery}"
+                        </div>
+                      ) : (
+                        <>
+                          {searchResults.map((result, index) => (
+                            <Link
+                              key={index}
+                              href={result.href}
+                              className="flex items-start px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                              onClick={() => {
+                                setShowSearchResults(false);
+                                setGlobalSearchQuery('');
+                              }}
+                            >
+                              <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mr-3">
+                                {result.type === 'file' && (
+                                  <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                )}
+                                {result.type === 'question' && (
+                                  <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                )}
+                                {result.type === 'meeting' && (
+                                  <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                  </svg>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                                  {result.title}
+                                </p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                  {result.description}
+                                </p>
+                                {result.path && (
+                                  <p className="text-xs text-slate-400 dark:text-slate-500 truncate font-mono">
+                                    {result.path}
+                                  </p>
+                                )}
+                              </div>
+                            </Link>
+                          ))}
+                          <div className="border-t border-slate-200 dark:border-slate-700 px-4 py-2">
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              Press Enter to search all content
+                            </p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Right Side Actions */}
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2 sm:space-x-3">
+              {/* Mobile Search Button */}
+              <button
+                className="md:hidden p-2 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                onClick={() => {
+                  // Toggle mobile search or navigate to search page
+                  router.push('/search');
+                }}
+              >
+                <MagnifyingGlassIcon className="w-5 h-5" />
+              </button>
+
               {/* Theme Toggle */}
               <div className="relative" ref={themeDropdownRef}>
                 <button
@@ -191,10 +356,7 @@ export function Header() {
               </div>
 
               {/* Notifications */}
-              <button className="relative p-2 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
-                <BellIcon className="w-5 h-5" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-              </button>
+              <NotificationDropdown />
               {/* Profile */}
               <div className="relative" ref={profileDropdownRef}>
                 <button
