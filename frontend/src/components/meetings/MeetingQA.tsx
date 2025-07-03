@@ -10,7 +10,8 @@ import {
   ClockIcon,
   PlayIcon,
   BookmarkIcon,
-  XMarkIcon
+  XMarkIcon,
+  MagnifyingGlassIcon
 } from '@heroicons/react/24/outline';
 import { useUserData } from '@/hooks/useUserData';
 
@@ -60,41 +61,27 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
     }
   }, [question]);
 
-  // Demo Q&A items
+  // Fetch real Q&A history instead of using demo items
   useEffect(() => {
-    if (qaHistory.length === 0) {
-      const demoQA: QAItem[] = [
-        {
-          id: 'qa-1',
-          question: 'What were the main action items discussed?',
-          answer: 'Based on the meeting discussion, the main action items were: 1) Complete the user authentication system by Friday (assigned to John), 2) Review and update the database schema for better performance (assigned to Sarah), 3) Prepare the demo presentation for the client meeting next week (assigned to Mike), and 4) Set up the staging environment with the latest features (assigned to DevOps team). These items were prioritized based on the upcoming deadline and client requirements.',
-          timestamp: 240,
-          relatedSegments: ['segment-2', 'segment-4'],
-          confidence: 0.92,
-          createdAt: new Date(Date.now() - 30 * 60 * 1000).toISOString()
-        },
-        {
-          id: 'qa-2',
-          question: 'What was decided about the new feature rollout?',
-          answer: 'The team decided to implement a phased rollout approach for the new chat feature. Phase 1 will include basic messaging for 20% of users starting next Monday. Phase 2 will add file sharing and emoji reactions for 50% of users two weeks later. Phase 3 will include the full feature set for all users by the end of the month. This approach allows for gradual testing and feedback collection while minimizing risk.',
-          timestamp: 420,
-          relatedSegments: ['segment-3', 'segment-5'],
-          confidence: 0.88,
-          createdAt: new Date(Date.now() - 15 * 60 * 1000).toISOString()
-        },
-        {
-          id: 'qa-3',
-          question: 'Were there any budget concerns mentioned?',
-          answer: 'Yes, there were some budget discussions. The team mentioned that the cloud infrastructure costs have increased by 15% this quarter due to higher usage. They proposed optimizing the database queries and implementing better caching to reduce server load. Additionally, they suggested negotiating with the cloud provider for better rates given the increased usage volume. The finance team will review these proposals by next Friday.',
-          timestamp: 600,
-          relatedSegments: ['segment-6'],
-          confidence: 0.85,
-          createdAt: new Date(Date.now() - 5 * 60 * 1000).toISOString()
+    if (qaHistory.length === 0 && meetingId) {
+      const fetchQAHistory = async () => {
+        try {
+          const response = await fetch(`/api/meetings/${meetingId}/qa-history`);
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.qaItems && data.qaItems.length > 0) {
+              setQAHistory(data.qaItems);
+            }
+          }
+        } catch (error) {
+          console.error('Failed to fetch QA history:', error);
         }
-      ];
-      setQAHistory(demoQA);
+      };
+      
+      fetchQAHistory();
     }
-  }, [qaHistory.length]);
+  }, [qaHistory.length, meetingId]);
 
   const handleAskQuestion = async () => {
     if (!question.trim() || isAsking) return;
@@ -127,7 +114,8 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
         body: JSON.stringify({
           meeting_id: meetingId,
           question: currentQuestion,
-          user_id: userData?.id || '1' // Fallback to '1' if no user data
+          user_id: userData?.id || '1', // Fallback to '1' if no user data
+          index_fields: true // This ensures the meeting_id field is properly indexed
         })
       });
 
@@ -238,7 +226,7 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
       <div className="p-6">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl flex items-center justify-center">
+            <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-md">
               <QuestionMarkCircleIcon className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -270,7 +258,7 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
               }}
               placeholder="Ask about decisions, action items, key points, or any topic discussed..."
               rows={1}
-              className="w-full border border-slate-200 dark:border-slate-700 rounded-xl p-4 pr-12 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white resize-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+              className="w-full border border-slate-200 dark:border-slate-700 rounded-xl p-4 pr-12 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white resize-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all shadow-sm"
               disabled={isAsking}
             />
             <button
@@ -301,7 +289,7 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
               <button
                 key={suggestion}
                 onClick={() => setQuestion(suggestion)}
-                className="px-3 py-1 text-xs bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                className="px-3 py-1 text-xs bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 rounded-full hover:bg-purple-100 dark:hover:bg-purple-800/30 transition-colors shadow-sm"
                 disabled={isAsking}
               >
                 {suggestion}
@@ -318,9 +306,18 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search questions and answers..."
-              className="w-full border border-slate-200 dark:border-slate-700 rounded-lg p-3 pl-10 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+              className="w-full border border-slate-200 dark:border-slate-700 rounded-lg p-3 pl-10 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm"
             />
-            <QuestionMarkCircleIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+            
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors"
+              >
+                <XMarkIcon className="w-4 h-4" />
+              </button>
+            )}
           </div>
         )}
 
@@ -328,7 +325,7 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
         <div className="space-y-4">
           {filteredQA.length === 0 && qaHistory.length > 0 && (
             <div className="text-center py-8">
-              <QuestionMarkCircleIcon className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+              <MagnifyingGlassIcon className="w-12 h-12 text-slate-400 mx-auto mb-3" />
               <p className="text-slate-500 dark:text-slate-400">
                 No questions match your search
               </p>
@@ -337,7 +334,7 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
           
           {filteredQA.length === 0 && qaHistory.length === 0 && (
             <div className="text-center py-8">
-              <div className="w-16 h-16 bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900/20 dark:to-pink-900/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <div className="w-16 h-16 bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900/20 dark:to-pink-900/20 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-inner">
                 <SparklesIcon className="w-8 h-8 text-purple-500" />
               </div>
               <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-2">
@@ -352,7 +349,7 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
           {filteredQA.map((qa) => (
             <div
               key={qa.id}
-              className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden hover:shadow-md transition-shadow"
+              className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden hover:shadow-md transition-all duration-300 transform hover:-translate-y-1"
             >
               <div
                 className="p-4 cursor-pointer"
@@ -406,7 +403,7 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
               </div>
               
               {expandedItems.has(qa.id) && (
-                <div className="px-4 pb-4 border-t border-slate-100 dark:border-slate-800">
+                <div className="px-4 pb-4 border-t border-slate-100 dark:border-slate-800 animate-fadeIn">
                   <div className="pt-3">
                     <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-sm">
                       {qa.answer}
@@ -415,7 +412,7 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
                     {qa.relatedSegments.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
                         <div className="flex items-center gap-2 mb-2">
-                          <BookmarkIcon className="w-4 h-4 text-slate-500" />
+                          <BookmarkIcon className="w-4 h-4 text-purple-500" />
                           <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
                             Related segments
                           </span>
@@ -427,7 +424,7 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
                               <button
                                 key={segmentId}
                                 onClick={() => onSeekTo?.(segment.startTime)}
-                                className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                                className="px-2 py-1 text-xs bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-300 rounded hover:bg-purple-100 dark:hover:bg-purple-800/30 transition-colors"
                               >
                                 {segment.title} ({formatTime(segment.startTime)})
                               </button>

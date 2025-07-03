@@ -18,7 +18,8 @@ import {
   CalendarIcon,
   UserIcon,
   SparklesIcon,
-  ArrowUpTrayIcon
+  ArrowUpTrayIcon,
+  XMarkIcon
 } from '@heroicons/react/24/outline'
 import { useSidebar } from '@/contexts/SidebarContext'
 import Image from 'next/image'
@@ -29,12 +30,37 @@ export default function MeetingsPage() {
   const { selectedRepository } = useRepository()
   const { isCollapsed } = useSidebar()
   const [searchQuery, setSearchQuery] = useState('')
-  const [filterStatus, setFilterStatus] = useState<'all' | 'processing' | 'completed' | 'failed' | 'transcribing' | 'summarizing'>('all')
+  const [filterStatus, setFilterStatus] = useState<'all' | 'processing' | 'completed' | 'failed' | 'transcribing' | 'summarizing' | 'favorites'>('all')
   const [showUploader, setShowUploader] = useState(false)
-  const [showFilters, setShowFilters] = useState(false)
 
   // Use React Query for fetching meetings
   const { data: meetings = [], isLoading, refetch } = useMeetings(selectedRepository?.id)
+
+  // Add counter animation effect
+  useEffect(() => {
+    const counters = document.querySelectorAll('.counter');
+    
+    counters.forEach(counter => {
+      const target = parseInt(counter.getAttribute('data-target') || '0', 10);
+      const duration = 1000;
+      const stepTime = 50;
+      const steps = duration / stepTime;
+      const increment = target / steps;
+      let current = 0;
+      
+      const updateCounter = () => {
+        current += increment;
+        if (current < target) {
+          counter.textContent = Math.ceil(current).toString();
+          setTimeout(updateCounter, stepTime);
+        } else {
+          counter.textContent = target.toString();
+        }
+      };
+      
+      updateCounter();
+    });
+  }, [meetings]);
 
   const handleMeetingUpload = (meeting: any) => {
     console.log('Meeting uploaded:', meeting)
@@ -59,7 +85,9 @@ export default function MeetingsPage() {
         meeting.summary?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         meeting.transcript?.toLowerCase().includes(searchQuery.toLowerCase())
       
-      const matchesFilter = filterStatus === 'all' || meeting.status === filterStatus
+      const matchesFilter = filterStatus === 'all' || 
+        (filterStatus === 'favorites' ? (meeting as any).isFavorite : 
+        meeting.status === filterStatus)
       
       return matchesSearch && matchesFilter
     })
@@ -120,6 +148,12 @@ export default function MeetingsPage() {
         return 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-400'
     }
   }
+
+  // Format Meeting Title - simplified without custom title indicator
+  const formatMeetingTitle = (meeting: Meeting) => {
+    if (!meeting) return '';
+    return meeting.title;
+  };
 
   if (!selectedRepository) {
     return (
@@ -221,25 +255,79 @@ export default function MeetingsPage() {
 
               {/* Stats Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4 mt-6">
-                <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-slate-200/50 dark:border-slate-700/50">
-                  <div className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">{stats.totalMeetings}</div>
-                  <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Total</div>
+                {/* Total Meetings Card */}
+                <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 dark:from-indigo-900/30 dark:to-indigo-800/20 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-indigo-200/50 dark:border-indigo-700/30 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02] overflow-hidden relative group">
+                  <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-indigo-600/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <div className="text-xl sm:text-3xl font-bold text-indigo-800 dark:text-indigo-300 flex items-end gap-1">
+                    <span className="counter" data-target={stats.totalMeetings}>
+                      {stats.totalMeetings}
+                    </span>
+                    <span className="text-xs text-indigo-600 dark:text-indigo-400 font-normal">meetings</span>
+                  </div>
+                  <div className="text-xs sm:text-sm text-indigo-600 dark:text-indigo-400 mt-1 flex items-center">
+                    <VideoCameraIcon className="w-3 h-3 mr-1" />
+                    Total Meetings
+                  </div>
                 </div>
-                <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-slate-200/50 dark:border-slate-700/50">
-                  <div className="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400">{stats.completed}</div>
-                  <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Completed</div>
+
+                {/* Completed Card */}
+                <div className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/20 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-green-200/50 dark:border-green-700/30 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02] overflow-hidden relative group">
+                  <div className="absolute inset-0 bg-gradient-to-r from-green-500/10 to-green-600/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <div className="text-xl sm:text-3xl font-bold text-green-800 dark:text-green-300 flex items-end gap-1">
+                    <span className="counter" data-target={stats.completed}>
+                      {stats.completed}
+                    </span>
+                    <span className="text-xs text-green-600 dark:text-green-400 font-normal">meetings</span>
+                  </div>
+                  <div className="text-xs sm:text-sm text-green-600 dark:text-green-400 mt-1 flex items-center">
+                    <CheckCircleIcon className="w-3 h-3 mr-1" />
+                    Completed
+                  </div>
                 </div>
-                <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-slate-200/50 dark:border-slate-700/50">
-                  <div className="text-xl sm:text-2xl font-bold text-yellow-600 dark:text-yellow-400">{stats.processing}</div>
-                  <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Processing</div>
+
+                {/* Processing Card */}
+                <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/30 dark:to-yellow-800/20 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-yellow-200/50 dark:border-yellow-700/30 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02] overflow-hidden relative group">
+                  <div className="absolute inset-0 bg-gradient-to-r from-yellow-500/10 to-yellow-600/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <div className="text-xl sm:text-3xl font-bold text-yellow-800 dark:text-yellow-300 flex items-end gap-1">
+                    <span className="counter" data-target={stats.processing}>
+                      {stats.processing}
+                    </span>
+                    <span className="text-xs text-yellow-600 dark:text-yellow-400 font-normal">meetings</span>
+                  </div>
+                  <div className="text-xs sm:text-sm text-yellow-600 dark:text-yellow-400 mt-1 flex items-center">
+                    <ClockIcon className="w-3 h-3 mr-1" />
+                    Processing
+                  </div>
                 </div>
-                <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-slate-200/50 dark:border-slate-700/50">
-                  <div className="text-xl sm:text-2xl font-bold text-red-600 dark:text-red-400">{stats.failed}</div>
-                  <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Failed</div>
+
+                {/* Failed Card */}
+                <div className="bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/30 dark:to-red-800/20 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-red-200/50 dark:border-red-700/30 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02] overflow-hidden relative group">
+                  <div className="absolute inset-0 bg-gradient-to-r from-red-500/10 to-red-600/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <div className="text-xl sm:text-3xl font-bold text-red-800 dark:text-red-300 flex items-end gap-1">
+                    <span className="counter" data-target={stats.failed}>
+                      {stats.failed}
+                    </span>
+                    <span className="text-xs text-red-600 dark:text-red-400 font-normal">meetings</span>
+                  </div>
+                  <div className="text-xs sm:text-sm text-red-600 dark:text-red-400 mt-1 flex items-center">
+                    <ExclamationTriangleIcon className="w-3 h-3 mr-1" />
+                    Failed
+                  </div>
                 </div>
-                <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-slate-200/50 dark:border-slate-700/50">
-                  <div className="text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400">{formatDuration(stats.totalDuration)}</div>
-                  <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Duration</div>
+
+                {/* Duration Card */}
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/20 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-blue-200/50 dark:border-blue-700/30 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02] overflow-hidden relative group">
+                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-blue-600/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <div className="text-xl sm:text-3xl font-bold text-blue-800 dark:text-blue-300 flex items-end gap-1">
+                    <span>
+                      {formatDuration(stats.totalDuration)}
+                    </span>
+                    <span className="text-xs text-blue-600 dark:text-blue-400 font-normal">total</span>
+                  </div>
+                  <div className="text-xs sm:text-sm text-blue-600 dark:text-blue-400 mt-1 flex items-center">
+                    <ClockIcon className="w-3 h-3 mr-1" />
+                    Duration
+                  </div>
                 </div>
               </div>
             </div>
@@ -276,19 +364,19 @@ export default function MeetingsPage() {
                       </div>
                       {/* Action Buttons */}
                       <div className="flex items-center gap-2 mt-2 sm:mt-0 flex-wrap">
-                        {/* Filter Button */}
+                        {/* Upload Button */}
                         <button
-                          onClick={() => setShowFilters(!showFilters)}
-                          className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                          title="Show filters"
+                          onClick={() => setShowUploader(true)}
+                          className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
                         >
-                          <FunnelIcon className="w-4 h-4" />
+                          <ArrowUpTrayIcon className="w-4 h-4" />
+                          Upload
                         </button>
                       </div>
                     </div>
                     
-                    {/* Search Bar */}
-                    <div className="flex flex-col sm:flex-row gap-4 mt-4">
+                    {/* Search Bar with Integrated Filters */}
+                    <div className="flex flex-col sm:flex-row gap-2 mt-4">
                       <div className="flex-1 relative">
                         <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
                         <input
@@ -299,42 +387,37 @@ export default function MeetingsPage() {
                           className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                         />
                       </div>
-                    </div>
-
-                    {/* Filters */}
-                    {showFilters && (
-                      <div className="bg-white/80 dark:bg-slate-950/80 rounded-2xl shadow p-4 border border-slate-200 dark:border-slate-800 flex flex-wrap gap-2 items-center mt-4">
-                        <div className="flex items-center justify-between mb-2 w-full">
-                          <div className="flex items-center gap-4 flex-wrap">
-                            {/* Status Filter */}
-                            <div className="relative">
-                              <select
-                                value={filterStatus}
-                                onChange={(e) => setFilterStatus(e.target.value as any)}
-                                className="pl-3 pr-8 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm min-w-[140px]"
-                              >
-                                <option value="all">All Status</option>
-                                <option value="completed">Completed</option>
-                                <option value="processing">Processing</option>
-                                <option value="transcribing">Transcribing</option>
-                                <option value="summarizing">Summarizing</option>
-                                <option value="failed">Failed</option>
-                              </select>
-                            </div>
-                          </div>
-                          {/* Clear All Button */}
+                      
+                      {/* Inline Filters */}
+                      <div className="flex items-center gap-2 sm:min-w-[140px]">
+                        <select
+                          value={filterStatus}
+                          onChange={(e) => setFilterStatus(e.target.value as any)}
+                          className="pl-3 pr-8 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm w-full sm:w-auto"
+                        >
+                          <option value="all">All Status</option>
+                          <option value="completed">Completed</option>
+                          <option value="processing">Processing</option>
+                          <option value="transcribing">Transcribing</option>
+                          <option value="summarizing">Summarizing</option>
+                          <option value="failed">Failed</option>
+                          <option value="favorites">Favorites</option>
+                        </select>
+                        
+                        {(searchQuery || filterStatus !== 'all') && (
                           <button
                             onClick={() => {
                               setSearchQuery('')
                               setFilterStatus('all')
                             }}
-                            className="text-sm text-blue-700 dark:text-blue-200 hover:text-blue-900 dark:hover:text-blue-100 font-bold px-4 py-2 rounded-xl border-2 border-blue-200 dark:border-blue-800 bg-blue-100 dark:bg-blue-900/30 transition-all shadow-sm"
+                            className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 px-3 py-2.5 rounded-lg border border-blue-200 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 transition-colors"
+                            title="Clear filters"
                           >
-                            Clear All
+                            <XMarkIcon className="w-4 h-4" />
                           </button>
-                        </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                     
                     {/* Search Results Info */}
                     {searchQuery && (
@@ -375,14 +458,12 @@ export default function MeetingsPage() {
                             <div className="p-4 sm:p-6">
                               <div className="flex items-start justify-between gap-4">
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    {getStatusIcon(meeting.status)}
-                                    <span className={`px-2 py-1 text-xs font-semibold rounded-full shadow-sm ${getStatusColor(meeting.status)}`}>
-                                      {meeting.status}
+                                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2 line-clamp-2 flex items-center gap-2">
+                                    <span>{formatMeetingTitle(meeting)}</span>
+                                    <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full shadow-sm ${getStatusColor(meeting.status)}`}>
+                                      {getStatusIcon(meeting.status)}
+                                      <span className="ml-1">{meeting.status}</span>
                                     </span>
-                                  </div>
-                                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2 line-clamp-2">
-                                    {meeting.title}
                                   </h3>
                                   {meeting.summary && (
                                     <p className="text-sm text-slate-600 dark:text-slate-400 mb-3 line-clamp-2">

@@ -17,8 +17,9 @@ export interface Notification {
   metadata?: {
     repositoryId?: string;
     repositoryName?: string;
+    meetingId?: string;
     processingProgress?: number;
-    category?: 'repository' | 'billing' | 'system' | 'team' | 'security';
+    category?: 'repository' | 'billing' | 'system' | 'team' | 'security' | 'meeting' | 'analysis';
   };
 }
 

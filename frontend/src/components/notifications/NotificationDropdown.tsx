@@ -65,7 +65,7 @@ export default function NotificationDropdown({ className = '' }: NotificationDro
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Fetch notifications dynamically
-  const { data: notificationsData = { notifications: [], unreadCount: 0 }, isLoading } = useQuery({
+  const { data: notificationsData = { notifications: [], unreadCount: 0 }, isLoading, refetch } = useQuery({
     queryKey: ['notifications', selectedRepository?.id],
     queryFn: async () => {
       const response = await fetch(`/api/notifications${selectedRepository?.id ? `?repositoryId=${selectedRepository.id}` : ''}`);

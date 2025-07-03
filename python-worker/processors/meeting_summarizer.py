@@ -447,12 +447,11 @@ class MeetingProcessor:
                 question_embedding = question_embedding[:self.embedding_dimension]
             
             # Search for relevant segments
-            search_results = await qdrant_client.search_similar_embeddings(
-                embedding=question_embedding,
-                collection_name=self.meeting_collection,
+            search_results = await qdrant_client.search_meeting_segments(
+                query_embedding=question_embedding,
+                meeting_id=meeting_id,
                 limit=5,
-                score_threshold=0.5,
-                filter_by_repo_id=meeting_id
+                score_threshold=0.5
             )
             
             if not search_results:
@@ -596,3 +595,182 @@ Answer:"""
         minutes = int(seconds // 60)
         seconds = int(seconds % 60)
         return f"{minutes}:{seconds:02d}"
+
+    async def extract_action_items(self, meeting_id: str, user_id: str = "anonymous") -> Dict[str, Any]:
+        """Extract action items from meeting content."""
+        try:
+            logger.info(f"Extracting action items from meeting {meeting_id}")
+            
+            # Get meeting metadata from database
+            from services.database_service import database_service
+            meeting_info = await database_service.get_meeting_info(meeting_id)
+            
+            if not meeting_info:
+                return {
+                    "status": "error",
+                    "error": "Meeting not found or not processed yet",
+                    "action_items": []
+                }
+            
+            # Search for all meeting segments to get full context
+            from services.qdrant_client import qdrant_client
+            
+            # Get all segments for this meeting
+            all_segments = []
+            try:
+                # Use a broad query to get all segments
+                dummy_embedding = [0.0] * self.embedding_dimension
+                search_results = await qdrant_client.search_meeting_segments(
+                    query_embedding=dummy_embedding,
+                    meeting_id=meeting_id,
+                    limit=50,
+                    score_threshold=0.0  # Get all segments
+                )
+                
+                for result in search_results:
+                    metadata = result.get('metadata', {})
+                    all_segments.append({
+                        "segment_index": metadata.get('segment_index', 0),
+                        "title": metadata.get('title', 'Untitled'),
+                        "summary": metadata.get('summary', ''),
+                        "text": metadata.get('segment_text', ''),
+                        "start_time": metadata.get('start_time', 0),
+                        "end_time": metadata.get('end_time', 0)
+                    })
+                    
+                # Sort by segment index
+                all_segments.sort(key=lambda x: x['segment_index'])
+                
+            except Exception as e:
+                logger.warning(f"Could not retrieve meeting segments: {str(e)}")
+                all_segments = []
+            
+            if not all_segments:
+                return {
+                    "status": "completed",
+                    "action_items": [],
+                    "message": "No meeting content available for action item extraction"
+                }
+            
+            # Build context for action item extraction
+            context_text = f"Meeting: {meeting_info.get('title', 'Untitled Meeting')}\n"
+            context_text += f"Total Duration: {meeting_info.get('duration', 'Unknown')}\n\n"
+            context_text += "Meeting Content:\n"
+            
+            for segment in all_segments:
+                context_text += f"\n{segment['title']} ({self._format_time(segment['start_time'])} - {self._format_time(segment['end_time'])})\n"
+                context_text += f"Summary: {segment['summary']}\n"
+                context_text += f"Content: {segment['text'][:800]}{'...' if len(segment['text']) > 800 else ''}\n"
+            
+            # Use Gemini to extract action items
+            from services.gemini_client import gemini_client
+            
+            prompt = f"""You are analyzing a meeting transcript to extract actionable items. Based on the meeting content provided below, identify all action items, tasks, assignments, and follow-up items that were discussed.
+
+Meeting Context:
+{context_text}
+
+Instructions:
+1. Extract all action items, tasks, assignments, and follow-up items mentioned in the meeting
+2. For each action item, provide:
+   - A clear, concise description of what needs to be done
+   - Who is responsible (if mentioned)
+   - Any deadline or timeframe mentioned
+   - Priority level (high, medium, low) based on the discussion
+   - The relevant segment/timestamp where it was discussed
+3. Only include items that are clearly actionable (not just discussion topics)
+4. Be specific and avoid vague descriptions
+
+Format your response as a JSON object with this structure:
+{{
+    "action_items": [
+        {{
+            "id": "unique_id",
+            "title": "Short descriptive title",
+            "description": "Detailed description of what needs to be done",
+            "assignee": "Person responsible (or 'Unassigned' if not specified)",
+            "deadline": "Deadline if mentioned (or 'No deadline specified')",
+            "priority": "high|medium|low",
+            "segment_reference": "Segment title where this was discussed",
+            "timestamp": segment_start_time_in_seconds,
+            "status": "pending"
+        }}
+    ],
+    "summary": "Brief summary of the action items identified"
+}}
+
+Meeting Content to Analyze:
+{context_text[:4000]}"""  # Limit context to avoid token limits
+
+            try:
+                response = await gemini_client.generate_response(prompt)
+                
+                # Try to parse JSON response
+                import json
+                import re
+                
+                # Extract JSON from the response
+                json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(1)
+                else:
+                    # If no code block, try to find JSON object
+                    json_match = re.search(r'\{.*\}', response, re.DOTALL)
+                    if json_match:
+                        json_str = json_match.group(0)
+                    else:
+                        json_str = response
+                
+                result = json.loads(json_str)
+                
+                # Validate and enhance the result
+                action_items = result.get('action_items', [])
+                for i, item in enumerate(action_items):
+                    if 'id' not in item:
+                        item['id'] = f"action_{meeting_id}_{i+1}"
+                    if 'status' not in item:
+                        item['status'] = 'pending'
+                    if 'priority' not in item:
+                        item['priority'] = 'medium'
+                
+                logger.info(f"Extracted {len(action_items)} action items from meeting {meeting_id}")
+                
+                return {
+                    "status": "completed",
+                    "action_items": action_items,
+                    "summary": result.get('summary', f"Identified {len(action_items)} action items from the meeting"),
+                    "meeting_title": meeting_info.get('title', 'Untitled Meeting')
+                }
+                
+            except Exception as parse_error:
+                logger.error(f"Failed to parse AI response for action items: {str(parse_error)}")
+                
+                # Fallback: provide a basic action item extraction
+                fallback_items = [
+                    {
+                        "id": f"action_{meeting_id}_fallback_1",
+                        "title": "Review Meeting Outcomes",
+                        "description": "Review the outcomes and decisions made during this meeting",
+                        "assignee": "Meeting Participants",
+                        "deadline": "Within 1 week",
+                        "priority": "medium",
+                        "segment_reference": "General Meeting Content",
+                        "timestamp": 0,
+                        "status": "pending"
+                    }
+                ]
+                
+                return {
+                    "status": "completed",
+                    "action_items": fallback_items,
+                    "summary": "Basic action item extraction completed (AI parsing failed)",
+                    "meeting_title": meeting_info.get('title', 'Untitled Meeting')
+                }
+            
+        except Exception as e:
+            logger.error(f"Failed to extract action items from meeting {meeting_id}: {str(e)}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "action_items": []
+            }

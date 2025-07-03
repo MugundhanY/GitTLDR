@@ -36,6 +36,14 @@ model User {
   createdQuestions    Question[]           @relation("QuestionCreatedBy")
   uploadedAttachments QuestionAttachment[] @relation("AttachmentUploadedBy")
 
+  // New relations
+  meetingFavorites    MeetingFavorite[]
+  meetingComments     MeetingComment[]
+  createdActionItems  MeetingActionItem[]
+  assignedActionItems MeetingActionItem[]  @relation("ActionItemAssignee")
+  sharedMeetings      MeetingShareSetting[] @relation("SharedMeetings")
+  notifications       Notification[]       @relation("UserNotifications")
+
   @@map("users")
   Meeting Meeting[]
 }
@@ -170,6 +178,7 @@ model Meeting {
   title            String
   full_transcript  String?
   summary          String?
+  user_edited_summary String?   // New field for user-edited summary
   status           MeetingStatus @default(UPLOADED)
   created_at       DateTime      @default(now())
   updated_at       DateTime      @updatedAt
@@ -182,6 +191,12 @@ model Meeting {
   meeting_segments MeetingSegment[]
   userId           String?       @map("user_id")
   user             User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // New relations
+  favorites        MeetingFavorite[]
+  comments         MeetingComment[]
+  actionItems      MeetingActionItem[]
+  shareSettings    MeetingShareSetting[]
 
   @@map("meetings")
   Repository Repository[]
@@ -191,7 +206,7 @@ model Meeting {
 model MeetingSegment {
   id           String   @id @default(uuid())
   meeting_id   String
-  meeting      Meeting  @relation(fields: [meeting_id], references: [id])
+  meeting      Meeting  @relation(fields: [meeting_id], references: [id], onDelete: Cascade)
   segment_index Int
   title        String
   summary      String
@@ -206,20 +221,90 @@ model MeetingSegment {
   @@map("meeting_segments")
 }
 
-model Feedback {
-  id        String   @id @default(cuid())
-  answerId  String?  // QnA answer id (nullable for step/deep)
-  stepId    String?  // Step id (nullable for qna/deep)
-  type      String   // 'qna' | 'deep' | 'step'
-  value     String   // 'like' | 'dislike'
-  userId    String?  // User id (optional)
+// New model for meeting favorites
+model MeetingFavorite {
+  id        String   @id @default(uuid())
+  meetingId String   @map("meeting_id")
+  userId    String   @map("user_id")
   createdAt DateTime @default(now())
+  
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([meetingId, userId])
+  @@map("meeting_favorites")
+}
 
-  @@unique([answerId, userId, type], name: "answerId_userId_type")
-  @@index([answerId])
-  @@index([stepId])
-  @@index([userId])
-  @@map("feedback")
+// New model for meeting comments
+model MeetingComment {
+  id        String   @id @default(uuid())
+  meetingId String   @map("meeting_id")
+  userId    String   @map("user_id")
+  text      String
+  timestamp Float    // Position in meeting (seconds)
+  segmentId String?  @map("segment_id") // Optional reference to segment
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("meeting_comments")
+}
+
+// New model for meeting action items
+model MeetingActionItem {
+  id          String            @id @default(uuid())
+  meetingId   String            @map("meeting_id")
+  userId      String            @map("user_id") // Creator
+  assigneeId  String?           @map("assignee_id") // Optional assignee
+  text        String
+  completed   Boolean           @default(false)
+  priority    ActionItemPriority @default(MEDIUM)
+  dueDate     DateTime?         @map("due_date")
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  
+  meeting     Meeting           @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  creator     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignee    User?             @relation("ActionItemAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  
+  @@map("meeting_action_items")
+}
+
+// New model for meeting share settings
+model MeetingShareSetting {
+  id          String            @id @default(uuid())
+  meetingId   String            @map("meeting_id")
+  userId      String            @map("user_id") // User being shared with
+  permission  SharePermission   @default(VIEW)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  
+  meeting     Meeting           @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user        User              @relation("SharedMeetings", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([meetingId, userId])
+  @@map("meeting_share_settings")
+}
+
+// New model for notifications
+model Notification {
+  id          String              @id @default(uuid())
+  userId      String              @map("user_id")
+  type        NotificationType
+  title       String
+  message     String
+  read        Boolean             @default(false)
+  actionUrl   String?             @map("action_url")
+  actionText  String?             @map("action_text")
+  metadata    Json?               // Additional data as JSON
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  
+  user        User                @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("notifications")
 }
 
 enum RepositoryStatus {
@@ -241,4 +326,30 @@ enum MeetingStatus {
   SUMMARIZING
   COMPLETED
   FAILED
+}
+
+enum ActionItemPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum SharePermission {
+  VIEW
+  EDIT
+}
+
+enum NotificationType {
+  REPO_CREATED
+  REPO_PROCESSED
+  REPO_FAILED
+  MEETING_UPLOADED
+  MEETING_PROCESSED
+  MEETING_FAILED
+  CREDITS_LOW
+  CREDITS_DEPLETED
+  ACTION_ITEM_ASSIGNED
+  ACTION_ITEM_COMPLETED
+  COMMENT_ADDED
+  MEETING_SHARED
 }

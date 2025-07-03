@@ -398,6 +398,34 @@ async def meeting_qa_endpoint(request: MeetingQARequest):
         logger.error(f"Failed to process meeting Q&A: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/extract-action-items")
+async def extract_action_items_endpoint(request: MeetingQARequest):
+    """
+    Extract action items from meeting content.
+    """
+    try:
+        from processors.meeting_summarizer import MeetingProcessor
+        
+        logger.info(f"Extracting action items for meeting {request.meeting_id}")
+        
+        # Create meeting processor
+        meeting_processor = MeetingProcessor()
+        
+        # Extract action items from meeting
+        result = await meeting_processor.extract_action_items(
+            meeting_id=request.meeting_id,
+            user_id=request.user_id
+        )
+        
+        return {
+            "status": "success",
+            "result": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to extract action items: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Add WebSocket support for real-time updates
 from fastapi import WebSocket, WebSocketDisconnect
 

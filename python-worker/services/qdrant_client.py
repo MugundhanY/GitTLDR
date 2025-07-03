@@ -102,8 +102,26 @@ class QuadrantVectorClient:
                     )
                     logger.info("Created index for content_type field")
                     
-                except Exception as index_error:
-                    logger.warning(f"Failed to create some indexes: {str(index_error)}")
+                    # Index for meeting_id field (for meeting Q&A)
+                    self.client.create_payload_index(
+                        collection_name=self.settings.collection_name,
+                        field_name="meeting_id",
+                        field_schema=PayloadSchemaType.KEYWORD
+                    )
+                    logger.info("Created index for meeting_id field")
+                    
+                    # Index for segment_index field (for meeting segments)
+                    self.client.create_payload_index(
+                        collection_name=self.settings.collection_name,
+                        field_name="segment_index",
+                        field_schema=PayloadSchemaType.INTEGER
+                    )
+                    logger.info("Created index for segment_index field")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to create indexes: {str(e)}")
+                    # Don't raise the error, just log it
+                    pass
                     
             else:
                 logger.info("Collection already exists", name=self.settings.collection_name)
@@ -128,13 +146,28 @@ class QuadrantVectorClient:
                         field_name="content_type",
                         field_schema=PayloadSchemaType.KEYWORD
                     )
-                    logger.info("Ensured indexes exist for existing collection")
+                    
+                    # Index for meeting_id field (for meeting Q&A)
+                    self.client.create_payload_index(
+                        collection_name=self.settings.collection_name,
+                        field_name="meeting_id",
+                        field_schema=PayloadSchemaType.KEYWORD
+                    )
+                    
+                    # Index for segment_index field (for meeting segments)
+                    self.client.create_payload_index(
+                        collection_name=self.settings.collection_name,
+                        field_name="segment_index",
+                        field_schema=PayloadSchemaType.INTEGER
+                    )
+                    
+                    logger.info("Ensured all indexes exist for existing collection")
                     
                 except Exception as index_error:
-                    logger.debug(f"Indexes may already exist: {str(index_error)}")
-                
+                    logger.warning(f"Failed to create some indexes: {str(index_error)}")
+                    
         except Exception as e:
-            logger.error("Failed to ensure collection exists", error=str(e))
+            logger.error(f"Failed to create/verify collection: {str(e)}")
             raise
             
     def ensure_collection_exists(self, collection_name: str, dimension: int) -> None:
