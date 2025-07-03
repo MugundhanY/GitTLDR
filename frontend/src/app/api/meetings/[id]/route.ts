@@ -59,6 +59,8 @@ export async function GET(
       language: meeting.language || undefined,
       source: meeting.source || undefined,
       segmentCount: meeting.num_segments || 0,
+      raw_audio_path: meeting.raw_audio_path || undefined,
+      video_path: meeting.participants || undefined, // Assuming video_path is stored in participants field for now
       user: meeting.user,
       segments: meeting.meeting_segments.map(segment => ({
         id: segment.id,

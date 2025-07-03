@@ -43,6 +43,7 @@ model User {
   assignedActionItems MeetingActionItem[]  @relation("ActionItemAssignee")
   sharedMeetings      MeetingShareSetting[] @relation("SharedMeetings")
   notifications       Notification[]       @relation("UserNotifications")
+  meetingQAs          MeetingQA[]
 
   @@map("users")
   Meeting Meeting[]
@@ -197,6 +198,7 @@ model Meeting {
   comments         MeetingComment[]
   actionItems      MeetingActionItem[]
   shareSettings    MeetingShareSetting[]
+  qaItems          MeetingQA[]
 
   @@map("meetings")
   Repository Repository[]
@@ -219,6 +221,25 @@ model MeetingSegment {
 
   @@unique([meeting_id, segment_index], name: "meeting_id_segment_index")
   @@map("meeting_segments")
+}
+
+// New model for meeting Q&A
+model MeetingQA {
+  id               String   @id @default(uuid())
+  meetingId        String   @map("meeting_id")
+  userId           String   @map("user_id")
+  question         String
+  answer           String
+  confidence       Float?   @default(0.0)
+  timestamp        Float?   // Position in meeting (seconds)
+  relatedSegments  String[] @map("related_segments")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  
+  meeting          Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("meeting_qa")
 }
 
 // New model for meeting favorites

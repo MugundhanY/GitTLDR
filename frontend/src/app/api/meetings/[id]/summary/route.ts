@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
 
-// Simple in-memory storage for meeting summaries (in production, use a real database)
-const summaryStorage = new Map<string, string>();
+const prisma = new PrismaClient();
 
 export async function GET(
   request: NextRequest,
@@ -10,11 +10,26 @@ export async function GET(
   try {
     const { id: meetingId } = await params;
     
-    // Get stored summary or return null
-    const storedSummary = summaryStorage.get(meetingId);
+    // Get meeting from database
+    const meeting = await prisma.meeting.findUnique({
+      where: { id: meetingId },
+      select: {
+        summary: true,
+        user_edited_summary: true
+      }
+    });
+    
+    if (!meeting) {
+      return NextResponse.json(
+        { error: 'Meeting not found' },
+        { status: 404 }
+      );
+    }
     
     return NextResponse.json({ 
-      summary: storedSummary || null
+      summary: meeting.user_edited_summary || meeting.summary || null,
+      userEditedSummary: meeting.user_edited_summary,
+      originalSummary: meeting.summary
     });
   } catch (error) {
     console.error('Get summary API error:', error);
@@ -41,14 +56,25 @@ export async function PUT(
       );
     }
     
-    // Store the updated summary
-    summaryStorage.set(meetingId, summary);
+    // Update the meeting summary in database
+    const updatedMeeting = await prisma.meeting.update({
+      where: { id: meetingId },
+      data: {
+        user_edited_summary: summary
+      },
+      select: {
+        id: true,
+        summary: true,
+        user_edited_summary: true
+      }
+    });
     
     console.log(`Meeting ${meetingId} summary updated:`, { summary, type });
     
     return NextResponse.json({ 
       success: true, 
-      summary,
+      summary: updatedMeeting.user_edited_summary,
+      originalSummary: updatedMeeting.summary,
       type: type || 'user'
     });
   } catch (error) {

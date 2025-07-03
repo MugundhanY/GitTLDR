@@ -61,27 +61,27 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
     }
   }, [question]);
 
-  // Fetch real Q&A history instead of using demo items
+  // Fetch Q&A history instead of using demo items
   useEffect(() => {
-    if (qaHistory.length === 0 && meetingId) {
-      const fetchQAHistory = async () => {
-        try {
-          const response = await fetch(`/api/meetings/${meetingId}/qa-history`);
-          
-          if (response.ok) {
-            const data = await response.json();
-            if (data.qaItems && data.qaItems.length > 0) {
-              setQAHistory(data.qaItems);
-            }
-          }
-        } catch (error) {
-          console.error('Failed to fetch QA history:', error);
-        }
-      };
+    const fetchQAHistory = async () => {
+      if (!meetingId || !userData?.id) return;
       
-      fetchQAHistory();
-    }
-  }, [qaHistory.length, meetingId]);
+      try {
+        const response = await fetch(`/api/meetings/${meetingId}/qa-history?userId=${userData.id}`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.qaItems && data.qaItems.length > 0) {
+            setQAHistory(data.qaItems);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch QA history:', error);
+      }
+    };
+    
+    fetchQAHistory();
+  }, [meetingId, userData?.id]);
 
   const handleAskQuestion = async () => {
     if (!question.trim() || isAsking) return;
@@ -106,16 +106,14 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
       setQAHistory(prev => [optimisticQA, ...prev]);
 
       // Call the actual Meeting Q&A API
-      const response = await fetch('/api/python-worker/meeting-qa', {
+      const response = await fetch(`/api/meetings/${meetingId}/qa`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          meeting_id: meetingId,
           question: currentQuestion,
-          user_id: userData?.id || '1', // Fallback to '1' if no user data
-          index_fields: true // This ensures the meeting_id field is properly indexed
+          user_id: userData?.id || '1' // Fallback to '1' if no user data
         })
       });
 
@@ -124,22 +122,44 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
       }
 
       const data = await response.json();
-      const result = data.result;
 
-      if (result.status === 'completed') {
+      if (data.result && data.result.status === 'completed') {
         // Update with real answer
+        const updatedQA = {
+          ...optimisticQA,
+          answer: data.result.answer,
+          timestamp: data.result.suggested_timestamp,
+          relatedSegments: data.result.related_segments?.map((seg: any) => `segment-${seg.segment_index}`) || [],
+          confidence: data.result.confidence || 0.8
+        };
+        
         setQAHistory(prev => prev.map(qa => 
-          qa.id === optimisticId ? 
-          {
-            ...qa,
-            answer: result.answer,
-            timestamp: result.suggested_timestamp,
-            relatedSegments: result.related_segments?.map((seg: any) => `segment-${seg.segment_index}`) || [],
-            confidence: result.confidence || 0.8
-          } : qa
+          qa.id === optimisticId ? updatedQA : qa
         ));
+        
+        // Store successful Q&A in database
+        try {
+          await fetch(`/api/meetings/${meetingId}/qa-history`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              question: currentQuestion,
+              answer: data.result.answer,
+              confidence: data.result.confidence || 0.8,
+              timestamp: data.result.suggested_timestamp,
+              relatedSegments: data.result.related_segments?.map((seg: any) => `segment-${seg.segment_index}`) || [],
+              userId: userData?.id
+            })
+          });
+        } catch (storeError) {
+          console.error('Failed to store Q&A in database:', storeError);
+        }
+      } else if (data.error) {
+        throw new Error(data.error);
       } else {
-        throw new Error(result.error || 'Failed to process question');
+        throw new Error('Unexpected response format');
       }
 
     } catch (error) {
@@ -346,10 +366,11 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
             </div>
           )}
 
-          {filteredQA.map((qa) => (
+          {filteredQA.map((qa, index) => (
             <div
               key={qa.id}
-              className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden hover:shadow-md transition-all duration-300 transform hover:-translate-y-1"
+              className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden hover:shadow-md transition-all duration-300 transform hover:-translate-y-1 premium-qa-item premium-hover"
+              style={{ animationDelay: `${index * 0.1}s` }}
             >
               <div
                 className="p-4 cursor-pointer"

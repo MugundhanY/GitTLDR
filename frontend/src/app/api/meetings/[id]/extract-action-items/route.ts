@@ -8,7 +8,7 @@ export async function POST(
     const { id: meetingId } = await params;
     
     // Forward to Python worker for actual action item extraction
-    const pythonWorkerUrl = process.env.PYTHON_WORKER_URL || 'http://localhost:8000';
+    const pythonWorkerUrl = process.env.PYTHON_WORKER_URL || 'http://localhost:8001';
     
     try {
       const response = await fetch(`${pythonWorkerUrl}/extract-action-items`, {
@@ -67,35 +67,12 @@ export async function POST(
 }
 
 function getMockActionItems(meetingId: string) {
-  const mockActionItems = [
-    {
-      id: `action-${Date.now()}-1`,
-      text: 'Follow up on project timeline discussion and update stakeholders',
-      completed: false,
-      priority: 'high',
-      assignee: 'Team Lead',
-      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-    },
-    {
-      id: `action-${Date.now()}-2`,
-      text: 'Schedule next team meeting for sprint planning',
-      completed: false,
-      priority: 'medium',
-      assignee: 'Project Manager',
-      dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
-    },
-    {
-      id: `action-${Date.now()}-3`,
-      text: 'Review and approve pending pull requests',
-      completed: false,
-      priority: 'high',
-      assignee: 'Senior Developer',
-      dueDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString()
-    }
-  ];
-
+  // Return empty array by default instead of mock data
+  // This prevents "No action items extracted yet" message from appearing
+  // when there are no real action items
+  
   return NextResponse.json({
-    actionItems: mockActionItems,
-    summary: `Extracted ${mockActionItems.length} action items from the meeting (fallback mode).`
+    actionItems: [],
+    summary: 'No action items found in this meeting.'
   });
 }

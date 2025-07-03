@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
 
-// Simple in-memory storage for comments (in production, use a real database)
-const commentStorage = new Map<string, any[]>();
+const prisma = new PrismaClient();
 
 export async function GET(
   request: NextRequest,
@@ -10,8 +10,20 @@ export async function GET(
   try {
     const { id: meetingId } = await params;
     
-    // Get comments for this meeting from storage
-    const comments = commentStorage.get(meetingId) || [];
+    // Get comments for this meeting from database
+    const comments = await prisma.meetingComment.findMany({
+      where: { meetingId },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        }
+      }
+    });
     
     return NextResponse.json({ comments });
   } catch (error) {
@@ -30,7 +42,7 @@ export async function POST(
   try {
     const { id: meetingId } = await params;
     const body = await request.json();
-    const { text, timestamp, segmentId } = body;
+    const { text, timestamp, segmentId, userId = 'default-user' } = body;
     
     if (!text || text.trim().length === 0) {
       return NextResponse.json(
@@ -39,27 +51,25 @@ export async function POST(
       );
     }
     
-    // Create new comment
-    const newComment = {
-      id: `comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      text: text.trim(),
-      timestamp: timestamp || 0,
-      segmentId,
-      createdAt: new Date().toISOString(),
-      user: {
-        name: 'You',
-        avatarUrl: null
+    // Create new comment in database
+    const newComment = await prisma.meetingComment.create({
+      data: {
+        meetingId,
+        text: text.trim(),
+        timestamp: timestamp || 0,
+        segmentId,
+        userId
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        }
       }
-    };
-    
-    // Get existing comments or initialize empty array
-    const existingComments = commentStorage.get(meetingId) || [];
-    
-    // Add new comment
-    const updatedComments = [...existingComments, newComment];
-    
-    // Store updated comments
-    commentStorage.set(meetingId, updatedComments);
+    });
     
     console.log(`Added comment to meeting ${meetingId}:`, newComment);
     

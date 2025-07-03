@@ -25,6 +25,7 @@ export interface Meeting {
   source?: string;
   segmentCount: number;
   segments: MeetingSegment[];
+  isFavorite?: boolean;
   user?: {
     id: string;
     name: string;

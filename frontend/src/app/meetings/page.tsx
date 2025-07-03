@@ -19,8 +19,10 @@ import {
   UserIcon,
   SparklesIcon,
   ArrowUpTrayIcon,
-  XMarkIcon
+  XMarkIcon,
+  HeartIcon
 } from '@heroicons/react/24/outline'
+import { HeartIcon as HeartSolidIcon } from '@heroicons/react/24/solid'
 import { useSidebar } from '@/contexts/SidebarContext'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -422,7 +424,7 @@ export default function MeetingsPage() {
                     {/* Search Results Info */}
                     {searchQuery && (
                       <div className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                        Found {filteredMeetings.length} meeting{filteredMeetings.length !== 1 ? 's' : ''} matching "{searchQuery}"
+                        Found {filteredMeetings.length} meeting{filteredMeetings.length !== 1 ? 's' : ''} matching &quot;{searchQuery}&quot;
                       </div>
                     )}
                   </div>
@@ -460,6 +462,9 @@ export default function MeetingsPage() {
                                 <div className="flex-1 min-w-0">
                                   <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2 line-clamp-2 flex items-center gap-2">
                                     <span>{formatMeetingTitle(meeting)}</span>
+                                    {(meeting as any).isFavorite && (
+                                      <HeartSolidIcon className="w-4 h-4 text-red-500 flex-shrink-0" title="Favorite" />
+                                    )}
                                     <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full shadow-sm ${getStatusColor(meeting.status)}`}>
                                       {getStatusIcon(meeting.status)}
                                       <span className="ml-1">{meeting.status}</span>

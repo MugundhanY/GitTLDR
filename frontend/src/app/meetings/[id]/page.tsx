@@ -17,6 +17,7 @@ import MeetingParticipants from '@/components/meetings/MeetingParticipants'
 import { ShareModal, ExportModal } from '@/components/meetings/MeetingModals'
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import { useNotifications } from '@/contexts/NotificationContext'
+import { useUserData } from '@/hooks/useUserData'
 
 interface MeetingSegment {
   id: string
@@ -76,6 +77,7 @@ export default function MeetingDetailPage() {
   const router = useRouter()
   const meetingId = params?.id as string
   const { addNotification } = useNotifications()
+  const { userData } = useUserData()
   
   // Audio player state
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -135,10 +137,10 @@ export default function MeetingDetailPage() {
   // Fetch favorite status
   useEffect(() => {
     const fetchFavoriteStatus = async () => {
-      if (!meetingId) return;
+      if (!meetingId || !userData?.id) return;
       
       try {
-        const response = await fetch(`/api/meetings/${meetingId}/favorite`);
+        const response = await fetch(`/api/meetings/${meetingId}/favorite?userId=${userData.id}`);
         if (response.ok) {
           const data = await response.json();
           setIsFavorite(data.isFavorite);
@@ -149,7 +151,55 @@ export default function MeetingDetailPage() {
     };
     
     fetchFavoriteStatus();
-  }, [meetingId]);
+  }, [meetingId, userData?.id]);
+
+  // Toggle favorite status
+  const toggleFavorite = async () => {
+    if (!userData?.id) {
+      addNotification({
+        type: 'error',
+        title: 'Authentication required',
+        message: 'Please log in to manage favorites.'
+      });
+      return;
+    }
+
+    const newStatus = !isFavorite;
+    setIsFavorite(newStatus);
+    
+    try {
+      const response = await fetch(`/api/meetings/${meetingId}/favorite`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          isFavorite: newStatus,
+          userId: userData.id
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to update favorite status');
+      }
+      
+      // Add success notification
+      addNotification({
+        type: 'success',
+        title: newStatus ? 'Meeting favorited' : 'Meeting removed from favorites',
+        message: `${meeting?.title || 'Meeting'} has been ${newStatus ? 'added to' : 'removed from'} your favorites.`,
+        metadata: { meetingId, category: 'meeting' }
+      });
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+      setIsFavorite(!isFavorite);
+      addNotification({
+        type: 'error',
+        title: 'Error updating favorite',
+        message: 'Failed to update favorite status. Please try again.'
+      });
+    }
+  };
 
   // Initialize audio when meeting data loads
   useEffect(() => {
@@ -198,6 +248,15 @@ export default function MeetingDetailPage() {
       audio.addEventListener('canplay', handleCanPlay);
       audio.addEventListener('error', handleError);
       
+      // Set audio source if available
+      if (meeting.raw_audio_path) {
+        audio.src = meeting.raw_audio_path;
+      } else {
+        // Mock audio path for testing
+        audio.src = '/api/placeholder-audio.mp3';
+        console.warn('No audio source available, using placeholder');
+      }
+      
       return () => {
         audio.removeEventListener('loadedmetadata', handleLoadedMetadata)
         audio.removeEventListener('timeupdate', handleTimeUpdate)
@@ -211,11 +270,13 @@ export default function MeetingDetailPage() {
 
   // Initialize summary for editing
   useEffect(() => {
-    if (meeting?.summary) {
-      setEditedSummary(meeting.summary)
+    if (meeting) {
+      // Prioritize user-edited summary, fallback to AI summary
+      setEditedSummary(meeting.user_edited_summary || meeting.summary || '')
       
       // Calculate sentiment (mock implementation)
-      const words = meeting.summary.split(' ')
+      const summaryText = meeting.user_edited_summary || meeting.summary || ''
+      const words = summaryText.split(' ')
       const positiveWords = words.filter(word => 
         ['good', 'great', 'excellent', 'positive', 'success', 'achieved', 'completed'].includes(word.toLowerCase())
       ).length
@@ -418,38 +479,6 @@ export default function MeetingDetailPage() {
     }
   }
 
-  // Save favorite status to the database
-  const toggleFavorite = async () => {
-    try {
-      const newStatus = !isFavorite;
-      setIsFavorite(newStatus);
-      
-      const response = await fetch(`/api/meetings/${meetingId}/favorite`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          isFavorite: newStatus
-        }),
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to update favorite status');
-      }
-      
-      // Add success notification
-      addNotification({
-        type: 'success',
-        title: newStatus ? 'Meeting favorited' : 'Meeting removed from favorites',
-        message: `${meeting?.title || 'Meeting'} has been ${newStatus ? 'added to' : 'removed from'} your favorites.`,
-        metadata: { meetingId, category: 'meeting' }
-      });
-    } catch (error) {
-      console.error('Error toggling favorite:', error);
-      setIsFavorite(!isFavorite);
-    }
-  };
 
   // Toggle action item completion status
   const toggleActionItem = async (itemId: string) => {
@@ -666,9 +695,9 @@ export default function MeetingDetailPage() {
           />
           
           {/* Content Grid */}
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-6">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-6 premium-fade-in-up">
             {/* Main Content - Takes up 2/3 width */}
-            <div className="xl:col-span-2 space-y-6">
+            <div className="xl:col-span-2 space-y-6 premium-slide-in">
               {/* Meeting Q&A */}
               <MeetingQA 
                 meetingId={meetingId}
@@ -708,7 +737,7 @@ export default function MeetingDetailPage() {
             </div>
             
             {/* Right Sidebar - Takes up 1/3 width */}
-            <div className="xl:col-span-1 space-y-6">
+            <div className="xl:col-span-1 space-y-6 premium-fade-in-up" style={{animationDelay: '0.3s'}}>
               {/* Participants */}
               <MeetingParticipants
                 meetingId={meetingId}

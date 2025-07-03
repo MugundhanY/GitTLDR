@@ -9,6 +9,7 @@ import {
   TrashIcon,
   UserIcon
 } from '@heroicons/react/24/outline';
+import { useUserData } from '@/hooks/useUserData';
 
 interface Comment {
   id: string;
@@ -42,6 +43,7 @@ export default function MeetingComments({
   const [commentTimestamp, setCommentTimestamp] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { userData } = useUserData();
 
   useEffect(() => {
     setCommentTimestamp(currentTime);
@@ -95,7 +97,8 @@ export default function MeetingComments({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: newComment,
-          timestamp: commentTimestamp || currentTime
+          timestamp: commentTimestamp || currentTime,
+          userId: userData?.id || 'anonymous'
         })
       });
 
@@ -184,8 +187,8 @@ export default function MeetingComments({
               </p>
             </div>
           ) : (
-            comments.map((comment) => (
-              <div key={comment.id} className="group relative animate-in slide-in-from-top-2 duration-300">
+            comments.map((comment, index) => (
+              <div key={comment.id} className="group relative premium-comment premium-hover" style={{ animationDelay: `${index * 0.1}s` }}>
                 <div className="flex items-start gap-3 p-4 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-800/60 rounded-xl hover:shadow-md transition-all">
                   <div className="w-9 h-9 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center flex-shrink-0 ring-2 ring-white dark:ring-slate-700">
                     {comment.user.avatarUrl ? (

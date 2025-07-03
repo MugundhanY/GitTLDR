@@ -94,6 +94,14 @@ export async function GET(request: NextRequest) {
           orderBy: {
             segment_index: 'asc'
           }
+        },
+        favorites: {
+          where: {
+            userId: userId
+          },
+          select: {
+            id: true
+          }
         }
       },
       orderBy: {
@@ -112,6 +120,7 @@ export async function GET(request: NextRequest) {
       updatedAt: meeting.updated_at.toISOString(),
       language: meeting.language || undefined,
       segmentCount: meeting.num_segments || 0,
+      isFavorite: meeting.favorites.length > 0,
       segments: meeting.meeting_segments.map(segment => ({
         id: segment.id,
         title: segment.title,
