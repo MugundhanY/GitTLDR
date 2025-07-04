@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 export async function POST(
   request: NextRequest,
@@ -6,6 +9,8 @@ export async function POST(
 ) {
   try {
     const { id: meetingId } = await params;
+    const body = await request.json();
+    const { user_id } = body;
     
     // Forward to Python worker for actual action item extraction
     const pythonWorkerUrl = process.env.PYTHON_WORKER_URL || 'http://localhost:8001';
@@ -19,7 +24,7 @@ export async function POST(
         body: JSON.stringify({
           meeting_id: meetingId,
           question: "Extract action items", // Not used but required by endpoint
-          user_id: 'default-user'
+          user_id: user_id || 'default-user'
         })
       });
 
@@ -34,10 +39,40 @@ export async function POST(
           completed: item.status === 'completed',
           priority: item.priority || 'medium',
           assignee: item.assignee || 'Unassigned',
-          dueDate: item.deadline !== 'No deadline specified' ? 
+          dueDate: item.deadline !== 'No deadline specified' && item.deadline !== 'To be determined' ? 
             new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() : 
-            null
+            null,
+          timestamp: item.timestamp || 0
         }));
+        
+        // Store action items in database
+        try {
+          // First, delete any existing action items for this meeting to avoid duplicates
+          await prisma.meetingActionItem.deleteMany({
+            where: { meetingId }
+          });
+          
+          // Then create new action items
+          if (transformedItems.length > 0) {
+            await prisma.meetingActionItem.createMany({
+              data: transformedItems.map((item: any) => ({
+                id: item.id,
+                meetingId,
+                userId: user_id || 'default-user',
+                assigneeId: null, // We could try to match assignee to actual users later
+                text: item.text,
+                completed: item.completed,
+                priority: item.priority.toUpperCase() as any, // Convert to enum
+                dueDate: item.dueDate ? new Date(item.dueDate) : null
+              }))
+            });
+            
+            console.log(`Stored ${transformedItems.length} action items for meeting ${meetingId}`);
+          }
+        } catch (dbError) {
+          console.error('Failed to store action items in database:', dbError);
+          // Don't fail the request if database storage fails
+        }
         
         return NextResponse.json({
           actionItems: transformedItems,

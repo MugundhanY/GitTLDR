@@ -47,12 +47,14 @@ export async function GET(
       );
     }
 
-    // Transform the data for the frontend
+
+    // Transform the data for the frontend, including user_edited_summary
     const transformedMeeting = {
       id: meeting.id,
       title: meeting.title,
       transcript: meeting.full_transcript || undefined,
       summary: meeting.summary || undefined,
+      user_edited_summary: meeting.user_edited_summary || undefined,
       status: meeting.status.toLowerCase(),
       createdAt: meeting.created_at.toISOString(),
       updatedAt: meeting.updated_at.toISOString(),

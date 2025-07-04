@@ -343,38 +343,19 @@ class MeetingProcessor:
             titles = self.batch_generate_titles_gemini(segment_texts, api_key, model=title_model)
             summaries = self.batch_generate_summaries_gemini(segment_texts, api_key, model=summary_model)
             meeting_title = self.generate_title_gemini(full_transcript, api_key, model=title_model)
+            # Prepare segments for storage
+            segments_for_qdrant = []
             segments = []
             for i, s in enumerate(segment_data):
-                embedding = self.embedder.encode(s["segment_text"]).tolist()
-                if len(embedding) < self.embedding_dimension:
-                    embedding += [0.0] * (self.embedding_dimension - len(embedding))
-                elif len(embedding) > self.embedding_dimension:
-                    embedding = embedding[:self.embedding_dimension]
-                metadata = {
-                    "meeting_id": meeting_id,
-                    "segment_index": i,
+                segments_for_qdrant.append({
+                    "index": i,
                     "title": titles[i],
-                    "start_time": s["start_time"],
-                    "end_time": s["end_time"],
-                    "excerpt": s["excerpt"],
                     "summary": summaries[i],
-                    "segment_text": s["segment_text"]
-                }
-                try:
-                    point_id = str(uuid.uuid4())
-                    await qdrant_client.store_embedding_with_metadata(
-                        embedding=embedding,
-                        metadata=metadata,
-                        point_id=point_id,
-                        repo_id=meeting_id,
-                        file_path=f"meeting_segment_{i}",
-                        text=s["segment_text"],
-                        collection_name=self.meeting_collection,
-                        dimension=self.embedding_dimension
-                    )
-                    logger.info(f"Stored embedding for meeting {meeting_id} segment {i} in collection {self.meeting_collection}")
-                except Exception as e:
-                    logger.error(f"Failed to store embedding for segment {i}: {e}")
+                    "text": s["segment_text"],
+                    "startTime": s["start_time"],
+                    "endTime": s["end_time"],
+                    "excerpt": s["excerpt"]
+                })
                 segments.append({
                     "title": titles[i],
                     "start_time": s["start_time"],
@@ -383,7 +364,16 @@ class MeetingProcessor:
                     "summary": summaries[i],
                     "segment_text": s["segment_text"]
                 })
-                summary = " ".join(summaries)
+            
+            # Store all segments in Qdrant at once
+            try:
+                await qdrant_client.store_meeting_segments(meeting_id, segments_for_qdrant)
+                logger.info(f"Successfully stored {len(segments_for_qdrant)} meeting segments in Qdrant for meeting {meeting_id}")
+            except Exception as e:
+                logger.error(f"Failed to store meeting segments in Qdrant: {e}")
+                traceback.print_exc()
+            
+            summary = " ".join(summaries)
             # Send all final data before returning
             completed_payload = {
                 "num_segments": len(segments),
@@ -446,20 +436,76 @@ class MeetingProcessor:
             elif len(question_embedding) > self.embedding_dimension:
                 question_embedding = question_embedding[:self.embedding_dimension]
             
-            # Search for relevant segments
+            # Search for relevant segments with improved logic
             search_results = await qdrant_client.search_meeting_segments(
                 query_embedding=question_embedding,
                 meeting_id=meeting_id,
-                limit=5,
-                score_threshold=0.5
+                limit=10,  # Increased limit
+                score_threshold=0.1  # Lowered threshold for more results
             )
             
+            # If no results with specific meeting_id, try to backfill from database
             if not search_results:
+                logger.warning(f"No segments found for meeting {meeting_id} in Qdrant, attempting backfill from database")
+                
+                # Try to backfill segments from database to Qdrant
+                backfill_success = await self.backfill_meeting_segments_to_qdrant(meeting_id)
+                
+                if backfill_success:
+                    # Wait a moment for Qdrant to index
+                    import time
+                    time.sleep(1)
+                    
+                    # Try search again after backfill
+                    search_results = await qdrant_client.search_meeting_segments(
+                        query_embedding=question_embedding,
+                        meeting_id=meeting_id,
+                        limit=15,  # Increased
+                        score_threshold=0.05  # Lower threshold
+                    )
+                    
+                    if search_results:
+                        logger.info(f"Successfully found {len(search_results)} segments after backfill")
+                    else:
+                        logger.warning("Still no segments found after backfill attempt")
+                        
+                        # Final fallback: use database segments directly
+                        logger.info("Using database segments directly as final fallback")
+                        meeting_data = await database_service.get_meeting_info(meeting_id)
+                        if meeting_data and 'segments' in meeting_data:
+                            db_segments = meeting_data['segments']
+                            # Create fake search results from database segments
+                            search_results = []
+                            for segment in db_segments[:10]:  # Limit to 10 segments
+                                search_results.append({
+                                    'metadata': {
+                                        'meeting_id': meeting_id,
+                                        'segment_index': segment.get('segment_index', 0),
+                                        'title': segment.get('title', 'Untitled'),
+                                        'summary': segment.get('summary', ''),
+                                        'segment_text': segment.get('segment_text', ''),
+                                        'start_time': segment.get('start_time', 0),
+                                        'end_time': segment.get('end_time', 0)
+                                    },
+                                    'score': 0.7  # Reasonable default score
+                                })
+                            logger.info(f"Using {len(search_results)} database segments as fallback")
+                
+            if not search_results:
+                # Meeting exists but no segments found after all attempts
+                logger.error(f"Meeting {meeting_id} exists in database but no searchable segments found after backfill attempts")
                 return {
                     "status": "completed",
-                    "answer": "I couldn't find relevant information in this meeting to answer your question. The meeting might not contain discussion about this topic.",
-                    "confidence": 0.2,
-                    "related_segments": []
+                    "answer": "I found the meeting but cannot access its content for Q&A. This might be due to a processing issue. Please try asking your question again, and if the problem persists, the meeting content may need to be reprocessed.",
+                    "confidence": 0.05,
+                    "related_segments": [],
+                    "debug_info": {
+                        "meeting_exists": True,
+                        "segments_in_qdrant": 0,
+                        "meeting_title": meeting_info.get('title', 'Unknown'),
+                        "backfill_attempted": True,
+                        "fallback_attempted": True
+                    }
                 }
             
             # Prepare context from relevant segments
@@ -498,12 +544,15 @@ Meeting Context:
 User Question: {question}
 
 Instructions:
-1. Answer based ONLY on the information provided in the meeting segments
-2. If the answer involves specific times or actions, reference the relevant segment timestamps
-3. If the information is not available in the segments, say so clearly
-4. Be specific about who said what, when possible
-5. Include relevant details like deadlines, assignments, decisions, or action items
-6. Keep the answer focused and actionable
+1. Answer based ONLY on the information provided in the meeting segments.
+2. If the answer involves specific times or actions, reference the relevant segment timestamps.
+3. When referring to a segment, use the format: "segment N (start-end)", where N is the segment number as shown in the list below (starting from 1 for users, not 0).
+4. If the information is not available in the segments, say so clearly.
+5. Be specific about who said what, when possible.
+6. Include relevant details like deadlines, assignments, decisions, or action items.
+7. Keep the answer focused and actionable.
+
+Note: Segment numbers in the list below are 1-based for users. Always reference segments as "segment N (start-end)" when possible.
 
 Answer:"""
 
@@ -588,6 +637,15 @@ Answer:"""
                 "related_segments": []
             }
     
+    async def answer_meeting_question(self, meeting_id: str, question: str, user_id: str = "anonymous") -> Dict[str, Any]:
+        """Answer a question about a specific meeting using existing process_meeting_qa method."""
+        task_data = {
+            "meetingId": meeting_id,
+            "question": question,
+            "userId": user_id
+        }
+        return await self.process_meeting_qa(task_data, logger)
+
     def _format_time(self, seconds: float) -> str:
         """Format seconds to MM:SS format."""
         if not seconds or seconds < 0:
@@ -615,35 +673,77 @@ Answer:"""
             # Search for all meeting segments to get full context
             from services.qdrant_client import qdrant_client
             
-            # Get all segments for this meeting
+            # Get all segments for this meeting with improved search
             all_segments = []
             try:
-                # Use a broad query to get all segments
+                # Use a very broad query to get all segments for this meeting
                 dummy_embedding = [0.0] * self.embedding_dimension
                 search_results = await qdrant_client.search_meeting_segments(
                     query_embedding=dummy_embedding,
                     meeting_id=meeting_id,
-                    limit=50,
-                    score_threshold=0.0  # Get all segments
+                    limit=100,  # Get more segments
+                    score_threshold=0.0  # Get ALL segments
                 )
                 
-                for result in search_results:
-                    metadata = result.get('metadata', {})
-                    all_segments.append({
-                        "segment_index": metadata.get('segment_index', 0),
-                        "title": metadata.get('title', 'Untitled'),
-                        "summary": metadata.get('summary', ''),
-                        "text": metadata.get('segment_text', ''),
-                        "start_time": metadata.get('start_time', 0),
-                        "end_time": metadata.get('end_time', 0)
-                    })
+                # If no results with meeting ID, try broader search
+                if not search_results:
+                    logger.warning(f"No segments found in Qdrant for meeting {meeting_id}")
+                    
+                    # Try to get meeting segments from database instead
+                    meeting_data = await database_service.get_meeting_info(meeting_id)
+                    if meeting_data and 'segments' in meeting_data:
+                        logger.info(f"Using database segments for meeting {meeting_id}")
+                        segments_data = meeting_data['segments']
+                        for segment in segments_data:
+                            all_segments.append({
+                                "segment_index": segment.get('segment_index', 0),
+                                "title": segment.get('title', 'Untitled'),
+                                "summary": segment.get('summary', ''),
+                                "text": segment.get('segment_text', ''),
+                                "start_time": segment.get('start_time', 0),
+                                "end_time": segment.get('end_time', 0)
+                            })
+                    else:
+                        # Use the full transcript if available
+                        if meeting_info.get('full_transcript'):
+                            all_segments.append({
+                                "segment_index": 0,
+                                "title": "Full Meeting Transcript",
+                                "summary": meeting_info.get('summary', ''),
+                                "text": meeting_info['full_transcript'],
+                                "start_time": 0,
+                                "end_time": 0
+                            })
+                else:
+                    # Convert Qdrant results to segments
+                    for result in search_results:
+                        metadata = result.get('metadata', {})
+                        all_segments.append({
+                            "segment_index": metadata.get('segment_index', 0),
+                            "title": metadata.get('title', 'Untitled'),
+                            "summary": metadata.get('summary', ''),
+                            "text": metadata.get('segment_text', ''),
+                            "start_time": metadata.get('start_time', 0),
+                            "end_time": metadata.get('end_time', 0)
+                        })
                     
                 # Sort by segment index
                 all_segments.sort(key=lambda x: x['segment_index'])
                 
             except Exception as e:
-                logger.warning(f"Could not retrieve meeting segments: {str(e)}")
-                all_segments = []
+                logger.warning(f"Could not retrieve meeting segments from Qdrant: {str(e)}")
+                
+                # Fallback: try to get from database
+                meeting_data = await database_service.get_meeting_info(meeting_id)
+                if meeting_data and meeting_data.get('full_transcript'):
+                    all_segments.append({
+                        "segment_index": 0,
+                        "title": "Full Meeting Transcript",
+                        "summary": meeting_data.get('summary', ''),
+                        "text": meeting_data['full_transcript'],
+                        "start_time": 0,
+                        "end_time": 0
+                    })
             
             if not all_segments:
                 return {
@@ -665,61 +765,82 @@ Answer:"""
             # Use Gemini to extract action items
             from services.gemini_client import gemini_client
             
-            prompt = f"""You are analyzing a meeting transcript to extract actionable items. Based on the meeting content provided below, identify all action items, tasks, assignments, and follow-up items that were discussed.
+            prompt = f"""You are an expert meeting analyzer. Analyze the following meeting content and extract ALL actionable items, tasks, commitments, and follow-ups.
 
-Meeting Context:
+Meeting: {meeting_info.get('title', 'Untitled Meeting')}
+Duration: {meeting_info.get('duration', 'Unknown')}
+
+MEETING CONTENT:
 {context_text}
 
-Instructions:
-1. Extract all action items, tasks, assignments, and follow-up items mentioned in the meeting
-2. For each action item, provide:
-   - A clear, concise description of what needs to be done
-   - Who is responsible (if mentioned)
-   - Any deadline or timeframe mentioned
-   - Priority level (high, medium, low) based on the discussion
-   - The relevant segment/timestamp where it was discussed
-3. Only include items that are clearly actionable (not just discussion topics)
-4. Be specific and avoid vague descriptions
+INSTRUCTIONS:
+1. Extract EVERY actionable item mentioned in the meeting, including:
+   - Direct task assignments ("John will do X")
+   - Commitments ("I'll handle Y by Friday") 
+   - Follow-up actions ("We need to Z")
+   - Deadlines and milestones
+   - Research tasks ("Look into ABC")
+   - Meeting scheduling ("Set up call with DEF")
+   - Document creation ("Create report on GHI")
 
-Format your response as a JSON object with this structure:
+2. Even if responsibility is unclear, include the item as "Team" or "Unassigned"
+
+3. Be very liberal in what you consider an action item - include anything that requires someone to do something
+
+4. Create realistic deadlines based on context clues, or use "To be determined" if no timeline mentioned
+
+5. Return EXACTLY this JSON format (no markdown, no extra text):
+
 {{
     "action_items": [
         {{
-            "id": "unique_id",
-            "title": "Short descriptive title",
+            "id": "action_1",
+            "title": "Clear, specific title (max 60 chars)",
             "description": "Detailed description of what needs to be done",
-            "assignee": "Person responsible (or 'Unassigned' if not specified)",
-            "deadline": "Deadline if mentioned (or 'No deadline specified')",
+            "assignee": "Person responsible or 'Unassigned' or 'Team'",
+            "deadline": "Specific date/time or 'To be determined'",
             "priority": "high|medium|low",
-            "segment_reference": "Segment title where this was discussed",
-            "timestamp": segment_start_time_in_seconds,
+            "segment_reference": "Which meeting segment mentioned this",
+            "timestamp": 0,
             "status": "pending"
         }}
     ],
-    "summary": "Brief summary of the action items identified"
+    "summary": "Found X action items requiring attention"
 }}
 
-Meeting Content to Analyze:
-{context_text[:4000]}"""  # Limit context to avoid token limits
+ANALYZE THE MEETING CONTENT AND EXTRACT ALL ACTION ITEMS:"""
 
             try:
-                response = await gemini_client.generate_response(prompt)
+                import google.generativeai as genai
+                genai.configure(api_key=self.settings.gemini_api_key)
+                model = genai.GenerativeModel('gemini-2.0-flash-lite')
+                
+                response = await model.generate_content_async(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.1,
+                        top_p=0.9,
+                        max_output_tokens=2000,
+                    )
+                )
+                
+                ai_response = response.text.strip()
                 
                 # Try to parse JSON response
                 import json
                 import re
                 
                 # Extract JSON from the response
-                json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
+                json_match = re.search(r'```json\s*(.*?)\s*```', ai_response, re.DOTALL)
                 if json_match:
                     json_str = json_match.group(1)
                 else:
                     # If no code block, try to find JSON object
-                    json_match = re.search(r'\{.*\}', response, re.DOTALL)
+                    json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
                     if json_match:
                         json_str = json_match.group(0)
                     else:
-                        json_str = response
+                        json_str = ai_response
                 
                 result = json.loads(json_str)
                 
@@ -774,3 +895,49 @@ Meeting Content to Analyze:
                 "error": str(e),
                 "action_items": []
             }
+    
+    async def backfill_meeting_segments_to_qdrant(self, meeting_id: str) -> bool:
+        """Backfill meeting segments from database to Qdrant if they don't exist."""
+        try:
+            logger.info(f"Backfilling meeting segments to Qdrant for meeting {meeting_id}")
+            
+            from services.database_service import database_service
+            from services.qdrant_client import qdrant_client
+            
+            # Get meeting info with segments from database
+            meeting_info = await database_service.get_meeting_info(meeting_id)
+            if not meeting_info:
+                logger.warning(f"Meeting {meeting_id} not found in database")
+                return False
+            
+            # Get segments from database
+            segments = meeting_info.get('segments', [])
+            if not segments:
+                logger.warning(f"No segments found in database for meeting {meeting_id}")
+                return False
+            
+            # Prepare segments for Qdrant
+            segments_for_qdrant = []
+            for segment in segments:
+                segments_for_qdrant.append({
+                    "index": segment.get('segment_index', 0),
+                    "title": segment.get('title', 'Untitled'),
+                    "summary": segment.get('summary', ''),
+                    "text": segment.get('segment_text', ''),
+                    "startTime": segment.get('start_time', 0),
+                    "endTime": segment.get('end_time', 0),
+                    "excerpt": segment.get('excerpt', '')
+                })
+            
+            # Store in Qdrant
+            success = await qdrant_client.store_meeting_segments(meeting_id, segments_for_qdrant)
+            if success:
+                logger.info(f"Successfully backfilled {len(segments_for_qdrant)} segments to Qdrant for meeting {meeting_id}")
+                return True
+            else:
+                logger.error(f"Failed to backfill segments to Qdrant for meeting {meeting_id}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error backfilling segments for meeting {meeting_id}: {str(e)}")
+            return False

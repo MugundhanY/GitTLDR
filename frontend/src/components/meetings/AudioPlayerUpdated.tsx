@@ -1,3 +1,4 @@
+import './AudioPlayerVolume.css';
 import React, { useState, useEffect } from 'react';
 import { 
   SpeakerWaveIcon, 
@@ -106,6 +107,39 @@ export default function AudioPlayer({
 
   return (
     <>
+      {/* Hidden Audio Element */}
+      <audio
+        ref={audioRef}
+        onLoadedMetadata={() => {
+          if (audioRef.current) {
+            setDuration(audioRef.current.duration);
+            setIsAudioLoading(false);
+          }
+        }}
+        onTimeUpdate={() => {
+          if (audioRef.current) {
+            setCurrentTime(audioRef.current.currentTime);
+            updateCurrentSegment(audioRef.current.currentTime);
+          }
+        }}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onError={(e) => {
+          console.error('Audio error:', e);
+          setIsAudioLoading(false);
+        }}
+        onLoadStart={() => setIsAudioLoading(true)}
+        onCanPlay={() => setIsAudioLoading(false)}
+        preload="metadata"
+        controls={false}
+        style={{ display: 'none' }}
+      >
+        <source src={`/api/meetings/${meetingId}/audio`} type="audio/mpeg" />
+        <source src={`/api/meetings/${meetingId}/audio`} type="audio/wav" />
+        <source src={`/api/meetings/${meetingId}/audio`} type="audio/mp4" />
+        Your browser does not support the audio element.
+      </audio>
+
       {/* Main Audio Player in Content */}
       <div className={`transition-all duration-500 ${isScrolled ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
         <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200/50 dark:border-slate-700/50 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 p-6 animate-fadeIn">
@@ -150,17 +184,17 @@ export default function AudioPlayer({
               <span>{formatTime(currentTime)}</span>
               <span>{formatTime(duration)}</span>
             </div>
-            <div className="relative">
+            <div className="relative audio-progress-bar">
               <input
                 type="range"
                 min={0}
                 max={duration || 0}
                 value={currentTime}
                 onChange={handleSeek}
-                className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer slider"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
               />
               <div 
-                className="absolute top-0 left-0 h-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg pointer-events-none"
+                className="audio-progress-fill"
                 style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
               />
             </div>
@@ -184,17 +218,35 @@ export default function AudioPlayer({
               </button>
               
               <div className="flex items-center gap-2">
-                <SpeakerXMarkIcon className="w-4 h-4 text-slate-400" />
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.1}
-                  value={volume}
-                  onChange={(e) => changeVolume(parseFloat(e.target.value))}
-                  className="w-20 h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer slider"
-                />
-                <SpeakerWaveIcon className="w-4 h-4 text-slate-400" />
+                <SpeakerXMarkIcon className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                <div className="relative audio-progress-bar" style={{ width: '100px' }}>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={volume}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      // Only change volume, do not reset audio or playback
+                      if (audioRef.current) {
+                        // Only update volume, do not touch currentTime or play state
+                        changeVolume(parseFloat(e.target.value));
+                        audioRef.current.volume = parseFloat(e.target.value);
+                      } else {
+                        changeVolume(parseFloat(e.target.value));
+                      }
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                  />
+                  <div
+                    className="audio-progress-fill"
+                    style={{ width: `${volume * 100}%` }}
+                  />
+                </div>
+                <SpeakerWaveIcon className="w-4 h-4 text-slate-400 flex-shrink-0" />
               </div>
             </div>
             
@@ -257,8 +309,18 @@ export default function AudioPlayer({
               
               {isExpanded && (
                 <select
-                  value={playbackRate}
-                  onChange={(e) => changePlaybackRate(Number(e.target.value))}
+                value={playbackRate}
+                onChange={(e) => {
+                  if (audioRef.current) {
+                    const prevTime = audioRef.current.currentTime;
+                    const wasPlaying = !audioRef.current.paused;
+                    changePlaybackRate(Number(e.target.value));
+                    audioRef.current.currentTime = prevTime;
+                    if (wasPlaying) audioRef.current.play();
+                  } else {
+                    changePlaybackRate(Number(e.target.value));
+                  }
+                }}
                   className="text-xs border border-slate-600 rounded-lg px-2 py-1 bg-slate-800 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 >
                   <option value={0.5}>0.5x</option>
@@ -286,17 +348,17 @@ export default function AudioPlayer({
           {/* Compact Progress Bar for Dynamic Island */}
           {isExpanded && (
             <div className="mt-3 px-1">
-              <div className="relative">
+              <div className="relative audio-progress-bar">
                 <input
                   type="range"
                   min={0}
                   max={duration || 0}
                   value={currentTime}
                   onChange={handleSeek}
-                  className="w-full h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer slider"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                 />
                 <div 
-                  className="absolute top-0 left-0 h-1 bg-gradient-to-r from-blue-400 to-purple-500 rounded-lg pointer-events-none"
+                  className="audio-progress-fill"
                   style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
                 />
               </div>

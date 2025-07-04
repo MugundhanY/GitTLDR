@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
+import { getUserFromRequest } from '@/lib/auth';
 
-// Temporary in-memory storage for Q&A history
-// In production, this would be replaced with proper database storage
-const qaStorage = new Map<string, any[]>();
+const prisma = new PrismaClient();
 
 export async function GET(
   request: NextRequest,
@@ -20,12 +20,36 @@ export async function GET(
       );
     }
 
-    // Get Q&A history from temporary storage
-    const storageKey = `${meetingId}-${userId}`;
-    const qaItems = qaStorage.get(storageKey) || [];
+    // Get Q&A history from database
+    const qaItems = await prisma.meetingQA.findMany({
+      where: {
+        meetingId: meetingId,
+        userId: userId
+      },
+      orderBy: {
+        createdAt: 'desc'
+      },
+      select: {
+        id: true,
+        question: true,
+        answer: true,
+        confidence: true,
+        timestamp: true,
+        relatedSegments: true,
+        createdAt: true
+      }
+    });
 
     return NextResponse.json({
-      qaItems: qaItems.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      qaItems: qaItems.map(item => ({
+        id: item.id,
+        question: item.question,
+        answer: item.answer,
+        confidence: item.confidence || 0.8,
+        timestamp: item.timestamp,
+        relatedSegments: item.relatedSegments || [],
+        createdAt: item.createdAt.toISOString()
+      }))
     });
 
   } catch (error) {
@@ -53,25 +77,38 @@ export async function POST(
       );
     }
 
-    // Create Q&A item
-    const qaItem = {
-      id: `qa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      question,
-      answer,
-      timestamp: timestamp || null,
-      relatedSegments: relatedSegments || [],
-      confidence: confidence || 0.8,
-      createdAt: new Date().toISOString()
-    };
-
-    // Store in temporary storage
-    const storageKey = `${meetingId}-${userId}`;
-    const existingItems = qaStorage.get(storageKey) || [];
-    existingItems.push(qaItem);
-    qaStorage.set(storageKey, existingItems);
+    // Create Q&A item in database
+    const qaItem = await prisma.meetingQA.create({
+      data: {
+        meetingId,
+        userId,
+        question,
+        answer,
+        confidence: confidence || 0.8,
+        timestamp: timestamp || null,
+        relatedSegments: relatedSegments || []
+      },
+      select: {
+        id: true,
+        question: true,
+        answer: true,
+        confidence: true,
+        timestamp: true,
+        relatedSegments: true,
+        createdAt: true
+      }
+    });
 
     return NextResponse.json({
-      qaItem
+      qaItem: {
+        id: qaItem.id,
+        question: qaItem.question,
+        answer: qaItem.answer,
+        confidence: qaItem.confidence || 0.8,
+        timestamp: qaItem.timestamp,
+        relatedSegments: qaItem.relatedSegments || [],
+        createdAt: qaItem.createdAt.toISOString()
+      }
     });
 
   } catch (error) {

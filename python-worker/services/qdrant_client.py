@@ -9,6 +9,8 @@ from qdrant_client.http.models import (
     PayloadSchemaType, CreateFieldIndex
 )
 import uuid
+import time
+from sentence_transformers import SentenceTransformer
 
 from config.settings import get_settings
 from utils.logger import get_logger
@@ -22,6 +24,8 @@ class QuadrantVectorClient:
         self.settings = None
         self.client: Optional[QdrantClient] = None
         self._initialized = False
+        self.embedder = SentenceTransformer("all-MiniLM-L6-v2")
+        self.embedding_dimension = 384
 
     async def connect(self) -> None:
         """Connect to Quadrant."""
@@ -66,6 +70,7 @@ class QuadrantVectorClient:
             collections = self.client.get_collections()
             collection_names = [c.name for c in collections.collections]
             
+            # Ensure main collection exists
             if self.settings.collection_name not in collection_names:
                 self.client.create_collection(
                     collection_name=self.settings.collection_name,
@@ -102,24 +107,8 @@ class QuadrantVectorClient:
                     )
                     logger.info("Created index for content_type field")
                     
-                    # Index for meeting_id field (for meeting Q&A)
-                    self.client.create_payload_index(
-                        collection_name=self.settings.collection_name,
-                        field_name="meeting_id",
-                        field_schema=PayloadSchemaType.KEYWORD
-                    )
-                    logger.info("Created index for meeting_id field")
-                    
-                    # Index for segment_index field (for meeting segments)
-                    self.client.create_payload_index(
-                        collection_name=self.settings.collection_name,
-                        field_name="segment_index",
-                        field_schema=PayloadSchemaType.INTEGER
-                    )
-                    logger.info("Created index for segment_index field")
-                    
                 except Exception as e:
-                    logger.error(f"Failed to create indexes: {str(e)}")
+                    logger.error(f"Failed to create indexes for main collection: {str(e)}")
                     # Don't raise the error, just log it
                     pass
                     
@@ -147,27 +136,74 @@ class QuadrantVectorClient:
                         field_schema=PayloadSchemaType.KEYWORD
                     )
                     
+                    logger.info("Ensured all indexes exist for existing main collection")
+                    
+                except Exception as index_error:
+                    logger.warning(f"Failed to create some indexes for main collection: {str(index_error)}")
+            
+            # Ensure meeting collection exists with correct dimension
+            meeting_collection = getattr(self.settings, "meeting_qdrant_collection", "meeting_segments")
+            meeting_dimension = getattr(self.settings, "embedding_dimension_meeting", 384)
+            
+            if meeting_collection not in collection_names:
+                self.client.create_collection(
+                    collection_name=meeting_collection,
+                    vectors_config=VectorParams(
+                        size=meeting_dimension,
+                        distance=Distance.COSINE
+                    ),
+                )
+                logger.info(f"Created meeting collection {meeting_collection} with dimension {meeting_dimension}")
+                
+                # Create indexes for meeting collection
+                try:
                     # Index for meeting_id field (for meeting Q&A)
                     self.client.create_payload_index(
-                        collection_name=self.settings.collection_name,
+                        collection_name=meeting_collection,
+                        field_name="meeting_id",
+                        field_schema=PayloadSchemaType.KEYWORD
+                    )
+                    logger.info("Created index for meeting_id field")
+                    
+                    # Index for segment_index field (for meeting segments)
+                    self.client.create_payload_index(
+                        collection_name=meeting_collection,
+                        field_name="segment_index",
+                        field_schema=PayloadSchemaType.INTEGER
+                    )
+                    logger.info("Created index for segment_index field")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to create indexes for meeting collection: {str(e)}")
+                    # Don't raise the error, just log it
+                    pass
+                    
+            else:
+                logger.info(f"Meeting collection {meeting_collection} already exists")
+                
+                # Ensure indexes exist for existing meeting collection
+                try:
+                    # Index for meeting_id field (for meeting Q&A)
+                    self.client.create_payload_index(
+                        collection_name=meeting_collection,
                         field_name="meeting_id",
                         field_schema=PayloadSchemaType.KEYWORD
                     )
                     
                     # Index for segment_index field (for meeting segments)
                     self.client.create_payload_index(
-                        collection_name=self.settings.collection_name,
+                        collection_name=meeting_collection,
                         field_name="segment_index",
                         field_schema=PayloadSchemaType.INTEGER
                     )
                     
-                    logger.info("Ensured all indexes exist for existing collection")
+                    logger.info("Ensured all indexes exist for existing meeting collection")
                     
                 except Exception as index_error:
-                    logger.warning(f"Failed to create some indexes: {str(index_error)}")
+                    logger.warning(f"Failed to create some indexes for meeting collection: {str(index_error)}")
                     
         except Exception as e:
-            logger.error(f"Failed to create/verify collection: {str(e)}")
+            logger.error(f"Failed to create/verify collections: {str(e)}")
             raise
             
     def ensure_collection_exists(self, collection_name: str, dimension: int) -> None:
@@ -391,24 +427,174 @@ class QuadrantVectorClient:
             logger.error(f"Failed to delete repository embeddings: {str(e)}")
             return False
 
+    async def store_meeting_segments(
+        self,
+        meeting_id: str,
+        segments: List[Dict[str, Any]]
+    ) -> bool:
+        """Store meeting segments with embeddings in Qdrant."""
+        if not self.client:
+            await self.connect()  # Ensure connection
+            
+        try:
+            meeting_collection = getattr(self.settings, "meeting_qdrant_collection", "meeting_segments")
+            
+            # Ensure the meeting collection exists before storing
+            await self._ensure_meeting_collection_exists()
+            
+            points = []
+            
+            for segment in segments:
+                # Create embedding for segment text
+                segment_text = f"{segment.get('title', '')} {segment.get('summary', '')} {segment.get('text', '')}"
+                embedding = self.embedder.encode(segment_text).tolist()
+                
+                # Ensure embedding has correct dimension
+                if len(embedding) < self.embedding_dimension:
+                    embedding += [0.0] * (self.embedding_dimension - len(embedding))
+                elif len(embedding) > self.embedding_dimension:
+                    embedding = embedding[:self.embedding_dimension]
+                
+                # Create point for Qdrant
+                point = PointStruct(
+                    id=str(uuid.uuid4()),
+                    vector=embedding,
+                    payload={
+                        "meeting_id": meeting_id,
+                        "segment_index": segment.get('index', 0),
+                        "title": segment.get('title', ''),
+                        "summary": segment.get('summary', ''),
+                        "segment_text": segment.get('text', ''),
+                        "start_time": segment.get('startTime', 0),
+                        "end_time": segment.get('endTime', 0),
+                        "created_at": segment.get('created_at', str(int(time.time())))
+                    }
+                )
+                points.append(point)
+            
+            # Store in Qdrant
+            if points:
+                self.client.upsert(
+                    collection_name=meeting_collection,
+                    points=points
+                )
+                logger.info(f"Stored {len(points)} meeting segments for meeting {meeting_id} in Qdrant")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Failed to store meeting segments in Qdrant: {str(e)}")
+            return False
+
     async def search_meeting_segments(
         self,
         query_embedding: List[float],
-        meeting_id: str,
+        meeting_id: str = None,
         segment_index: int = None,
         limit: int = 10,
         score_threshold: float = 0.3
     ) -> List[Dict[str, Any]]:
         """Search for similar meeting segments by meeting_id (and optionally segment_index)."""
-        filter_conditions = {"meeting_id": meeting_id}
-        if segment_index is not None:
-            filter_conditions["segment_index"] = segment_index
-        return await self.search_similar(
-            query_embedding=query_embedding,
-            limit=limit,
-            score_threshold=score_threshold,
-            filter_conditions=filter_conditions
-        )
+        if not self.client:
+            await self.connect()  # Ensure connection
+            
+        try:
+            # Ensure the meeting collection exists
+            await self._ensure_meeting_collection_exists()
+            
+            # Build filter conditions - meeting_id is now optional
+            conditions = []
+            if meeting_id is not None:
+                conditions.append(FieldCondition(key="meeting_id", match=MatchValue(value=meeting_id)))
+            if segment_index is not None:
+                conditions.append(FieldCondition(key="segment_index", match=MatchValue(value=segment_index)))
+            
+            search_filter = Filter(must=conditions) if conditions else None
+                
+            # Use the meeting collection, not the main collection
+            meeting_collection = getattr(self.settings, "meeting_qdrant_collection", "meeting_segments")
+            
+            # Search in the meeting collection
+            results = self.client.search(
+                collection_name=meeting_collection,
+                query_vector=query_embedding,
+                limit=limit,
+                score_threshold=score_threshold,
+                query_filter=search_filter
+            )
+            
+            # Format results
+            formatted_results = []
+            for result in results:
+                formatted_results.append({
+                    "id": result.id,
+                    "score": result.score,
+                    "metadata": result.payload
+                })
+                
+            logger.debug(
+                "Meeting search completed",
+                results_count=len(formatted_results),
+                meeting_id=meeting_id,
+                limit=limit,
+                threshold=score_threshold
+            )
+            
+            return formatted_results
+            
+        except Exception as e:
+            logger.error(f"Failed to search meeting segments: {str(e)}")
+            return []
+
+    async def _ensure_meeting_collection_exists(self) -> None:
+        """Ensure the meeting collection exists."""
+        if not self.client:
+            return
+            
+        try:
+            collections = self.client.get_collections()
+            collection_names = [c.name for c in collections.collections]
+            
+            meeting_collection = getattr(self.settings, "meeting_qdrant_collection", "meeting_segments")
+            meeting_dimension = getattr(self.settings, "embedding_dimension_meeting", 384)
+            
+            if meeting_collection not in collection_names:
+                self.client.create_collection(
+                    collection_name=meeting_collection,
+                    vectors_config=VectorParams(
+                        size=meeting_dimension,
+                        distance=Distance.COSINE
+                    ),
+                )
+                logger.info(f"Created meeting collection {meeting_collection} with dimension {meeting_dimension}")
+                
+                # Create indexes for meeting collection
+                try:
+                    # Index for meeting_id field (for meeting Q&A)
+                    self.client.create_payload_index(
+                        collection_name=meeting_collection,
+                        field_name="meeting_id",
+                        field_schema=PayloadSchemaType.KEYWORD
+                    )
+                    logger.info("Created index for meeting_id field")
+                    
+                    # Index for segment_index field (for meeting segments)
+                    self.client.create_payload_index(
+                        collection_name=meeting_collection,
+                        field_name="segment_index",
+                        field_schema=PayloadSchemaType.INTEGER
+                    )
+                    logger.info("Created index for segment_index field")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to create indexes for meeting collection: {str(e)}")
+            else:
+                logger.debug(f"Meeting collection {meeting_collection} already exists")
+                
+        except Exception as e:
+            logger.error(f"Failed to ensure meeting collection exists: {str(e)}")
+            raise
 
 
 # Global Qdrant client instance

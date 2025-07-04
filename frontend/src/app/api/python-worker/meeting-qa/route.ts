@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Forward the request to the Python worker
-    const pythonWorkerUrl = process.env.PYTHON_WORKER_URL || 'http://localhost:8000';
+    const pythonWorkerUrl = process.env.PYTHON_WORKER_URL || 'http://localhost:8001';
     const response = await fetch(`${pythonWorkerUrl}/meeting-qa`, {
       method: 'POST',
       headers: {

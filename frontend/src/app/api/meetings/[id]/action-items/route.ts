@@ -9,11 +9,6 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const user = await getUserFromRequest(request);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const meetingId = params.id;
     
     const actionItems = await prisma.meetingActionItem.findMany({
@@ -23,13 +18,17 @@ export async function GET(
       include: {
         creator: {
           select: {
+            id: true,
             name: true,
+            email: true,
             avatarUrl: true
           }
         },
         assignee: {
           select: {
+            id: true,
             name: true,
+            email: true,
             avatarUrl: true
           }
         }
@@ -39,7 +38,24 @@ export async function GET(
       }
     });
 
-    return NextResponse.json({ actionItems });
+    // Transform for frontend compatibility
+    const transformedItems = actionItems.map(item => ({
+      id: item.id,
+      text: item.text,
+      completed: item.completed,
+      priority: item.priority.toLowerCase(),
+      assignee: item.assignee ? item.assignee.name : 'Unassigned',
+      assigneeDetails: item.assignee,
+      creator: item.creator,
+      dueDate: item.dueDate?.toISOString() || null,
+      createdAt: item.createdAt.toISOString(),
+      updatedAt: item.updatedAt.toISOString()
+    }));
+
+    return NextResponse.json({ 
+      actionItems: transformedItems,
+      summary: `Found ${transformedItems.length} action items for this meeting.`
+    });
   } catch (error) {
     console.error('Error fetching action items:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -92,5 +108,76 @@ export async function POST(
   } catch (error) {
     console.error('Error creating action item:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const user = await getUserFromRequest(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const meetingId = params.id;
+    const { actionItemId, status, completed } = await request.json();
+
+    if (!actionItemId) {
+      return NextResponse.json({ error: 'Action item ID is required' }, { status: 400 });
+    }
+
+    // Update the action item
+    const updatedItem = await prisma.meetingActionItem.update({
+      where: { 
+        id: actionItemId,
+        meetingId // Ensure the action item belongs to this meeting
+      },
+      data: { 
+        completed: completed !== undefined ? completed : (status === 'COMPLETED'),
+        updatedAt: new Date()
+      },
+      include: {
+        creator: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatarUrl: true
+          }
+        },
+        assignee: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatarUrl: true
+          }
+        }
+      }
+    });
+
+    // Transform for frontend compatibility
+    const transformedItem = {
+      id: updatedItem.id,
+      text: updatedItem.text,
+      completed: updatedItem.completed,
+      priority: updatedItem.priority.toLowerCase(),
+      assignee: updatedItem.assignee ? updatedItem.assignee.name : 'Unassigned',
+      assigneeDetails: updatedItem.assignee,
+      creator: updatedItem.creator,
+      dueDate: updatedItem.dueDate?.toISOString() || null,
+      createdAt: updatedItem.createdAt.toISOString(),
+      updatedAt: updatedItem.updatedAt.toISOString()
+    };
+
+    return NextResponse.json({ 
+      success: true, 
+      actionItem: transformedItem 
+    });
+  } catch (error) {
+    console.error('Error updating action item:', error);
+    return NextResponse.json({ error: 'Failed to update action item' }, { status: 500 });
   }
 }

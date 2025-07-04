@@ -94,14 +94,14 @@ export default function MeetingHeader({
               </button>
               <button
                 onClick={() => setShowExportModal(true)}
-                className="flex items-center justify-center h-10 w-10 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all duration-200 hover:scale-105"
+                className="flex items-center justify-center h-10 w-10 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl premium-button"
                 aria-label="Export meeting"
               >
                 <ArrowDownTrayIcon className="w-5 h-5 text-slate-500 dark:text-slate-400" />
               </button>
               <button
                 onClick={() => setShowShareModal(true)}
-                className="flex items-center justify-center h-10 w-10 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all duration-200 hover:scale-105"
+                className="flex items-center justify-center h-10 w-10 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl premium-button"
                 aria-label="Share meeting"
               >
                 <ShareIcon className="w-5 h-5 text-slate-500 dark:text-slate-400" />

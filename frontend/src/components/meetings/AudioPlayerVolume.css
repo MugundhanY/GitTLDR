@@ -1,0 +1,95 @@
+/* Custom volume slider for both light and dark themes */
+/* Match the audio progress bar gradient and thumb */
+.custom-volume-slider {
+  appearance: none;
+  width: 80px;
+  height: 6px;
+  background: linear-gradient(90deg, #6366f1 0%, #a21caf 100%);
+  border-radius: 3px;
+  outline: none;
+  box-shadow: 0 1px 2px #0001;
+  transition: background 0.3s;
+}
+.custom-volume-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1 60%, #a21caf 100%);
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px #6366f155;
+  cursor: pointer;
+  transition: background 0.3s, border 0.3s;
+}
+.custom-volume-slider:focus::-webkit-slider-thumb {
+  border: 2px solid #a21caf;
+}
+.custom-volume-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1 60%, #a21caf 100%);
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px #6366f155;
+  cursor: pointer;
+  transition: background 0.3s, border 0.3s;
+}
+.custom-volume-slider:focus::-moz-range-thumb {
+  border: 2px solid #a21caf;
+}
+.custom-volume-slider::-ms-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1 60%, #a21caf 100%);
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px #6366f155;
+  cursor: pointer;
+  transition: background 0.3s, border 0.3s;
+}
+.custom-volume-slider:focus::-ms-thumb {
+  border: 2px solid #a21caf;
+}
+.custom-volume-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #6366f1 0%, #a21caf 100%);
+}
+.custom-volume-slider::-ms-fill-lower {
+  background: #6366f1;
+}
+.custom-volume-slider::-ms-fill-upper {
+  background: #a21caf;
+}
+.custom-volume-slider:focus {
+  outline: none;
+}
+.custom-volume-slider:disabled {
+  opacity: 0.5;
+}
+@media (prefers-color-scheme: dark) {
+  .custom-volume-slider {
+    background: linear-gradient(90deg, #818cf8 0%, #c084fc 100%);
+  }
+  .custom-volume-slider::-webkit-slider-thumb {
+    background: linear-gradient(135deg, #818cf8 60%, #c084fc 100%);
+    border: 2px solid #18181b;
+  }
+  .custom-volume-slider:focus::-webkit-slider-thumb {
+    border: 2px solid #c084fc;
+  }
+  .custom-volume-slider::-moz-range-thumb {
+    background: linear-gradient(135deg, #818cf8 60%, #c084fc 100%);
+    border: 2px solid #18181b;
+  }
+  .custom-volume-slider:focus::-moz-range-thumb {
+    border: 2px solid #c084fc;
+  }
+  .custom-volume-slider::-ms-thumb {
+    background: linear-gradient(135deg, #818cf8 60%, #c084fc 100%);
+    border: 2px solid #18181b;
+  }
+  .custom-volume-slider:focus::-ms-thumb {
+    border: 2px solid #c084fc;
+  }
+}

@@ -451,11 +451,10 @@ export default function MeetingsPage() {
                         {filteredMeetings.map((meeting: Meeting, idx: number) => (
                           <div
                             key={meeting.id}
+                            className="meeting-card-hover apple-bounce border-2 border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-300 focus-within:ring-2 focus-within:ring-blue-400 outline-none overflow-hidden"
                             style={{
-                              animation: `fadeInUp 0.5s cubic-bezier(0.4,0,0.2,1) both`,
-                              animationDelay: `${idx * 60}ms`,
+                              animationDelay: `${idx * 100}ms`,
                             }}
-                            className="border-2 border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-300 focus-within:ring-2 focus-within:ring-blue-400 outline-none hover:scale-[1.01] overflow-hidden"
                           >
                             <div className="p-4 sm:p-6">
                               <div className="flex items-start justify-between gap-4">
@@ -495,7 +494,7 @@ export default function MeetingsPage() {
                                 <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
                                   <Link 
                                     href={`/meetings/${meeting.id}`}
-                                    className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                                    className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium premium-button"
                                   >
                                     <PlayIcon className="w-4 h-4" />
                                     View

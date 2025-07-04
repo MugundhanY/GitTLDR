@@ -123,7 +123,7 @@ export default function MeetingDetailPage() {
   }[]>([])
   
   // Fetch meeting data
-  const { data: meeting, isLoading, error } = useQuery<Meeting>({
+  const { data: meeting, isLoading, error, refetch } = useQuery<Meeting>({
     queryKey: ['meeting', meetingId],
     queryFn: async () => {
       const res = await fetch(`/api/meetings/${meetingId}`)
@@ -134,7 +134,7 @@ export default function MeetingDetailPage() {
     enabled: !!meetingId
   })
 
-  // Fetch favorite status
+  // Fetch favorite status and action items
   useEffect(() => {
     const fetchFavoriteStatus = async () => {
       if (!meetingId || !userData?.id) return;
@@ -151,6 +151,7 @@ export default function MeetingDetailPage() {
     };
     
     fetchFavoriteStatus();
+    loadActionItems(); // Load existing action items from database
   }, [meetingId, userData?.id]);
 
   // Toggle favorite status
@@ -236,9 +237,16 @@ export default function MeetingDetailPage() {
         setIsAudioLoading(false);
       };
       
-      const handleError = () => {
+      const handleError = (event: Event) => {
         setIsAudioLoading(false);
-        console.error('Error loading audio');
+        console.error('Audio loading error:', event);
+        console.error('Failed to load audio from:', audio.src);
+        
+        // If original audio fails, fallback to placeholder
+        if (audio.src !== '/api/placeholder-audio.mp3') {
+          console.log('Falling back to placeholder audio');
+          audio.src = '/api/placeholder-audio.mp3';
+        }
       };
       
       audio.addEventListener('loadedmetadata', handleLoadedMetadata)
@@ -248,14 +256,9 @@ export default function MeetingDetailPage() {
       audio.addEventListener('canplay', handleCanPlay);
       audio.addEventListener('error', handleError);
       
-      // Set audio source if available
-      if (meeting.raw_audio_path) {
-        audio.src = meeting.raw_audio_path;
-      } else {
-        // Mock audio path for testing
-        audio.src = '/api/placeholder-audio.mp3';
-        console.warn('No audio source available, using placeholder');
-      }
+      // Set audio source - always use the API endpoint for proper handling
+      console.log('Setting audio source to API endpoint');
+      audio.src = `/api/meetings/${meetingId}/audio`;
       
       return () => {
         audio.removeEventListener('loadedmetadata', handleLoadedMetadata)
@@ -267,6 +270,63 @@ export default function MeetingDetailPage() {
       }
     }
   }, [meeting])
+
+  // Audio element setup effect
+  useEffect(() => {
+    if (audioRef.current && meetingId) {
+      const audio = audioRef.current;
+      
+      // Set up audio source immediately
+      const audioSrc = `/api/meetings/${meetingId}/audio`;
+      audio.src = audioSrc;
+      
+      // Set up event handlers
+      const handleLoadedMetadata = () => {
+        setDuration(audio.duration);
+        setIsAudioLoading(false);
+      };
+      
+      const handleTimeUpdate = () => {
+        setCurrentTime(audio.currentTime);
+        updateCurrentSegment(audio.currentTime);
+      };
+      
+      const handlePlay = () => setIsPlaying(true);
+      const handlePause = () => setIsPlaying(false);
+      
+      const handleError = (e: any) => {
+        console.error('Audio error:', e);
+        setIsAudioLoading(false);
+      };
+      
+      const handleLoadStart = () => setIsAudioLoading(true);
+      const handleCanPlay = () => setIsAudioLoading(false);
+      
+      // Add event listeners
+      audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.addEventListener('timeupdate', handleTimeUpdate);
+      audio.addEventListener('play', handlePlay);
+      audio.addEventListener('pause', handlePause);
+      audio.addEventListener('error', handleError);
+      audio.addEventListener('loadstart', handleLoadStart);
+      audio.addEventListener('canplay', handleCanPlay);
+      
+      // Set initial volume and playback rate
+      audio.volume = volume;
+      audio.playbackRate = playbackRate;
+      
+      // Cleanup function
+      return () => {
+        audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+        audio.removeEventListener('timeupdate', handleTimeUpdate);
+        audio.removeEventListener('play', handlePlay);
+        audio.removeEventListener('pause', handlePause);
+        audio.removeEventListener('error', handleError);
+        audio.removeEventListener('loadstart', handleLoadStart);
+        audio.removeEventListener('canplay', handleCanPlay);
+      };
+    }
+  }, [meetingId, volume, playbackRate]);
 
   // Initialize summary for editing
   useEffect(() => {
@@ -309,6 +369,21 @@ export default function MeetingDetailPage() {
     if (audioRef.current) {
       audioRef.current.currentTime = time
       setCurrentTime(time)
+      updateCurrentSegment(time)
+      
+      // Auto-play when seeking from Q&A
+      if (!isPlaying) {
+        const playPromise = audioRef.current.play()
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              setIsPlaying(true)
+            })
+            .catch((error) => {
+              console.error('Auto-play failed after seek:', error)
+            })
+        }
+      }
     }
   }
 
@@ -353,8 +428,9 @@ export default function MeetingDetailPage() {
 
   const changeVolume = (vol: number) => {
     if (audioRef.current) {
-      audioRef.current.volume = vol
-      setVolume(vol)
+      // Only set the volume, do not touch currentTime or play state
+      audioRef.current.volume = vol;
+      setVolume(vol);
     }
   }
 
@@ -435,6 +511,19 @@ export default function MeetingDetailPage() {
   };
 
   // Action items functions
+  const loadActionItems = async () => {
+    try {
+      const response = await fetch(`/api/meetings/${meetingId}/action-items`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        setActionItems(data.actionItems || []);
+      }
+    } catch (error) {
+      console.error('Error loading action items:', error);
+    }
+  };
+
   const extractActionItems = async () => {
     try {
       setActionItems([{ 
@@ -448,7 +537,10 @@ export default function MeetingDetailPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-        }
+        },
+        body: JSON.stringify({
+          user_id: userData?.id || 'default-user'
+        })
       });
       
       if (!response.ok) {
@@ -494,15 +586,25 @@ export default function MeetingDetailPage() {
         )
       );
       
-      const response = await fetch(`/api/meetings/${meetingId}/action-items/${itemId}`, {
-        method: 'PATCH',
+      const response = await fetch(`/api/meetings/${meetingId}/action-items`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          actionItemId: itemId,
           completed: updatedItem.completed
         }),
       });
+      // Try to parse error details for debugging
+      if (!response.ok) {
+        let errorMsg = 'Failed to update action item';
+        try {
+          const err = await response.json();
+          if (err && err.error) errorMsg += `: ${err.error}`;
+        } catch {}
+        throw new Error(errorMsg);
+      }
       
       if (!response.ok) {
         throw new Error('Failed to update action item');
@@ -514,6 +616,13 @@ export default function MeetingDetailPage() {
           item.id === itemId ? { ...item, completed: !item.completed } : item
         )
       );
+      // Add error notification for user
+      addNotification({
+        type: 'error',
+        title: 'Failed to update action item',
+        message: 'Could not update the action item status. Please try again.',
+        metadata: { meetingId, category: 'meeting' }
+      });
     }
   };
 
@@ -697,13 +806,13 @@ export default function MeetingDetailPage() {
           {/* Content Grid */}
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-6 premium-fade-in-up">
             {/* Main Content - Takes up 2/3 width */}
-            <div className="xl:col-span-2 space-y-6 premium-slide-in">
+            <div className="xl:col-span-2 space-y-6 apple-slide-in-left stagger-in">
               {/* Meeting Q&A */}
               <MeetingQA 
                 meetingId={meetingId}
                 segments={meeting.segments}
                 onSeekTo={seekTo}
-                className="shadow-lg hover:shadow-xl transition-shadow duration-300 animate-fadeIn"
+                className="shadow-lg hover:shadow-xl transition-shadow duration-300 apple-fade-in glass-card"
               />
 
               {/* Summary */}
@@ -716,6 +825,7 @@ export default function MeetingDetailPage() {
                 setEditedSummary={setEditedSummary}
                 meetingId={meetingId}
                 highlightText={highlightText}
+                onSummaryUpdated={() => refetch()}
               />
 
               {/* Search */}
@@ -737,7 +847,7 @@ export default function MeetingDetailPage() {
             </div>
             
             {/* Right Sidebar - Takes up 1/3 width */}
-            <div className="xl:col-span-1 space-y-6 premium-fade-in-up" style={{animationDelay: '0.3s'}}>
+            <div className="xl:col-span-1 space-y-6 apple-slide-in-right stagger-in" style={{animationDelay: '0.3s'}}>
               {/* Participants */}
               <MeetingParticipants
                 meetingId={meetingId}

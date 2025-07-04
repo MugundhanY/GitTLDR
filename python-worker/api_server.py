@@ -369,7 +369,7 @@ async def process_repository_endpoint(request: dict):
 @app.post("/meeting-qa")
 async def meeting_qa_endpoint(request: MeetingQARequest):
     """
-    Process Q&A queries for meetings using stored embeddings.
+    Meeting Q&A endpoint - processes questions about meeting content.
     """
     try:
         from processors.meeting_summarizer import MeetingProcessor
@@ -379,14 +379,11 @@ async def meeting_qa_endpoint(request: MeetingQARequest):
         # Create meeting processor
         meeting_processor = MeetingProcessor()
         
-        # Process the meeting question
-        result = await meeting_processor.process_meeting_qa(
-            task_data={
-                "meetingId": request.meeting_id,
-                "question": request.question,
-                "userId": request.user_id
-            },
-            logger=logger
+        # Process the question about the meeting
+        result = await meeting_processor.answer_meeting_question(
+            meeting_id=request.meeting_id,
+            question=request.question,
+            user_id=request.user_id
         )
         
         return {
@@ -565,6 +562,214 @@ async def detailed_health_check():
         health_status["services"]["deepseek"] = f"error: {str(e)}"
     
     return health_status
+
+@app.get("/debug/qdrant-status")
+async def debug_qdrant_status():
+    """Debug endpoint to check Qdrant status and collections."""
+    try:
+        if not qdrant_client.client:
+            await qdrant_client.connect()
+        
+        collections = qdrant_client.client.get_collections()
+        
+        result = {
+            "qdrant_connected": True,
+            "collections": []
+        }
+        
+        for collection in collections.collections:
+            collection_info = {
+                "name": collection.name,
+                "points_count": 0,
+                "config": {}
+            }
+            
+            try:
+                info = qdrant_client.client.get_collection(collection.name)
+                collection_info["points_count"] = info.points_count
+                collection_info["config"] = {
+                    "vector_size": info.config.params.vectors.size,
+                    "distance": str(info.config.params.vectors.distance)
+                }
+            except Exception as e:
+                collection_info["error"] = str(e)
+            
+            result["collections"].append(collection_info)
+        
+        return result
+        
+    except Exception as e:
+        return {
+            "qdrant_connected": False,
+            "error": str(e),
+            "collections": []
+        }
+
+@app.post("/debug/create-sample-meeting")
+async def debug_create_sample_meeting():
+    """Debug endpoint to create a sample meeting with segments in Qdrant."""
+    try:
+        # Connect to Qdrant if not connected
+        if not qdrant_client.client:
+            await qdrant_client.connect()
+        
+        # Sample meeting data
+        meeting_id = "sample-meeting-123"
+        
+        sample_segments = [
+            {
+                "index": 0,
+                "title": "Project Kickoff Discussion",
+                "summary": "Team discussed the new project timeline and initial requirements",
+                "text": "We need to start the new mobile app project. The deadline is in 3 months. John will lead the frontend development and Sarah will handle the backend. We should have a prototype ready by next month.",
+                "startTime": 0,
+                "endTime": 120
+            },
+            {
+                "index": 1,
+                "title": "Budget and Resources",
+                "summary": "Reviewed budget allocation and team resource requirements",
+                "text": "The budget for this project is $50,000. We need to hire two additional developers. Mike will handle the hiring process and should have candidates by Friday. The design team needs to finalize mockups by Wednesday.",
+                "startTime": 120,
+                "endTime": 240
+            },
+            {
+                "index": 2,
+                "title": "Action Items and Next Steps",
+                "summary": "Defined clear action items and responsibilities for the team",
+                "text": "Action items: 1) John to set up the development environment by tomorrow 2) Sarah to create database schema by Thursday 3) Team lead to schedule weekly check-ins 4) Marketing team to prepare launch strategy by end of week",
+                "startTime": 240,
+                "endTime": 360
+            }
+        ]
+        
+        # Store segments in Qdrant
+        success = await qdrant_client.store_meeting_segments(meeting_id, sample_segments)
+        
+        if success:
+            return {
+                "status": "success",
+                "message": f"Created sample meeting {meeting_id} with {len(sample_segments)} segments",
+                "meeting_id": meeting_id,
+                "segments_count": len(sample_segments)
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "Failed to store meeting segments"
+            }
+        
+    except Exception as e:
+        logger.error(f"Failed to create sample meeting: {str(e)}")
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+@app.post("/test-meeting-qa")
+async def test_meeting_qa():
+    """Test endpoint to create sample meeting data and test Q&A functionality."""
+    try:
+        # Create sample meeting data
+        meeting_id = "test-meeting-123"
+        
+        # First create sample meeting in database (mock)
+        sample_meeting_info = {
+            "title": "Team Sprint Planning Meeting",
+            "duration": "25:30",
+            "id": meeting_id
+        }
+        
+        # Create comprehensive sample segments
+        sample_segments = [
+            {
+                "index": 0,
+                "title": "Project Requirements Discussion",
+                "summary": "The team discussed the new mobile app requirements including user authentication, real-time messaging, and payment integration.",
+                "text": "We need to build a mobile app with user authentication. The app should support real-time messaging between users and integrate with Stripe for payments. John will lead the frontend development using React Native. Sarah will handle the backend API development. We need to complete the MVP within 3 months. The budget is $75,000.",
+                "startTime": 0,
+                "endTime": 180,
+                "excerpt": "We need to build a mobile app with user authentication..."
+            },
+            {
+                "index": 1,
+                "title": "Timeline and Milestones",
+                "summary": "Established project timeline with key milestones and deliverables over the next 3 months.",
+                "text": "Our timeline is as follows: Week 1-2: Setup development environment and basic project structure. Week 3-4: Implement user authentication and basic UI. Week 5-8: Build core messaging features. Week 9-10: Payment integration and testing. Week 11-12: Final testing and deployment. Each milestone will have a demo session with stakeholders.",
+                "startTime": 180,
+                "endTime": 360,
+                "excerpt": "Our timeline is as follows: Week 1-2: Setup development..."
+            },
+            {
+                "index": 2,
+                "title": "Action Items and Responsibilities",
+                "summary": "Assigned specific action items to team members with clear deadlines and responsibilities.",
+                "text": "Action items assigned: 1) John to set up React Native development environment by Friday 2) Sarah to design database schema and API endpoints by next Tuesday 3) Mike to prepare user stories and acceptance criteria by Wednesday 4) Lisa to create wireframes and UI mockups by Thursday 5) Team lead to schedule weekly sprint meetings every Monday at 10 AM",
+                "startTime": 360,
+                "endTime": 540,
+                "excerpt": "Action items assigned: 1) John to set up React Native..."
+            },
+            {
+                "index": 3,
+                "title": "Budget and Resource Allocation",
+                "summary": "Discussed budget breakdown and resource allocation for different aspects of the project.",
+                "text": "Budget breakdown: $30,000 for development team salaries, $15,000 for infrastructure and hosting, $10,000 for third-party integrations and licenses, $10,000 for design and UX, $10,000 buffer for unexpected costs. We also discussed hiring two additional junior developers to support the project.",
+                "startTime": 540,
+                "endTime": 720,
+                "excerpt": "Budget breakdown: $30,000 for development team salaries..."
+            }
+        ]
+        
+        # Store segments in Qdrant
+        from services.qdrant_client import qdrant_client
+        success = await qdrant_client.store_meeting_segments(meeting_id, sample_segments)
+        
+        if not success:
+            return {
+                "status": "error",
+                "message": "Failed to store meeting segments in Qdrant"
+            }
+        
+        # Test Q&A functionality
+        from processors.meeting_summarizer import MeetingProcessor
+        meeting_processor = MeetingProcessor()
+        
+        # Test questions
+        test_questions = [
+            "What is the project timeline?",
+            "Who is responsible for the frontend development?",
+            "What are the action items from this meeting?",
+            "What is the budget for this project?"
+        ]
+        
+        qa_results = []
+        for question in test_questions:
+            result = await meeting_processor.answer_meeting_question(
+                meeting_id=meeting_id,
+                question=question,
+                user_id="test-user"
+            )
+            qa_results.append({
+                "question": question,
+                "answer": result.get("answer", "No answer"),
+                "confidence": result.get("confidence", 0.0),
+                "status": result.get("status", "unknown")
+            })
+        
+        return {
+            "status": "success",
+            "message": f"Created test meeting {meeting_id} and tested Q&A",
+            "meeting_id": meeting_id,
+            "segments_stored": len(sample_segments),
+            "qa_results": qa_results
+        }
+        
+    except Exception as e:
+        logger.error(f"Test meeting Q&A failed: {str(e)}")
+        return {
+            "status": "error",
+            "message": str(e)
+        }
 
 if __name__ == "__main__":
     """Main entry point for running the API server."""

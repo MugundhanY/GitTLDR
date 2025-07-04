@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 export async function POST(
   request: NextRequest,
@@ -43,6 +46,28 @@ export async function POST(
     }
 
     const data = await response.json();
+    
+    // Store Q&A in database if successful
+    if (data.status === 'completed' && data.result) {
+      try {
+        await prisma.meetingQA.create({
+          data: {
+            meetingId,
+            userId: user_id || 'default-user',
+            question,
+            answer: data.result.answer || 'No answer available',
+            confidence: data.result.confidence || 0.0,
+            timestamp: data.result.suggested_timestamp || null,
+            relatedSegments: data.result.related_segments?.map((seg: any) => seg.segment_index?.toString() || seg.toString()) || []
+          }
+        });
+        console.log('Q&A stored in database successfully');
+      } catch (dbError) {
+        console.error('Failed to store Q&A in database:', dbError);
+        // Don't fail the request if database storage fails
+      }
+    }
+    
     return NextResponse.json(data);
 
   } catch (error) {

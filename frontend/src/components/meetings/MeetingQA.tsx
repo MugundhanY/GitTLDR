@@ -129,7 +129,7 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
           ...optimisticQA,
           answer: data.result.answer,
           timestamp: data.result.suggested_timestamp,
-          relatedSegments: data.result.related_segments?.map((seg: any) => `segment-${seg.segment_index}`) || [],
+          relatedSegments: data.result.related_segments?.map((seg: any) => seg.segment_index) || [],
           confidence: data.result.confidence || 0.8
         };
         
@@ -149,7 +149,7 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
               answer: data.result.answer,
               confidence: data.result.confidence || 0.8,
               timestamp: data.result.suggested_timestamp,
-              relatedSegments: data.result.related_segments?.map((seg: any) => `segment-${seg.segment_index}`) || [],
+              relatedSegments: data.result.related_segments?.map((seg: any) => seg.segment_index) || [],
               userId: userData?.id
             })
           });
@@ -439,17 +439,46 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
                           </span>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          {qa.relatedSegments.map((segmentId) => {
-                            const segment = segments.find(s => s.id === segmentId);
-                            return segment ? (
-                              <button
-                                key={segmentId}
-                                onClick={() => onSeekTo?.(segment.startTime)}
-                                className="px-2 py-1 text-xs bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-300 rounded hover:bg-purple-100 dark:hover:bg-purple-800/30 transition-colors"
-                              >
-                                {segment.title} ({formatTime(segment.startTime)})
-                              </button>
-                            ) : null;
+                          {qa.relatedSegments.map((segmentKey) => {
+                            // Robust segment matching: by id, index (number or string), or fallback to closest by timestamp
+                            let segment = segments.find(s => s.id === segmentKey);
+                            if (!segment && !isNaN(Number(segmentKey))) {
+                              segment = segments.find(s => s.index === Number(segmentKey));
+                            }
+                            if (!segment && typeof segmentKey === 'string') {
+                              segment = segments.find(s => s.index === parseInt(segmentKey));
+                            }
+                            if (!segment && segments.length > 0) {
+                              // Fallback: find closest segment by startTime if segmentKey is a timestamp
+                              const asTime = Number(segmentKey);
+                              if (!isNaN(asTime)) {
+                                segment = segments.reduce((prev, curr) => Math.abs(curr.startTime - asTime) < Math.abs(prev.startTime - asTime) ? curr : prev, segments[0]);
+                              }
+                            }
+                            // Extra fallback: if segmentKey is a string like 'segment-3', extract the number
+                            if (!segment && typeof segmentKey === 'string' && segmentKey.startsWith('segment-')) {
+                              const idx = parseInt(segmentKey.replace('segment-', ''));
+                              if (!isNaN(idx)) {
+                                segment = segments.find(s => s.index === idx - 1);
+                              }
+                            }
+                            if (segment) {
+                              return (
+                                <button
+                                  key={segmentKey}
+                                  onClick={() => onSeekTo?.(segment.startTime)}
+                                  className="px-2 py-1 text-xs bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-300 rounded hover:bg-purple-100 dark:hover:bg-purple-800/30 transition-colors"
+                                >
+                                  {segment.title ? segment.title : `Segment ${segment.index + 1}`} ({formatTime(segment.startTime)})
+                                </button>
+                              );
+                            } else {
+                              return (
+                                <span key={segmentKey} className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-500 rounded">
+                                  Unknown segment
+                                </span>
+                              );
+                            }
                           })}
                         </div>
                       </div>

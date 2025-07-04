@@ -707,29 +707,24 @@ body {
 }
 
 .dark .slider::-webkit-slider-track {
-  background: #334155;
+  background: #475569;
 }
 
 .slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  background: #6366f1;
-  height: 20px;
-  width: 20px;
+  background: #3b82f6;
+  height: 16px;
+  width: 16px;
   border-radius: 50%;
-  border: 2px solid #ffffff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   transition: all 0.2s ease;
 }
 
 .slider::-webkit-slider-thumb:hover {
-  background: #4f46e5;
+  background: #2563eb;
   transform: scale(1.1);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-}
-
-.dark .slider::-webkit-slider-thumb {
-  border-color: #1e293b;
 }
 
 .slider::-moz-range-track {
@@ -740,26 +735,127 @@ body {
 }
 
 .dark .slider::-moz-range-track {
-  background: #334155;
+  background: #475569;
 }
 
 .slider::-moz-range-thumb {
-  background: #6366f1;
-  height: 20px;
-  width: 20px;
+  background: #3b82f6;
+  height: 16px;
+  width: 16px;
   border-radius: 50%;
-  border: 2px solid #ffffff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   cursor: pointer;
-  transition: all 0.2s ease;
+  border: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .slider::-moz-range-thumb:hover {
-  background: #4f46e5;
+  background: #2563eb;
   transform: scale(1.1);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
-.dark .slider::-moz-range-thumb {
-  border-color: #1e293b;
+/* Ensure audio progress bar is always visible */
+.audio-progress-bar {
+  position: relative;
+  background: #e2e8f0 !important;
+  height: 8px !important;
+  border-radius: 4px !important;
+}
+
+.dark .audio-progress-bar {
+  background: #475569 !important;
+}
+
+.audio-progress-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6) !important;
+  border-radius: 4px;
+  transition: width 0.1s ease;
+}
+
+/* Volume slider specific styling */
+input[type="range"].volume-slider {
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  background: transparent !important;
+  cursor: pointer !important;
+  height: 6px !important;
+  outline: none !important;
+  width: 80px !important;
+  margin: 0 8px;
+}
+
+.volume-slider::-webkit-slider-track {
+  background: #cbd5e1 !important;
+  height: 6px !important;
+  border-radius: 3px !important;
+  border: none !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1) !important;
+}
+
+.dark .volume-slider::-webkit-slider-track {
+  background: #475569 !important;
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.1) !important;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  background: #3b82f6 !important;
+  height: 18px !important;
+  width: 18px !important;
+  border-radius: 50% !important;
+  cursor: pointer !important;
+  border: 3px solid #ffffff !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+  transition: all 0.2s ease !important;
+  margin-top: -6px !important;
+}
+
+.volume-slider::-webkit-slider-thumb:hover {
+  background: #2563eb !important;
+  transform: scale(1.15) !important;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3) !important;
+}
+
+.dark .volume-slider::-webkit-slider-thumb {
+  background: #60a5fa !important;
+  border: 3px solid #1e293b !important;
+}
+
+.dark .volume-slider::-webkit-slider-thumb:hover {
+  background: #3b82f6 !important;
+}
+
+/* Firefox support */
+.volume-slider::-moz-range-track {
+  background: #cbd5e1 !important;
+  height: 6px !important;
+  border-radius: 3px !important;
+  border: none !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1) !important;
+}
+
+.dark .volume-slider::-moz-range-track {
+  background: #475569 !important;
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.1) !important;
+}
+
+.volume-slider::-moz-range-thumb {
+  background: #3b82f6 !important;
+  height: 18px !important;
+  width: 18px !important;
+  border-radius: 50% !important;
+  cursor: pointer !important;
+  border: 3px solid #ffffff !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+  -moz-appearance: none !important;
+}
+
+.dark .volume-slider::-moz-range-thumb {
+  background: #60a5fa !important;
+  border: 3px solid #1e293b !important;
 }
