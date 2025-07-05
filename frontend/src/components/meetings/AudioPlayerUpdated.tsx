@@ -105,11 +105,37 @@ export default function AudioPlayer({
     updateCurrentSegment(newTime);
   };
 
+  // Debug audio loading
+  useEffect(() => {
+    if (audioRef.current) {
+      console.log('AudioPlayer: Audio ref available, src:', audioRef.current.src);
+      console.log('AudioPlayer: Initial loading state:', isAudioLoading);
+      
+      // If we have a meetingId but no src, something is wrong
+      if (meetingId && !audioRef.current.src) {
+        console.warn('AudioPlayer: Missing audio source for meeting:', meetingId);
+      }
+    }
+  }, [meetingId, isAudioLoading]);
+
+  // Safety timeout to prevent infinite loading
+  useEffect(() => {
+    if (isAudioLoading) {
+      const timeout = setTimeout(() => {
+        console.warn('AudioPlayer: Loading timeout, stopping loading state');
+        setIsAudioLoading(false);
+      }, 10000); // 10 second timeout
+      
+      return () => clearTimeout(timeout);
+    }
+  }, [isAudioLoading]);
+
   return (
     <>
       {/* Hidden Audio Element */}
       <audio
         ref={audioRef}
+        src={`/api/meetings/${meetingId}/audio`}
         onLoadedMetadata={() => {
           if (audioRef.current) {
             setDuration(audioRef.current.duration);
@@ -130,15 +156,11 @@ export default function AudioPlayer({
         }}
         onLoadStart={() => setIsAudioLoading(true)}
         onCanPlay={() => setIsAudioLoading(false)}
+        onLoadedData={() => setIsAudioLoading(false)}
         preload="metadata"
         controls={false}
         style={{ display: 'none' }}
-      >
-        <source src={`/api/meetings/${meetingId}/audio`} type="audio/mpeg" />
-        <source src={`/api/meetings/${meetingId}/audio`} type="audio/wav" />
-        <source src={`/api/meetings/${meetingId}/audio`} type="audio/mp4" />
-        Your browser does not support the audio element.
-      </audio>
+      ></audio>
 
       {/* Main Audio Player in Content */}
       <div className={`transition-all duration-500 ${isScrolled ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
@@ -165,7 +187,11 @@ export default function AudioPlayer({
             <div className="flex items-center gap-3">
               <select
                 value={playbackRate}
-                onChange={(e) => changePlaybackRate(Number(e.target.value))}
+                onChange={(e) => {
+                  const newRate = Number(e.target.value);
+                  changePlaybackRate(newRate);
+                  // Don't manipulate audioRef here, let parent handle it
+                }}
                 className="text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               >
                 <option value={0.5}>0.5x</option>
@@ -227,15 +253,9 @@ export default function AudioPlayer({
                     step={0.01}
                     value={volume}
                     onChange={(e) => {
-                      e.stopPropagation();
-                      // Only change volume, do not reset audio or playback
-                      if (audioRef.current) {
-                        // Only update volume, do not touch currentTime or play state
-                        changeVolume(parseFloat(e.target.value));
-                        audioRef.current.volume = parseFloat(e.target.value);
-                      } else {
-                        changeVolume(parseFloat(e.target.value));
-                      }
+                      const newVolume = parseFloat(e.target.value);
+                      changeVolume(newVolume);
+                      // Don't manipulate audioRef here, let parent handle it
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
                     onTouchStart={(e) => e.stopPropagation()}
@@ -311,15 +331,9 @@ export default function AudioPlayer({
                 <select
                 value={playbackRate}
                 onChange={(e) => {
-                  if (audioRef.current) {
-                    const prevTime = audioRef.current.currentTime;
-                    const wasPlaying = !audioRef.current.paused;
-                    changePlaybackRate(Number(e.target.value));
-                    audioRef.current.currentTime = prevTime;
-                    if (wasPlaying) audioRef.current.play();
-                  } else {
-                    changePlaybackRate(Number(e.target.value));
-                  }
+                  const newRate = Number(e.target.value);
+                  changePlaybackRate(newRate);
+                  // Don't manipulate audioRef here, let parent handle it
                 }}
                   className="text-xs border border-slate-600 rounded-lg px-2 py-1 bg-slate-800 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 >

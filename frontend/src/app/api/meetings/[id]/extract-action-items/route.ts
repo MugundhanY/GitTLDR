@@ -56,7 +56,6 @@ export async function POST(
           if (transformedItems.length > 0) {
             await prisma.meetingActionItem.createMany({
               data: transformedItems.map((item: any) => ({
-                id: item.id,
                 meetingId,
                 userId: user_id || 'default-user',
                 assigneeId: null, // We could try to match assignee to actual users later

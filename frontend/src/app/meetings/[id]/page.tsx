@@ -202,86 +202,18 @@ export default function MeetingDetailPage() {
     }
   };
 
-  // Initialize audio when meeting data loads
-  useEffect(() => {
-    if (meeting && audioRef.current) {
-      const audio = audioRef.current
-      
-      const handleLoadedMetadata = () => {
-        setDuration(audio.duration)
-      }
-      
-      const handleTimeUpdate = () => {
-        setCurrentTime(audio.currentTime)
-        
-        // Update current segment based on playback time
-        if (meeting.segments) {
-          const current = meeting.segments.find(segment => 
-            audio.currentTime >= segment.startTime && audio.currentTime <= segment.endTime
-          )
-          if (current) {
-            setCurrentSegment(current.index)
-          }
-        }
-      }
-      
-      const handleEnded = () => {
-        setIsPlaying(false)
-      }
-      
-      const handleLoadStart = () => {
-        setIsAudioLoading(true);
-      };
-      
-      const handleCanPlay = () => {
-        setIsAudioLoading(false);
-      };
-      
-      const handleError = (event: Event) => {
-        setIsAudioLoading(false);
-        console.error('Audio loading error:', event);
-        console.error('Failed to load audio from:', audio.src);
-        
-        // If original audio fails, fallback to placeholder
-        if (audio.src !== '/api/placeholder-audio.mp3') {
-          console.log('Falling back to placeholder audio');
-          audio.src = '/api/placeholder-audio.mp3';
-        }
-      };
-      
-      audio.addEventListener('loadedmetadata', handleLoadedMetadata)
-      audio.addEventListener('timeupdate', handleTimeUpdate)
-      audio.addEventListener('ended', handleEnded)
-      audio.addEventListener('loadstart', handleLoadStart);
-      audio.addEventListener('canplay', handleCanPlay);
-      audio.addEventListener('error', handleError);
-      
-      // Set audio source - always use the API endpoint for proper handling
-      console.log('Setting audio source to API endpoint');
-      audio.src = `/api/meetings/${meetingId}/audio`;
-      
-      return () => {
-        audio.removeEventListener('loadedmetadata', handleLoadedMetadata)
-        audio.removeEventListener('timeupdate', handleTimeUpdate)
-        audio.removeEventListener('ended', handleEnded)
-        audio.removeEventListener('loadstart', handleLoadStart);
-        audio.removeEventListener('canplay', handleCanPlay);
-        audio.removeEventListener('error', handleError);
-      }
-    }
-  }, [meeting])
+  // Initialize audio when meeting data loads - handled by the main audio setup effect below
 
   // Audio element setup effect
   useEffect(() => {
     if (audioRef.current && meetingId) {
       const audio = audioRef.current;
       
-      // Set up audio source immediately
-      const audioSrc = `/api/meetings/${meetingId}/audio`;
-      audio.src = audioSrc;
+      console.log('Parent: Setting up audio event listeners for meeting:', meetingId);
       
       // Set up event handlers
       const handleLoadedMetadata = () => {
+        console.log('Parent: Audio metadata loaded, duration:', audio.duration);
         setDuration(audio.duration);
         setIsAudioLoading(false);
       };
@@ -294,19 +226,37 @@ export default function MeetingDetailPage() {
       const handlePlay = () => setIsPlaying(true);
       const handlePause = () => setIsPlaying(false);
       
-      const handleError = (e: any) => {
-        console.error('Audio error:', e);
-        setIsAudioLoading(false);
+      const handleEnded = () => {
+        setIsPlaying(false);
       };
       
-      const handleLoadStart = () => setIsAudioLoading(true);
-      const handleCanPlay = () => setIsAudioLoading(false);
+      const handleError = (event: Event) => {
+        setIsAudioLoading(false);
+        console.error('Parent: Audio loading error:', event);
+        console.error('Parent: Failed to load audio from:', audio.src);
+        
+        // If original audio fails, fallback to placeholder
+        if (!audio.src.includes('placeholder-audio.mp3')) {
+          console.log('Parent: Falling back to placeholder audio');
+          audio.src = '/api/placeholder-audio.mp3';
+        }
+      };
+      
+      const handleLoadStart = () => {
+        console.log('Parent: Audio load started');
+        setIsAudioLoading(true);
+      };
+      const handleCanPlay = () => {
+        console.log('Parent: Audio can play');
+        setIsAudioLoading(false);
+      };
       
       // Add event listeners
       audio.addEventListener('loadedmetadata', handleLoadedMetadata);
       audio.addEventListener('timeupdate', handleTimeUpdate);
       audio.addEventListener('play', handlePlay);
       audio.addEventListener('pause', handlePause);
+      audio.addEventListener('ended', handleEnded);
       audio.addEventListener('error', handleError);
       audio.addEventListener('loadstart', handleLoadStart);
       audio.addEventListener('canplay', handleCanPlay);
@@ -321,12 +271,13 @@ export default function MeetingDetailPage() {
         audio.removeEventListener('timeupdate', handleTimeUpdate);
         audio.removeEventListener('play', handlePlay);
         audio.removeEventListener('pause', handlePause);
+        audio.removeEventListener('ended', handleEnded);
         audio.removeEventListener('error', handleError);
         audio.removeEventListener('loadstart', handleLoadStart);
         audio.removeEventListener('canplay', handleCanPlay);
       };
     }
-  }, [meetingId, volume, playbackRate]);
+  }, [meetingId]); // Remove volume and playbackRate from dependencies
 
   // Initialize summary for editing
   useEffect(() => {
@@ -420,17 +371,16 @@ export default function MeetingDetailPage() {
   }
 
   const changePlaybackRate = (rate: number) => {
+    setPlaybackRate(rate)
     if (audioRef.current) {
       audioRef.current.playbackRate = rate
-      setPlaybackRate(rate)
     }
   }
 
   const changeVolume = (vol: number) => {
+    setVolume(vol)
     if (audioRef.current) {
-      // Only set the volume, do not touch currentTime or play state
-      audioRef.current.volume = vol;
-      setVolume(vol);
+      audioRef.current.volume = vol
     }
   }
 

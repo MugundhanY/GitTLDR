@@ -6,10 +6,10 @@ const prisma = new PrismaClient();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const meetingId = params.id;
+    const { id: meetingId } = await params;
     
     const actionItems = await prisma.meetingActionItem.findMany({
       where: {
@@ -64,7 +64,7 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getUserFromRequest(request);
@@ -72,7 +72,7 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const meetingId = params.id;
+    const { id: meetingId } = await params;
     const { text, priority = 'MEDIUM', assigneeId, dueDate } = await request.json();
 
     if (!text || text.trim().length === 0) {
@@ -113,7 +113,7 @@ export async function POST(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getUserFromRequest(request);
@@ -121,18 +121,40 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const meetingId = params.id;
+    const { id: meetingId } = await params;
     const { actionItemId, status, completed } = await request.json();
+
+    console.log('PUT request data:', { meetingId, actionItemId, status, completed });
 
     if (!actionItemId) {
       return NextResponse.json({ error: 'Action item ID is required' }, { status: 400 });
     }
 
-    // Update the action item
-    const updatedItem = await prisma.meetingActionItem.update({
+    // First check if the action item exists
+    const existingItem = await prisma.meetingActionItem.findFirst({
       where: { 
         id: actionItemId,
         meetingId // Ensure the action item belongs to this meeting
+      }
+    });
+
+    console.log('Existing item found:', existingItem ? 'Yes' : 'No');
+    
+    if (!existingItem) {
+      // Log all action items for this meeting to help debug
+      const allItems = await prisma.meetingActionItem.findMany({
+        where: { meetingId },
+        select: { id: true, text: true }
+      });
+      console.error(`Action item not found: ${actionItemId} for meeting: ${meetingId}`);
+      console.error('Available action items:', allItems);
+      return NextResponse.json({ error: 'Action item not found' }, { status: 404 });
+    }
+
+    // Update the action item
+    const updatedItem = await prisma.meetingActionItem.update({
+      where: { 
+        id: actionItemId
       },
       data: { 
         completed: completed !== undefined ? completed : (status === 'COMPLETED'),

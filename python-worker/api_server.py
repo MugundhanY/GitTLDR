@@ -19,6 +19,7 @@ from api.attachments import router as attachments_router
 from api.lightweight_thinking import lightweight_thinking_service
 from services.redis_client import redis_client
 from services.qdrant_client import qdrant_client
+from services.gemini_client import GeminiClient
 from utils.logger import setup_logging, get_logger
 
 # Setup logging
@@ -132,6 +133,15 @@ class MeetingQARequest(BaseModel):
     meeting_id: str
     question: str
     user_id: str = "anonymous"
+
+class AnalyticsInsightsRequest(BaseModel):
+    analytics: dict
+    timeRange: str = "30d"
+
+class AnalyticsInsightsResponse(BaseModel):
+    status: str
+    insights: List[str]
+    generated_at: str
 
 @app.post("/pure-thinking")
 async def pure_thinking_endpoint(request: PureThinkingRequest):
@@ -770,6 +780,152 @@ async def test_meeting_qa():
             "status": "error",
             "message": str(e)
         }
+
+@app.post("/api/generate-insights", response_model=AnalyticsInsightsResponse)
+async def generate_analytics_insights(request: AnalyticsInsightsRequest):
+    """Generate AI-powered insights from analytics data using Gemini."""
+    try:
+        logger.info(f"Generating AI insights for analytics data (timeRange: {request.timeRange})")
+        
+        # Initialize Gemini client
+        gemini_client = GeminiClient()
+        
+        # Prepare analytics summary for AI analysis
+        analytics_summary = f"""
+        Analytics Summary for {request.timeRange}:
+        
+        Overview:
+        - Total Users: {request.analytics.get('overview', {}).get('totalUsers', 0)}
+        - Total Repositories: {request.analytics.get('overview', {}).get('totalRepositories', 0)}
+        - Total Meetings: {request.analytics.get('overview', {}).get('totalMeetings', 0)}
+        - Total Questions: {request.analytics.get('overview', {}).get('totalQuestions', 0)}
+        - Total Action Items: {request.analytics.get('overview', {}).get('totalActionItems', 0)}
+        - Growth Rate: {request.analytics.get('overview', {}).get('growthRate', 0)}%
+        
+        Meeting Stats:
+        - Average Duration: {request.analytics.get('meetingStats', {}).get('averageDuration', 0)} minutes
+        - Completion Rate: {request.analytics.get('meetingStats', {}).get('completionRate', 0)}%
+        
+        File Stats:
+        - Top Languages: {', '.join([lang.get('language', '') for lang in request.analytics.get('fileStats', {}).get('byLanguage', [])[:3]])}
+        - Total Storage: {request.analytics.get('fileStats', {}).get('totalSizeGB', 0)} GB
+        
+        Q&A Stats:
+        - Average Confidence: {request.analytics.get('qaStats', {}).get('averageConfidence', 0) * 100:.1f}%
+        - Total Questions: {request.analytics.get('qaStats', {}).get('total', 0)}
+        """
+        
+        # Create AI prompt for insights generation
+        prompt = f"""
+        You are an AI analytics expert analyzing software development team metrics. Based on the following analytics data, generate 4-6 actionable insights that would help a development team improve their productivity and collaboration.
+
+        {analytics_summary}
+
+        Please provide insights that are:
+        1. Specific and actionable
+        2. Based on the actual data provided
+        3. Focused on productivity, collaboration, and code quality
+        4. Written in a professional yet approachable tone
+        5. Include specific metrics where relevant
+
+        Format each insight as a concise sentence or two. Focus on trends, opportunities for improvement, and team performance indicators.
+        """
+        
+        # Generate insights using Gemini
+        try:
+            response = await gemini_client.generate_content_async(prompt, max_tokens=500)
+            
+            if response and hasattr(response, 'text') and response.text:
+                # Parse the response into individual insights
+                insights_text = response.text.strip()
+                
+                # Split by common patterns and clean up
+                insights = []
+                for line in insights_text.split('\n'):
+                    line = line.strip()
+                    # Remove numbering, bullets, etc.
+                    line = line.lstrip('1234567890.-• ')
+                    if line and len(line) > 20:  # Filter out short/empty lines
+                        insights.append(line)
+                
+                # Ensure we have at least some insights
+                if not insights:
+                    insights = [insights_text] if insights_text else []
+                    
+            else:
+                logger.warning("No valid response from Gemini API")
+                insights = generate_fallback_insights(request.analytics)
+                
+        except Exception as gemini_error:
+            logger.error(f"Gemini API error: {str(gemini_error)}")
+            insights = generate_fallback_insights(request.analytics)
+        
+        return AnalyticsInsightsResponse(
+            status="success",
+            insights=insights[:6],  # Limit to 6 insights
+            generated_at=time.strftime("%Y-%m-%d %H:%M:%S")
+        )
+        
+    except Exception as e:
+        logger.error(f"Error generating analytics insights: {str(e)}")
+        # Return fallback insights on any error
+        fallback_insights = generate_fallback_insights(request.analytics)
+        return AnalyticsInsightsResponse(
+            status="partial",
+            insights=fallback_insights,
+            generated_at=time.strftime("%Y-%m-%d %H:%M:%S")
+        )
+
+def generate_fallback_insights(analytics: dict) -> List[str]:
+    """Generate basic insights when AI is unavailable."""
+    insights = []
+    overview = analytics.get('overview', {})
+    meeting_stats = analytics.get('meetingStats', {})
+    file_stats = analytics.get('fileStats', {})
+    qa_stats = analytics.get('qaStats', {})
+    
+    # Meeting insights
+    if overview.get('totalMeetings', 0) > 0:
+        completion_rate = meeting_stats.get('completionRate', 0)
+        if completion_rate > 80:
+            insights.append(f"Excellent meeting completion rate of {completion_rate:.1f}% shows strong team engagement and follow-through.")
+        elif completion_rate > 60:
+            insights.append(f"Meeting completion rate of {completion_rate:.1f}% is good, but there's room for improvement in follow-through.")
+        else:
+            insights.append(f"Meeting completion rate of {completion_rate:.1f}% suggests need for better meeting structure and action item tracking.")
+            
+        avg_duration = meeting_stats.get('averageDuration', 0)
+        if avg_duration > 90:
+            insights.append("Consider shorter, more focused meetings to improve efficiency and engagement.")
+        elif avg_duration < 30:
+            insights.append("Short meeting durations suggest efficient communication and good preparation.")
+    
+    # Code insights
+    if file_stats.get('byLanguage'):
+        top_language = file_stats['byLanguage'][0]
+        insights.append(f"{top_language.get('language', 'Unknown')} dominance ({top_language.get('count', 0)} files) indicates consistent technology choices.")
+    
+    # Q&A insights
+    if qa_stats.get('total', 0) > 0:
+        confidence = qa_stats.get('averageConfidence', 0) * 100
+        if confidence > 75:
+            insights.append(f"High Q&A confidence score of {confidence:.1f}% demonstrates strong knowledge sharing and documentation.")
+        else:
+            insights.append(f"Q&A confidence score of {confidence:.1f}% suggests opportunities to improve documentation and knowledge base.")
+    
+    # Growth insights
+    growth_rate = overview.get('growthRate', 0)
+    if growth_rate > 10:
+        insights.append(f"Strong growth rate of {growth_rate:.1f}% indicates healthy project expansion and team adoption.")
+    elif growth_rate < -10:
+        insights.append("Negative growth trend suggests need to review project direction and team engagement.")
+    
+    # Team insights
+    total_users = overview.get('totalUsers', 0)
+    if total_users > 1:
+        insights.append(f"Team of {total_users} members shows collaborative development approach.")
+    
+    return insights[:6] if insights else ["Analytics data is being collected to provide meaningful insights."]
 
 if __name__ == "__main__":
     """Main entry point for running the API server."""
