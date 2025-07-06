@@ -98,7 +98,7 @@ export default function ModernSearchBar({
         <div className="absolute top-full left-0 right-0 mt-2 z-10">
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-lg overflow-hidden">
             <div className="px-4 py-2 text-sm text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800">
-              Searching for "{value}"...
+              Searching for &quot;{value}&quot;...
             </div>
           </div>
         </div>

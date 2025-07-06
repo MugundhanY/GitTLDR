@@ -58,7 +58,7 @@ export default function Sidebar({ selectedRepository }: SidebarProps) {
   const { repositories, selectRepository } = useRepository();
   const { isCollapsed, toggleSidebar } = useSidebar();
   const { statsRefreshTrigger } = useQnA();
-  const { data: meetingCount, isLoading: meetingCountLoading } = useMeetingCount();
+  const { data: meetingCount, isLoading: meetingCountLoading } = useMeetingCount(selectedRepository?.id);
   const [showRepoDropdown, setShowRepoDropdown] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');const dropdownRef = useRef<HTMLDivElement>(null);
   // Refresh stats when QnA context triggers an update (with throttling)

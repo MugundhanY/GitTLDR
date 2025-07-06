@@ -1,11 +1,12 @@
 import { PrismaClient, MeetingStatus } from '@prisma/client';
 const prisma = new PrismaClient();
 
-export async function createMeetingRecord({ meetingId, userId, b2FileKey, title, source, language, numSegments, participants }: any) {
+export async function createMeetingRecord({ meetingId, userId, repositoryId, b2FileKey, title, source, language, numSegments, participants }: any) {
   await prisma.meeting.create({
     data: {
       id: meetingId,
       userId: userId, // Use userId, not ownerId
+      repositoryId: repositoryId || null,
       raw_audio_path: b2FileKey,
       status: MeetingStatus.PROCESSING,
       title: title || '',

@@ -88,7 +88,7 @@ export default function ActionItems({
               No action items found yet
             </p>
             <p className="text-xs text-slate-400 dark:text-slate-500">
-              Click "Extract" to analyze the meeting for action items
+              Click &quot;Extract&quot; to analyze the meeting for action items
             </p>
           </div>
         )}

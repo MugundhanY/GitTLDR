@@ -85,7 +85,7 @@ const useAnimatedCounter = (end: number, duration: number = 1000, delay: number 
         setIsAnimating(false)
       }
     }
-  }, [isVisible, end, duration, delay]) // Removed count, lastEnd, and isAnimating from dependencies
+  }, [isVisible, end, duration, delay]) // Remove count and isAnimating from dependencies
 
   // Cleanup on unmount
   useEffect(() => {
@@ -101,10 +101,16 @@ const useAnimatedCounter = (end: number, duration: number = 1000, delay: number 
 
 // Animated Header Stats Component
 const AnimatedHeaderStats = ({ stats }: { stats?: FileStats }) => {
+  // Always call hooks, but use default values when stats is undefined
+  const totalFiles = stats?.totalFiles || 0;
+  const totalSize = stats?.totalSize || 0;
+  const languagesLength = stats?.languages.length || 0;
+
+  const filesCounter = useAnimatedCounter(totalFiles, 1200, 100);
+  const sizeCounter = useAnimatedCounter(totalSize, 1000, 200);
+  const languagesCounter = useAnimatedCounter(languagesLength, 800, 300);
+
   if (!stats) return null;
-  const filesCounter = useAnimatedCounter(stats.totalFiles, 1200, 100)
-  const sizeCounter = useAnimatedCounter(stats.totalSize, 1000, 200)
-  const languagesCounter = useAnimatedCounter(stats.languages.length, 800, 300)
 
   // Helper function to format animated size counter
   const formatAnimatedSize = (bytes: number) => {
@@ -248,11 +254,14 @@ export default function FilesPage() {
   // Cleanup function
   useEffect(() => {
     return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current)
+      const searchTimeout = searchTimeoutRef.current;
+      const abortController = abortControllerRef.current;
+      
+      if (searchTimeout) {
+        clearTimeout(searchTimeout);
       }
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort()
+      if (abortController) {
+        abortController.abort();
       }
     }
   }, [])

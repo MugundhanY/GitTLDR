@@ -695,7 +695,7 @@ export default function MeetingDetailPage() {
               Meeting Not Found
             </h2>
             <p className="text-slate-500 dark:text-slate-400 mb-6">
-              The meeting you're looking for doesn't exist or has been deleted.
+              The meeting you&apos;re looking for doesn&apos;t exist or has been deleted.
             </p>
             <button
               onClick={() => router.push('/meetings')}

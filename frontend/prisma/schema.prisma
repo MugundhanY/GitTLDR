@@ -32,7 +32,6 @@ model User {
   repositories        Repository[]
   transactions        Transaction[]
   // Relations for tracking who created items
-  createdMeetings     Meeting[]            @relation("MeetingCreatedBy")
   createdQuestions    Question[]           @relation("QuestionCreatedBy")
   uploadedAttachments QuestionAttachment[] @relation("AttachmentUploadedBy")
 
@@ -44,9 +43,9 @@ model User {
   sharedMeetings      MeetingShareSetting[] @relation("SharedMeetings")
   notifications       Notification[]       @relation("UserNotifications")
   meetingQAs          MeetingQA[]
+  meetings            Meeting[]
 
   @@map("users")
-  Meeting Meeting[]
 }
 
 model Repository {
@@ -192,6 +191,8 @@ model Meeting {
   meeting_segments MeetingSegment[]
   userId           String?       @map("user_id")
   user             User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repositoryId     String?       @map("repository_id")
+  repository       Repository?   @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
   
   // New relations
   favorites        MeetingFavorite[]
@@ -201,8 +202,6 @@ model Meeting {
   qaItems          MeetingQA[]
 
   @@map("meetings")
-  Repository Repository[]
-  User User[] @relation("MeetingCreatedBy")
 }
 
 model MeetingSegment {

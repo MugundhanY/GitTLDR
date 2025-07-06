@@ -237,9 +237,9 @@ class GeminiClient:
             try:
                 # Prepare prompt
                 prompt = self._build_summary_prompt(text, context)
-                
-                # Generate summary
-                response = await self.text_model.generate_content_async(
+                # Generate summary (sync call in async context)
+                response = await asyncio.to_thread(
+                    self.text_model.generate_content,
                     prompt,
                     safety_settings=self.safety_settings,
                     generation_config=genai.types.GenerationConfig(
@@ -249,12 +249,8 @@ class GeminiClient:
                         max_output_tokens=1000,
                     )
                 )
-                
                 summary = response.text.strip()
-                
-                # Record success
                 self.rate_limit_manager.record_success()
-                
                 logger.debug("Generated summary", length=len(summary), attempt=attempt + 1)
                 return summary
                 
@@ -403,7 +399,8 @@ class GeminiClient:
                 
                 logger.info(f"Using {max_tokens} max tokens for context size: {context_size} chars")
                 
-                response = await self.text_model.generate_content_async(
+                response = await asyncio.to_thread(
+                    self.text_model.generate_content,
                     prompt,
                     safety_settings=self.safety_settings,
                     generation_config=genai.types.GenerationConfig(
@@ -412,7 +409,6 @@ class GeminiClient:
                         max_output_tokens=max_tokens,  # Adaptive token limit
                     )
                 )
-                
                 answer = response.text.strip()
                 
                 # Enhanced truncation detection and handling
@@ -651,7 +647,8 @@ Provide a clear, structured summary in 2-3 paragraphs:
                 prompt = self._build_chain_of_thought_prompt(question, combined_context)
                 
                 # Generate reasoning
-                response = await self.text_model.generate_content_async(
+                response = await asyncio.to_thread(
+                    self.text_model.generate_content,
                     prompt,
                     safety_settings=self.safety_settings,
                     generation_config=genai.types.GenerationConfig(
@@ -660,12 +657,9 @@ Provide a clear, structured summary in 2-3 paragraphs:
                         max_output_tokens=3000,
                     )
                 )
-                
                 reasoning = response.text.strip()
                 confidence = self._calculate_confidence(reasoning, combined_context)
-                
                 logger.info(f"Generated chain-of-thought reasoning (attempt {attempt + 1})")
-                
                 return {
                     "reasoning": reasoning,
                     "confidence": confidence,
@@ -940,7 +934,8 @@ Provide a comprehensive, technical answer that demonstrates deep understanding o
                 prompt = self._build_categorization_prompt(question, repository_context)
                 
                 # Generate categorization
-                response = await self.text_model.generate_content_async(
+                response = await asyncio.to_thread(
+                    self.text_model.generate_content,
                     prompt,
                     safety_settings=self.safety_settings,
                     generation_config=genai.types.GenerationConfig(
@@ -949,7 +944,6 @@ Provide a comprehensive, technical answer that demonstrates deep understanding o
                         max_output_tokens=200,  # Short response needed
                     )
                 )
-                
                 categorization_text = response.text.strip()
                 
                 # Parse the AI response to extract category and tags
@@ -1081,6 +1075,21 @@ Analyze the question and respond:
                 "tags": ["question"],
                 "confidence": 0.3
             }
+
+
+    async def generate_content_async(self, prompt: str, max_tokens: int = 500, temperature: float = 0.7) -> str:
+        """Generate content using Gemini API with async support."""
+        try:
+            # Use the existing answer_question method as a fallback
+            response = await self.answer_question(
+                question=prompt,
+                context="Analytics insights generation",
+                files_content=[]
+            )
+            return response.get('answer', 'Unable to generate insights at this time.')
+        except Exception as e:
+            logger.error(f"Error generating content: {str(e)}")
+            return "Unable to generate insights at this time."
 
 
 # Global Gemini client instance

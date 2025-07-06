@@ -166,7 +166,7 @@ export default function QnAPage() {
     if (!optimisticQuestions.length) return;
     const completedIds = new Set(fetchedQuestions.map(q => q.query.trim().toLowerCase()));
     setOptimisticQuestions(prev => prev.filter(optQ => !completedIds.has(optQ.query.trim().toLowerCase())));
-  }, [fetchedQuestions]);
+  }, [fetchedQuestions, optimisticQuestions.length]);
 
   // Add optimistic pending question for deep thinking as well
   useEffect(() => {
@@ -200,40 +200,27 @@ export default function QnAPage() {
   // In ThinkingProcess onAnswerSubmitted, just refetch (optimistic removal is handled globally)
   const handleAskQuestion = useCallback(async () => {
     if (!newQuestion.trim()) return
-    // Do NOT auto-enable deep research here; only use current state
+    
+    // Set thinking mode if deep research is enabled
     if (enableDeepResearch) {
       setCurrentThinkingQuestion(newQuestion.trim())
     } else {
-      // Normal question mode
       setCurrentThinkingQuestion('')
     }
-    setNewQuestion('')
-    // Optimistically add pending question
-    const optimisticId = `optimistic-${Date.now()}`
-    const pendingQuestion: Question = {
-      id: optimisticId,
-      query: newQuestion.trim(),
-      repositoryId: selectedRepository?.id || '',
-      repositoryName: selectedRepository?.name || '',
-      createdAt: new Date().toISOString(),
-      status: 'pending',
-      tags: [],
-      category: '',
-      relevantFiles: [],
-      confidence: 0,
-      isFavorite: false,
-      reasoningSteps: [],
-      hasMultiStepReasoning: false,
-      questionAttachments: questionAttachments || [],
-    }
-    setOptimisticQuestions(prev => [pendingQuestion, ...prev])
-    await actions.handleAskQuestion(newQuestion.trim(), questionAttachments)
+    
+    // Clear the input
+    const questionText = newQuestion.trim()
     setNewQuestion('')
     setQuestionAttachments([])
+    
+    // Let the actions handle the optimistic update and API call
+    await actions.handleAskQuestion(questionText, questionAttachments)
+    
+    // Refetch after a short delay to ensure consistency
     setTimeout(() => {
       refetchQuestions()
     }, 1000)
-  }, [newQuestion, questionAttachments, actions, enableDeepResearch, selectedRepository])  
+  }, [newQuestion, questionAttachments, actions, enableDeepResearch, refetchQuestions])  
   
   const handleSelectSuggestion = useCallback((suggestion: string) => {
     setNewQuestion(suggestion)

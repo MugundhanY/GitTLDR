@@ -464,7 +464,7 @@ export default function TeamsPage() {
                     {/* Search Results Info */}
                     {searchQuery && (
                       <div className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                        Found {filteredMembers.length} member{filteredMembers.length !== 1 ? 's' : ''} matching "{searchQuery}"
+                        Found {filteredMembers.length} member{filteredMembers.length !== 1 ? 's' : ''} matching &quot;{searchQuery}&quot;
                       </div>
                     )}
                   </div>

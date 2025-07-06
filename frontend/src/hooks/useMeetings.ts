@@ -26,6 +26,12 @@ export interface Meeting {
   segmentCount: number;
   segments: MeetingSegment[];
   isFavorite?: boolean;
+  repositoryId?: string;
+  repository?: {
+    id: string;
+    name: string;
+    fullName: string;
+  };
   user?: {
     id: string;
     name: string;
@@ -38,11 +44,16 @@ export function useMeetings(repositoryId?: string) {
   const { userData } = useUserData();
   
   return useQuery<Meeting[]>({
-    queryKey: ['meetings', userData?.id],
+    queryKey: ['meetings', userData?.id, repositoryId],
     queryFn: async () => {
       if (!userData?.id) return [];
       
-      const res = await fetch(`/api/meetings?userId=${userData.id}`);
+      const params = new URLSearchParams({ userId: userData.id });
+      if (repositoryId) {
+        params.set('repositoryId', repositoryId);
+      }
+      
+      const res = await fetch(`/api/meetings?${params.toString()}`);
       if (!res.ok) throw new Error('Failed to fetch meetings');
       
       const data = await res.json();
@@ -72,15 +83,20 @@ export function useMeeting(meetingId: string) {
 }
 
 // Hook to get meeting count for sidebar/header
-export function useMeetingCount() {
+export function useMeetingCount(repositoryId?: string) {
   const { userData } = useUserData();
   
   return useQuery<number>({
-    queryKey: ['meeting-count', userData?.id],
+    queryKey: ['meeting-count', userData?.id, repositoryId],
     queryFn: async () => {
       if (!userData?.id) return 0;
       
-      const res = await fetch(`/api/meetings?userId=${userData.id}`);
+      const params = new URLSearchParams({ userId: userData.id });
+      if (repositoryId) {
+        params.set('repositoryId', repositoryId);
+      }
+      
+      const res = await fetch(`/api/meetings?${params.toString()}`);
       if (!res.ok) return 0;
       
       const data = await res.json();

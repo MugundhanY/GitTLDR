@@ -68,6 +68,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
+    const repositoryId = searchParams.get('repositoryId');
 
     if (!userId) {
       return NextResponse.json(
@@ -76,11 +77,19 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Build where clause
+    const where: any = {
+      userId: userId
+    };
+
+    // Filter by repository if provided
+    if (repositoryId) {
+      where.repositoryId = repositoryId;
+    }
+
     // Fetch meetings from database using Prisma
     const meetings = await prisma.meeting.findMany({
-      where: {
-        userId: userId
-      },
+      where,
       include: {
         meeting_segments: {
           select: {
@@ -102,6 +111,13 @@ export async function GET(request: NextRequest) {
           select: {
             id: true
           }
+        },
+        repository: {
+          select: {
+            id: true,
+            name: true,
+            fullName: true
+          }
         }
       },
       orderBy: {
@@ -121,6 +137,8 @@ export async function GET(request: NextRequest) {
       language: meeting.language || undefined,
       segmentCount: meeting.num_segments || 0,
       isFavorite: meeting.favorites.length > 0,
+      repositoryId: meeting.repositoryId,
+      repository: meeting.repository,
       segments: meeting.meeting_segments.map(segment => ({
         id: segment.id,
         title: segment.title,

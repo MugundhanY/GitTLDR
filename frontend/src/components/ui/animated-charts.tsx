@@ -215,7 +215,7 @@ export const AnimatedDonutChart: React.FC<DonutChartProps> = ({
           
           const segment = (
             <motion.circle
-              key={item.label}
+              key={`${item.label}-${index}`}
               cx={center}
               cy={center}
               r={radius}

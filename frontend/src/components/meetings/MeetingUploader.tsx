@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { ArrowUpTrayIcon, XMarkIcon, PlusIcon } from '@heroicons/react/24/outline'
 import { useUserData } from '@/hooks/useUserData'
+import { useRepository } from '@/contexts/RepositoryContext'
 
 interface MeetingUploaderProps {
   onUploadComplete?: (meeting: any) => void
@@ -19,6 +20,7 @@ export default function MeetingUploader({ onUploadComplete }: MeetingUploaderPro
   const [uploadProgress, setUploadProgress] = useState<number>(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { userData } = useUserData()
+  const { selectedRepository } = useRepository()
 
   // Reset upload status after successful upload
   useEffect(() => {
@@ -75,8 +77,8 @@ export default function MeetingUploader({ onUploadComplete }: MeetingUploaderPro
   }
 
   const handleUpload = async () => {
-    if (!selectedFile || !meetingTitle.trim() || !userData?.id) {
-      setStatusMessage('Please provide a title, select a file, and ensure you are logged in.')
+    if (!selectedFile || !meetingTitle.trim() || !userData?.id || !selectedRepository?.id) {
+      setStatusMessage('Please provide a title, select a file, ensure you are logged in, and select a repository.')
       setUploadStatus('error')
       return
     }
@@ -107,6 +109,7 @@ export default function MeetingUploader({ onUploadComplete }: MeetingUploaderPro
       uploadForm.append('title', meetingTitle.trim())
       uploadForm.append('participants', participants.trim())
       uploadForm.append('userId', userData.id)
+      uploadForm.append('repositoryId', selectedRepository.id)
       
       const uploadRes = await fetch('/api/meetings/upload', {
         method: 'POST',
@@ -138,6 +141,7 @@ export default function MeetingUploader({ onUploadComplete }: MeetingUploaderPro
         body: JSON.stringify({
           meetingId,
           userId: userData.id,
+          repositoryId: selectedRepository.id,
           b2FileKey,
           participants: participants.trim() ? participants.split(',').map(p => p.trim()) : [],
           title: meetingTitle,

@@ -266,17 +266,18 @@ app.get('/task-status/:taskId', async (req: Request, res: Response) => {
 // Endpoint to register a meeting audio after upload (using B2 pre-signed URL)
 app.post('/register-meeting-audio', async (req: Request, res: Response) => {
   try {
-    const { meetingId, userId, b2FileKey, participants, title, source } = req.body;
+    const { meetingId, userId, repositoryId, b2FileKey, participants, title, source } = req.body;
     if (!meetingId || !userId || !b2FileKey || !title) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-    await createMeetingRecord({ meetingId, userId, b2FileKey, participants, title, source });
+    await createMeetingRecord({ meetingId, userId, repositoryId, b2FileKey, participants, title, source });
     const jobId = `meeting_${meetingId}_${Date.now()}`;
     await redis.hset(`job:${jobId}`, {
       id: jobId,
       type: 'process_meeting',
       meetingId,
       userId,
+      repositoryId: repositoryId || '',
       b2FileKey,
       participants: JSON.stringify(participants || []),
       status: 'pending',
@@ -288,6 +289,7 @@ app.post('/register-meeting-audio', async (req: Request, res: Response) => {
       type: 'process_meeting',
       meetingId,
       userId,
+      repositoryId,
       b2FileKey,
       participants,
       timestamp: new Date().toISOString()

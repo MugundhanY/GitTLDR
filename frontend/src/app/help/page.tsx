@@ -401,7 +401,7 @@ export default function HelpPage() {
                     </h3>
                   </div>
                   <p className="text-gray-600 dark:text-gray-400 mb-6">
-                    Can't find what you're looking for? Our support team is here to help.
+                    Can&apos;t find what you&apos;re looking for? Our support team is here to help.
                   </p>
                   <div className="space-y-3">
                     <Link

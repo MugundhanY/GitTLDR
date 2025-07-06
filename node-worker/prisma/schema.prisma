@@ -8,32 +8,42 @@ datasource db {
 }
 
 model User {
-  id                    String               @id @default(cuid())
-  email                 String               @unique
-  name                  String
-  avatarUrl             String?              @map("avatar_url")
-  githubId              String               @unique @map("github_id")
-  githubLogin           String?              @map("github_login")
-  bio                   String?
-  location              String?
-  company               String?
-  blog                  String?
-  twitterUsername       String?              @map("twitter_username")
-  publicRepos           Int?                 @map("public_repos")
-  publicGists           Int?                 @map("public_gists")
-  followers             Int?
-  following             Int?
-  hireable              Boolean?
-  githubCreatedAt       DateTime?            @map("github_created_at")
-  credits               Int                  @default(150)
-  createdAt             DateTime             @default(now()) @map("created_at")
-  updatedAt             DateTime             @updatedAt @map("updated_at")
-  githubAccessToken     String?              @map("github_access_token")
-  meetings              Meeting[]
-  questions             Question[]
-  repositories          Repository[]
-  transactions          Transaction[]
-  uploadedAttachments   QuestionAttachment[] @relation("AttachmentUploadedBy")
+  id                  String               @id @default(cuid())
+  email               String               @unique
+  name                String
+  avatarUrl           String?              @map("avatar_url")
+  githubId            String               @unique @map("github_id")
+  githubLogin         String?              @map("github_login")
+  bio                 String?
+  location            String?
+  company             String?
+  blog                String?
+  twitterUsername     String?              @map("twitter_username")
+  publicRepos         Int?                 @map("public_repos")
+  publicGists         Int?                 @map("public_gists")
+  followers           Int?
+  following           Int?
+  hireable            Boolean?
+  githubCreatedAt     DateTime?            @map("github_created_at")
+  credits             Int                  @default(150)
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  githubAccessToken   String?              @map("github_access_token")
+  repositories        Repository[]
+  transactions        Transaction[]
+  // Relations for tracking who created items
+  createdQuestions    Question[]           @relation("QuestionCreatedBy")
+  uploadedAttachments QuestionAttachment[] @relation("AttachmentUploadedBy")
+
+  // New relations
+  meetingFavorites    MeetingFavorite[]
+  meetingComments     MeetingComment[]
+  createdActionItems  MeetingActionItem[]
+  assignedActionItems MeetingActionItem[]  @relation("ActionItemAssignee")
+  sharedMeetings      MeetingShareSetting[] @relation("SharedMeetings")
+  notifications       Notification[]       @relation("UserNotifications")
+  meetingQAs          MeetingQA[]
+  meetings            Meeting[]
 
   @@map("users")
 }
@@ -55,10 +65,13 @@ model Repository {
   createdAt           DateTime             @default(now()) @map("created_at")
   updatedAt           DateTime             @updatedAt @map("updated_at")
   userId              String               @map("user_id")
+  avatarUrl           String?              @map("avatar_url")
   fileCount           Int?                 @map("file_count")
   totalSize           Int?                 @map("total_size")
+  watchersCount       Int?                 @map("watchers_count")
   commits             Commit[]
   questions           Question[]
+  meetings            Meeting[]
   user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   files               RepositoryFile[]
   questionAttachments QuestionAttachment[]
@@ -77,8 +90,8 @@ model RepositoryFile {
   createdAt    DateTime   @default(now()) @map("created_at")
   updatedAt    DateTime   @updatedAt @map("updated_at")
   repositoryId String     @map("repository_id")
-  fileUrl      String?    @map("file_url")
   fileKey      String?    @map("file_key")
+  fileUrl      String?    @map("file_url")
   repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
 
   @@unique([repositoryId, path])
@@ -94,11 +107,11 @@ model Commit {
   authorAvatar String?          @map("author_avatar")
   timestamp    DateTime
   url          String
-  summary      String? // AI-generated summary
-  status       RepositoryStatus @default(PENDING) // Summary generation status
+  summary      String?
   filesChanged Int              @map("files_changed")
   createdAt    DateTime         @default(now()) @map("created_at")
   repositoryId String           @map("repository_id")
+  status       RepositoryStatus @default(PENDING)
   repository   Repository       @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
 
   @@map("commits")
@@ -120,7 +133,7 @@ model Question {
   userId              String               @map("user_id")
   repositoryId        String               @map("repository_id")
   repository          Repository           @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
-  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdBy           User                 @relation("QuestionCreatedBy", fields: [userId], references: [id], onDelete: Cascade)
   questionAttachments QuestionAttachment[]
 
   @@map("questions")
@@ -165,18 +178,28 @@ model Meeting {
   title            String
   full_transcript  String?
   summary          String?
+  user_edited_summary String?   // New field for user-edited summary
   status           MeetingStatus @default(UPLOADED)
   created_at       DateTime      @default(now())
   updated_at       DateTime      @updatedAt
   source           String?
   language         String?
   raw_audio_path   String?
-  meeting_length   Float?   
   num_segments     Int?
-  participants     String[]      // Array of participant names
+  meeting_length   Float?        // Duration in seconds
+  participants String[] // Array of participant names or IDs
   meeting_segments MeetingSegment[]
   userId           String?       @map("user_id")
   user             User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repositoryId     String?       @map("repository_id")
+  repository       Repository?   @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  
+  // New relations
+  favorites        MeetingFavorite[]
+  comments         MeetingComment[]
+  actionItems      MeetingActionItem[]
+  shareSettings    MeetingShareSetting[]
+  qaItems          MeetingQA[]
 
   @@map("meetings")
 }
@@ -184,7 +207,7 @@ model Meeting {
 model MeetingSegment {
   id           String   @id @default(uuid())
   meeting_id   String
-  meeting      Meeting  @relation(fields: [meeting_id], references: [id])
+  meeting      Meeting  @relation(fields: [meeting_id], references: [id], onDelete: Cascade)
   segment_index Int
   title        String
   summary      String
@@ -197,6 +220,111 @@ model MeetingSegment {
 
   @@unique([meeting_id, segment_index], name: "meeting_id_segment_index")
   @@map("meeting_segments")
+}
+
+// New model for meeting Q&A
+model MeetingQA {
+  id               String   @id @default(uuid())
+  meetingId        String   @map("meeting_id")
+  userId           String   @map("user_id")
+  question         String
+  answer           String
+  confidence       Float?   @default(0.0)
+  timestamp        Float?   // Position in meeting (seconds)
+  relatedSegments  String[] @map("related_segments")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  
+  meeting          Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("meeting_qa")
+}
+
+// New model for meeting favorites
+model MeetingFavorite {
+  id        String   @id @default(uuid())
+  meetingId String   @map("meeting_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now())
+  
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([meetingId, userId])
+  @@map("meeting_favorites")
+}
+
+// New model for meeting comments
+model MeetingComment {
+  id        String   @id @default(uuid())
+  meetingId String   @map("meeting_id")
+  userId    String   @map("user_id")
+  text      String
+  timestamp Float    // Position in meeting (seconds)
+  segmentId String?  @map("segment_id") // Optional reference to segment
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("meeting_comments")
+}
+
+// New model for meeting action items
+model MeetingActionItem {
+  id          String            @id @default(uuid())
+  meetingId   String            @map("meeting_id")
+  userId      String            @map("user_id") // Creator
+  assigneeId  String?           @map("assignee_id") // Optional assignee
+  text        String
+  completed   Boolean           @default(false)
+  priority    ActionItemPriority @default(MEDIUM)
+  dueDate     DateTime?         @map("due_date")
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  
+  meeting     Meeting           @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  creator     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignee    User?             @relation("ActionItemAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  
+  @@map("meeting_action_items")
+}
+
+// New model for meeting share settings
+model MeetingShareSetting {
+  id          String            @id @default(uuid())
+  meetingId   String            @map("meeting_id")
+  userId      String            @map("user_id") // User being shared with
+  permission  SharePermission   @default(VIEW)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  
+  meeting     Meeting           @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user        User              @relation("SharedMeetings", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([meetingId, userId])
+  @@map("meeting_share_settings")
+}
+
+// New model for notifications
+model Notification {
+  id          String              @id @default(uuid())
+  userId      String              @map("user_id")
+  type        NotificationType
+  title       String
+  message     String
+  read        Boolean             @default(false)
+  actionUrl   String?             @map("action_url")
+  actionText  String?             @map("action_text")
+  metadata    Json?               // Additional data as JSON
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  
+  user        User                @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("notifications")
 }
 
 enum RepositoryStatus {
@@ -218,4 +346,30 @@ enum MeetingStatus {
   SUMMARIZING
   COMPLETED
   FAILED
+}
+
+enum ActionItemPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum SharePermission {
+  VIEW
+  EDIT
+}
+
+enum NotificationType {
+  REPO_CREATED
+  REPO_PROCESSED
+  REPO_FAILED
+  MEETING_UPLOADED
+  MEETING_PROCESSED
+  MEETING_FAILED
+  CREDITS_LOW
+  CREDITS_DEPLETED
+  ACTION_ITEM_ASSIGNED
+  ACTION_ITEM_COMPLETED
+  COMMENT_ADDED
+  MEETING_SHARED
 }

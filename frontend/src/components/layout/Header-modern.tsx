@@ -240,7 +240,7 @@ export function Header() {
                     <div className="py-2">
                       {searchResults.length === 0 ? (
                         <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">
-                          No results found for "{globalSearchQuery}"
+                          No results found for &quot;{globalSearchQuery}&quot;
                         </div>
                       ) : (
                         <>
