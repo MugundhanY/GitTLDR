@@ -166,8 +166,8 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    // Fetch repositories from database using Prisma
-    const repositories = await prisma.repository.findMany({
+    // Fetch owned repositories from database using Prisma
+    const ownedRepositories = await prisma.repository.findMany({
       where: {
         userId: user.id
       },
@@ -181,8 +181,28 @@ export async function GET(request: NextRequest) {
       orderBy: {
         createdAt: 'desc'
       }
-    });    // Transform the data to include file count
-    const repositoriesWithFileCount = repositories.map(repo => ({
+    });
+
+    // Fetch shared repositories
+    const sharedRepositories = await prisma.repositoryShareSetting.findMany({
+      where: {
+        userId: user.id
+      },
+      include: {
+        repository: {
+          include: {
+            files: {
+              select: {
+                id: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    // Transform owned repositories
+    const transformedOwnedRepos = ownedRepositories.map(repo => ({
       id: repo.id,
       name: repo.name,
       fullName: repo.fullName,
@@ -199,10 +219,38 @@ export async function GET(request: NextRequest) {
       fileCount: repo.files.length,
       avatarUrl: repo.avatarUrl,
       createdAt: repo.createdAt,
-      updatedAt: repo.updatedAt
+      updatedAt: repo.updatedAt,
+      isShared: false,
+      permission: 'OWNER' as const
     }));
 
-    return NextResponse.json({ repositories: repositoriesWithFileCount });
+    // Transform shared repositories
+    const transformedSharedRepos = sharedRepositories.map(share => ({
+      id: share.repository.id,
+      name: share.repository.name,
+      fullName: share.repository.fullName,
+      owner: share.repository.owner,
+      url: share.repository.url,
+      description: share.repository.description,
+      language: share.repository.language,
+      stars: share.repository.stars,
+      forks: share.repository.forks,
+      isPrivate: share.repository.isPrivate,
+      processed: share.repository.processed,
+      status: share.repository.embeddingStatus,
+      summary: share.repository.summary,
+      fileCount: share.repository.files.length,
+      avatarUrl: share.repository.avatarUrl,
+      createdAt: share.repository.createdAt,
+      updatedAt: share.repository.updatedAt,
+      isShared: true,
+      permission: share.permission
+    }));
+
+    // Combine and deduplicate repositories
+    const allRepositories = [...transformedOwnedRepos, ...transformedSharedRepos];
+
+    return NextResponse.json({ repositories: allRepositories });
 
   } catch (error) {
     console.error('Error fetching repositories:', error);

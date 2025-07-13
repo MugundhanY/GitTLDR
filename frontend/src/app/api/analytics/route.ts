@@ -30,11 +30,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Repository not found' }, { status: 404 });
     }
 
+    // Check if user has access to this repository (owns it or has it shared)
+    const hasAccess = repository.userId === user.id || await prisma.repositoryShareSetting.findFirst({
+      where: {
+        repositoryId: repositoryId,
+        userId: user.id
+      }
+    });
+
+    if (!hasAccess) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+    }
+
     // Get meetings for this repository
     const meetings = await prisma.meeting.findMany({
       where: { 
         created_at: { gte: startDate },
-        user: { repositories: { some: { id: repositoryId } } }
+        repositoryId: repositoryId
       },
       include: {
         actionItems: true
@@ -54,26 +66,50 @@ export async function GET(request: NextRequest) {
     // Get repository files
     const files = repository.files || [];
 
-    // Language colors for visualization
+    // Enhanced language colors for visualization with vibrant GitHub-like palette
     const languageColors: Record<string, string> = {
       'TypeScript': '#3178c6',
-      'JavaScript': '#f7df1e',
-      'Python': '#3776ab',
-      'Java': '#ed8b00',
-      'C++': '#00599c',
-      'C#': '#239120',
-      'Go': '#00add8',
-      'Rust': '#000000',
-      'PHP': '#777bb4',
-      'Ruby': '#cc342d',
-      'Swift': '#fa7343',
-      'Kotlin': '#7f52ff',
-      'Dart': '#0175c2',
-      'HTML': '#e34f26',
-      'CSS': '#1572b6',
-      'JSON': '#000000',
+      'JavaScript': '#f1e05a',
+      'Python': '#3572A5',
+      'Java': '#b07219',
+      'C++': '#f34b7d',
+      'C#': '#178600',
+      'Go': '#00ADD8',
+      'Rust': '#dea584',
+      'PHP': '#4F5D95',
+      'Ruby': '#701516',
+      'Swift': '#ffac45',
+      'Kotlin': '#A97BFF',
+      'Dart': '#00B4AB',
+      'HTML': '#e34c26',
+      'CSS': '#563d7c',
+      'JSON': '#cbcb41',
       'Markdown': '#083fa1',
+      'Shell': '#89e051',
+      'Objective-C': '#438eff',
+      'Scala': '#c22d40',
+      'Perl': '#0298c3',
+      'Lua': '#000080',
+      'Haskell': '#5e5086',
+      'Elixir': '#6e4a7e',
+      'C': '#555555',
+      'Vue': '#41b883',
+      'React': '#61dafb',
+      'Angular': '#dd1b16',
+      'Svelte': '#ff3e00',
       'Unknown': '#6c757d'
+    };
+
+    // Generate unique vibrant color for unknown languages
+    const getLanguageColor = (lang: string): string => {
+      if (languageColors[lang]) return languageColors[lang];
+      // Hash-based color generation for vibrant unknown languages
+      let hash = 0;
+      for (let i = 0; i < lang.length; i++) {
+        hash = lang.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      const hue = Math.abs(hash) % 360;
+      return `hsl(${hue}, 70%, 55%)`;
     };
 
     // Calculate file statistics with proper structure
@@ -93,13 +129,13 @@ export async function GET(request: NextRequest) {
       languageStats[language].size += size;
     });
 
-    // Convert to frontend format
+    // Convert to frontend format with enhanced color support
     const languages = Object.entries(languageStats).map(([language, stats]) => ({
       name: language,
       count: stats.count,
       bytes: stats.size,
       percentage: files.length > 0 ? (stats.count / files.length) * 100 : 0,
-      color: languageColors[language] || languageColors['Unknown']
+      color: getLanguageColor(language)
     })).sort((a, b) => b.count - a.count);
 
     // Generate contribution timeline data
@@ -199,52 +235,7 @@ export async function GET(request: NextRequest) {
       ((currentWeekQuestions - lastWeekQuestions) / lastWeekQuestions) * 100 : 
       currentWeekQuestions > 0 ? 100 : 0;
 
-    // Generate insights
-    const insights = [];
-
-    if (files.length === 0) {
-      insights.push({
-        type: 'warning' as const,
-        title: 'No Repository Files Found',
-        description: 'This repository appears to have no files processed yet. Check if the repository is being processed correctly.',
-        icon: 'warning',
-        priority: 1
-      });
-    } else {
-      insights.push({
-        type: 'achievement' as const,
-        title: 'Repository Active',
-        description: `Found ${files.length} files across ${languages.length} programming languages.`,
-        value: `${files.length} files`,
-        icon: 'check',
-        priority: 2
-      });
-    }
-
-    if (languages.length > 0) {
-      const topLanguage = languages[0];
-      insights.push({
-        type: 'trend' as const,
-        title: `${topLanguage.name} Dominant`,
-        description: `${topLanguage.name} makes up ${topLanguage.percentage.toFixed(1)}% of your codebase.`,
-        value: `${topLanguage.count} files`,
-        icon: 'cpu',
-        priority: 3
-      });
-    }
-
-    if (meetings.length > 0) {
-      insights.push({
-        type: 'achievement' as const,
-        title: 'Meeting Activity',
-        description: `You've conducted ${meetings.length} meetings with ${completionRate.toFixed(1)}% completion rate.`,
-        value: `${Math.round(totalDuration / 60)} minutes`,
-        icon: 'trophy',
-        priority: 2
-      });
-    }
-
-    // Build response matching the frontend interface
+    // Build response with only real, meaningful analytics
     const analyticsData = {
       overview: {
         totalFiles: files.length,
@@ -283,9 +274,9 @@ export async function GET(request: NextRequest) {
           title: m.title,
           duration: m.meeting_length || 0,
           status: m.status.toLowerCase(),
-          participants: 1, // Could be enhanced with actual participant count
+          participants: m.participants?.length || 1,
           createdAt: m.created_at.toISOString(),
-          actionItems: m.actionItems ? m.actionItems.length : 0
+          actionItems: 0 // No action items data available
         })),
         totalDuration,
         avgDuration: meetings.length > 0 ? totalDuration / meetings.length : 0,
@@ -304,7 +295,7 @@ export async function GET(request: NextRequest) {
           id: q.id,
           query: q.query,
           answered: !!q.answer && q.answer.trim() !== '',
-          confidence: Math.random() * 100, // Could be enhanced with actual confidence score
+          confidence: q.confidenceScore || 0,
           createdAt: q.createdAt.toISOString()
         })),
         trends: {
@@ -312,8 +303,7 @@ export async function GET(request: NextRequest) {
           lastWeek: lastWeekQuestions,
           growth: questionGrowth
         }
-      },
-      insights: insights.sort((a, b) => a.priority - b.priority)
+      }
     };
 
     return NextResponse.json(analyticsData);

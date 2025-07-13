@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string; actionItemId: string } }
+  { params }: { params: Promise<{ id: string; actionItemId: string }> }
 ) {
   try {
     const user = await getUserFromRequest(request);
@@ -14,7 +14,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { actionItemId } = params;
+    const { actionItemId } = await params;
     const { completed, text, priority, assigneeId, dueDate } = await request.json();
 
     // Check if action item exists
@@ -65,7 +65,7 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string; actionItemId: string } }
+  { params }: { params: Promise<{ id: string; actionItemId: string }> }
 ) {
   try {
     const user = await getUserFromRequest(request);
@@ -73,7 +73,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { actionItemId } = params;
+    const { actionItemId } = await params;
 
     // Check if action item exists and belongs to the user
     const actionItem = await prisma.meetingActionItem.findUnique({

@@ -6,14 +6,15 @@ const prisma = new PrismaClient();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { attachmentId: string } }
+  { params }: { params: Promise<{ attachmentId: string }> }
 ) {
   try {
+    const { attachmentId } = await params;
     const searchParams = request.nextUrl.searchParams;
     const token = searchParams.get('token');
     const userId = searchParams.get('userId');
     const action = searchParams.get('action');
-    const fileId = params.attachmentId;
+    const fileId = attachmentId;
 
     if (action !== 'download' || !token || !userId || !fileId) {
       return NextResponse.json(

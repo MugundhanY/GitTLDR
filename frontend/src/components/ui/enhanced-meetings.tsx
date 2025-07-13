@@ -94,7 +94,7 @@ export function EnhancedMeetings({ analytics }: EnhancedMeetingsProps) {
       >
         <div className="mb-6">
           <h2 className="text-3xl font-bold mb-2">Meeting Analytics</h2>
-          <p className="text-purple-100">Comprehensive insights into your team's collaboration patterns</p>
+          <p className="text-purple-100">Comprehensive insights into your team&apos;s collaboration patterns</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

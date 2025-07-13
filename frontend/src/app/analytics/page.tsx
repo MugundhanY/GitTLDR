@@ -28,7 +28,8 @@ import {
   BeakerIcon,
   RocketLaunchIcon,
   ChevronDownIcon,
-  ChevronUpIcon
+  ChevronUpIcon,
+  UsersIcon
 } from '@heroicons/react/24/outline'
 import { 
   HeartIcon as HeartSolidIcon,
@@ -37,7 +38,7 @@ import {
   ChartBarIcon as ChartBarSolidIcon 
 } from '@heroicons/react/24/solid'
 
-// Enhanced Types with better structure
+// Enhanced Types with sophisticated analytics structure
 interface Analytics {
   overview: {
     totalFiles: number
@@ -117,6 +118,56 @@ interface Analytics {
       growth: number
     }
   }
+  // Sophisticated Analytics
+  codeQuality?: {
+    overallScore: number
+    complexityScore: number
+    maintainabilityScore: number
+    complexityLevel: string
+    avgComplexity: number
+    technicalDebt: number
+    metrics: Array<{
+      label: string
+      value: string | number
+    }>
+  }
+  productivity?: {
+    velocity: number
+    velocityTrend: number
+    avgSessionTime: string
+    sessionEfficiency: number
+    peakHours: string
+    achievements: Array<{
+      title: string
+      date: string
+    }>
+    weeklyPatterns: {
+      days: Array<{
+        activity: number
+        meetings: number
+        questions: number
+      }>
+      mostActiveDay: string
+      mostActiveDayScore: number
+      weeklyGrowth: number
+    }
+  }
+  collaboration?: {
+    engagementScore: number
+    engagementTrend: number
+    avgParticipants: number
+    responseTime: string
+    avgMeetingDuration: string
+    durationTrend: number
+    avgActionItems: number
+    completionRate: number
+    followUpRate: number
+    topContributors: Array<{
+      name: string
+      contributions: number
+      score: number
+    }>
+  }
   insights: Array<{
     type: 'achievement' | 'trend' | 'warning' | 'tip'
     title: string
@@ -124,6 +175,7 @@ interface Analytics {
     value?: string
     icon: string
     priority: number
+    category?: string
   }>
 }
 
@@ -319,47 +371,50 @@ const LanguageChart = ({ languages }: { languages: Array<{
   percentage: number
   color: string
 }> }) => {
+  // Prepare data for the colorful horizontal bar
+  const total = languages.slice(0, 8).reduce((sum, lang) => sum + lang.percentage, 0);
   return (
     <div className="bg-white dark:bg-gray-900 p-8 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm">
       <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
         <CodeBracketIcon className="w-6 h-6 text-blue-500" />
         Language Breakdown
       </h3>
-      
-      <div className="space-y-4">
-        {languages.slice(0, 8).map((lang, index) => (
-          <div key={index} className="flex items-center gap-4">
-            <div className="flex items-center gap-3 flex-1">
-              <div 
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: lang.color }}
-              />
-              <span className="text-sm font-medium text-gray-900 dark:text-white min-w-0 flex-1">
-                {lang.name}
-              </span>
-            </div>
-            <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
-              <span className="font-mono">{lang.count} files</span>
-              <span className="font-mono min-w-[3rem] text-right">{lang.percentage.toFixed(1)}%</span>
-            </div>
-          </div>
+
+      {/* Colorful horizontal bar */}
+      <div className="w-full flex h-4 rounded-full overflow-hidden mb-8 border border-gray-200 dark:border-gray-700">
+        {languages.slice(0, 8).map((lang, idx) => (
+          <div
+            key={lang.name}
+            style={{
+              width: `${lang.percentage / total * 100}%`,
+              backgroundColor: lang.color,
+              transition: 'width 0.8s cubic-bezier(0.4,0,0.2,1)'
+            }}
+            title={`${lang.name}: ${lang.percentage.toFixed(1)}%`}
+            className="h-full"
+          />
         ))}
       </div>
 
-      {/* Progress bars */}
-      <div className="mt-6 space-y-2">
+      {/* Language list with progress bars, no overlap */}
+      <div className="space-y-4">
         {languages.slice(0, 8).map((lang, index) => (
-          <div key={index} className="flex items-center gap-3">
-            <div className="w-16 text-xs text-gray-500 dark:text-gray-400 text-right">
-              {lang.name}
+          <div key={index} className="flex flex-col gap-1">
+            <div className="flex items-center gap-3">
+              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: lang.color }} />
+              <span className="text-sm font-medium text-gray-900 dark:text-white min-w-0 flex-1">
+                {lang.name}
+              </span>
+              <span className="font-mono text-gray-600 dark:text-gray-400">{lang.count} files</span>
+              <span className="font-mono min-w-[3rem] text-right text-gray-600 dark:text-gray-400">{lang.percentage.toFixed(1)}%</span>
             </div>
-            <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-1">
               <motion.div
                 initial={{ width: 0 }}
                 animate={{ width: `${lang.percentage}%` }}
                 transition={{ duration: 0.8, delay: index * 0.1 }}
                 className="h-2 rounded-full"
-                style={{ backgroundColor: lang.color }}
+                style={{ backgroundColor: lang.color, width: `${lang.percentage}%` }}
               />
             </div>
           </div>
@@ -474,6 +529,428 @@ const TimeRangeSelector = ({
         </button>
       ))}
     </div>
+  )
+}
+
+// Code Quality Insights Component
+const CodeQualityInsights = ({ codeQuality }: { codeQuality: any }) => {
+  const getScoreColor = (score: number) => {
+    if (score >= 90) return 'text-emerald-600 dark:text-emerald-400'
+    if (score >= 70) return 'text-blue-600 dark:text-blue-400'
+    if (score >= 50) return 'text-yellow-600 dark:text-yellow-400'
+    return 'text-red-600 dark:text-red-400'
+  }
+
+  const getScoreBg = (score: number) => {
+    if (score >= 90) return 'bg-emerald-100 dark:bg-emerald-900/20'
+    if (score >= 70) return 'bg-blue-100 dark:bg-blue-900/20'
+    if (score >= 50) return 'bg-yellow-100 dark:bg-yellow-900/20'
+    return 'bg-red-100 dark:bg-red-900/20'
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
+    >
+      <div className="flex items-center gap-3 mb-6">
+        <div className="p-2 bg-indigo-100 dark:bg-indigo-900/20 rounded-lg">
+          <CodeBracketIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Code Quality Insights
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Analysis of code patterns and quality metrics
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div className={`p-4 rounded-xl ${getScoreBg(codeQuality.overallScore)}`}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Overall Score
+            </span>
+            <span className={`text-2xl font-bold ${getScoreColor(codeQuality.overallScore)}`}>
+              {codeQuality.overallScore}%
+            </span>
+          </div>
+          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+            <div 
+              className={`h-2 rounded-full ${
+                codeQuality.overallScore >= 90 ? 'bg-emerald-500' :
+                codeQuality.overallScore >= 70 ? 'bg-blue-500' :
+                codeQuality.overallScore >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+              }`}
+              style={{ width: `${codeQuality.overallScore}%` }}
+            />
+          </div>
+        </div>
+
+        <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Complexity
+            </span>
+            <span className={`text-lg font-semibold ${getScoreColor(100 - codeQuality.complexityScore)}`}>
+              {codeQuality.complexityLevel}
+            </span>
+          </div>
+          <p className="text-xs text-gray-600 dark:text-gray-400">
+            Average: {codeQuality.avgComplexity.toFixed(1)}
+          </p>
+        </div>
+
+        <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Maintainability
+            </span>
+            <span className={`text-lg font-semibold ${getScoreColor(codeQuality.maintainabilityScore)}`}>
+              {codeQuality.maintainabilityScore}%
+            </span>
+          </div>
+          <p className="text-xs text-gray-600 dark:text-gray-400">
+            Technical debt: {codeQuality.technicalDebt}h
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {codeQuality.metrics.map((metric: any, index: number) => (
+          <div key={index} className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+            <div className="text-lg font-semibold text-gray-900 dark:text-white">
+              {metric.value}
+            </div>
+            <div className="text-xs text-gray-600 dark:text-gray-400">
+              {metric.label}
+            </div>
+          </div>
+        ))}
+      </div>
+    </motion.div>
+  )
+}
+
+// Productivity Metrics Component
+const ProductivityMetrics = ({ productivity }: { productivity: any }) => {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
+    >
+      <div className="flex items-center gap-3 mb-6">
+        <div className="p-2 bg-green-100 dark:bg-green-900/20 rounded-lg">
+          <ChartBarIcon className="w-6 h-6 text-green-600 dark:text-green-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Productivity Metrics
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Development velocity and efficiency trends
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/10 dark:to-indigo-900/10 rounded-lg border border-blue-200 dark:border-blue-800">
+          <div>
+            <div className="font-semibold text-gray-900 dark:text-white">
+              Development Velocity
+            </div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              {productivity.velocityTrend > 0 ? '+' : ''}{productivity.velocityTrend}% vs last period
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+              {productivity.velocity}
+            </div>
+            <div className="text-xs text-gray-600 dark:text-gray-400">
+              points/week
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <ClockIcon className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Avg Session
+              </span>
+            </div>
+            <div className="text-xl font-semibold text-gray-900 dark:text-white">
+              {productivity.avgSessionTime}
+            </div>
+            <div className="text-xs text-gray-600 dark:text-gray-400">
+              {productivity.sessionEfficiency}% efficiency
+            </div>
+          </div>
+
+          <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <BoltIcon className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Peak Hours
+              </span>
+            </div>
+            <div className="text-xl font-semibold text-gray-900 dark:text-white">
+              {productivity.peakHours}
+            </div>
+            <div className="text-xs text-gray-600 dark:text-gray-400">
+              Most productive time
+            </div>
+          </div>
+        </div>
+
+        <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Recent Achievements</h4>
+          <div className="space-y-2">
+            {productivity.achievements.map((achievement: any, index: number) => (
+              <div key={index} className="flex items-center gap-3 p-3 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/10 dark:to-teal-900/10 rounded-lg">
+                <div className="w-2 h-2 bg-emerald-500 rounded-full" />
+                <span className="text-sm text-gray-700 dark:text-gray-300">{achievement.title}</span>
+                <span className="ml-auto text-xs text-gray-500 dark:text-gray-400">
+                  {achievement.date}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+// Weekly Analysis Component
+const WeeklyAnalysis = ({ weeklyData }: { weeklyData: any }) => {
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
+    >
+      <div className="flex items-center gap-3 mb-6">
+        <div className="p-2 bg-orange-100 dark:bg-orange-900/20 rounded-lg">
+          <CalendarDaysIcon className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Weekly Patterns
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Activity distribution throughout the week
+          </p>
+        </div>
+      </div>
+
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Activity Heatmap
+          </span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            Higher is more active
+          </span>
+        </div>
+        <div className="grid grid-cols-7 gap-2">
+          {days.map((day, index) => {
+            const activity = weeklyData.days[index] || { activity: 0, meetings: 0, questions: 0 }
+            const intensity = Math.min(activity.activity / 10, 1)
+            
+            return (
+              <div key={day} className="text-center">
+                <div className="text-xs text-gray-600 dark:text-gray-400 mb-2">{day}</div>
+                <div 
+                  className="h-16 rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col items-center justify-center transition-all hover:scale-105"
+                  style={{
+                    backgroundColor: `rgba(59, 130, 246, ${0.1 + intensity * 0.6})`,
+                    borderColor: intensity > 0.3 ? 'rgb(59, 130, 246)' : undefined
+                  }}
+                >
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {activity.activity}
+                  </div>
+                  <div className="text-xs text-gray-600 dark:text-gray-400">
+                    {activity.meetings}m / {activity.questions}q
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="p-4 bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/10 dark:to-cyan-900/10 rounded-lg">
+          <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Most Active Day
+          </div>
+          <div className="text-lg font-semibold text-blue-600 dark:text-blue-400">
+            {weeklyData.mostActiveDay}
+          </div>
+          <div className="text-xs text-gray-600 dark:text-gray-400">
+            {weeklyData.mostActiveDayScore} activities
+          </div>
+        </div>
+
+        <div className="p-4 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/10 dark:to-pink-900/10 rounded-lg">
+          <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Weekly Growth
+          </div>
+          <div className="text-lg font-semibold text-purple-600 dark:text-purple-400">
+            {weeklyData.weeklyGrowth > 0 ? '+' : ''}{weeklyData.weeklyGrowth}%
+          </div>
+          <div className="text-xs text-gray-600 dark:text-gray-400">
+            vs previous week
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+// Collaboration Insights Component
+const CollaborationInsights = ({ collaboration }: { collaboration: any }) => {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
+    >
+      <div className="flex items-center gap-3 mb-6">
+        <div className="p-2 bg-rose-100 dark:bg-rose-900/20 rounded-lg">
+          <UsersIcon className="w-6 h-6 text-rose-600 dark:text-rose-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Collaboration Insights
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Team interaction patterns and engagement metrics
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div className="text-center p-4 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/10 dark:to-teal-900/10 rounded-xl">
+          <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mb-1">
+            {collaboration.engagementScore}%
+          </div>
+          <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Engagement Score
+          </div>
+          <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+            {collaboration.engagementTrend > 0 ? '+' : ''}{collaboration.engagementTrend}% this week
+          </div>
+        </div>
+
+        <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/10 dark:to-indigo-900/10 rounded-xl">
+          <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 mb-1">
+            {collaboration.avgParticipants}
+          </div>
+          <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Avg Participants
+          </div>
+          <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+            per meeting
+          </div>
+        </div>
+
+        <div className="text-center p-4 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/10 dark:to-pink-900/10 rounded-xl">
+          <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 mb-1">
+            {collaboration.responseTime}
+          </div>
+          <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Response Time
+          </div>
+          <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+            average
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div>
+          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Top Contributors</h4>
+          <div className="space-y-3">
+            {collaboration.topContributors.map((contributor: any, index: number) => (
+              <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                  {contributor.name.charAt(0)}
+                </div>
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-white">
+                    {contributor.name}
+                  </div>
+                  <div className="text-xs text-gray-600 dark:text-gray-400">
+                    {contributor.contributions} contributions
+                  </div>
+                </div>
+                <div className="text-sm font-medium text-blue-600 dark:text-blue-400">
+                  {contributor.score}%
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Meeting Insights</h4>
+          <div className="space-y-3">
+            <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm text-gray-700 dark:text-gray-300">
+                  Average Duration
+                </span>
+                <span className="font-medium text-gray-900 dark:text-white">
+                  {collaboration.avgMeetingDuration}
+                </span>
+              </div>
+              <div className="text-xs text-gray-600 dark:text-gray-400">
+                {collaboration.durationTrend > 0 ? '+' : ''}{collaboration.durationTrend}% vs last month
+              </div>
+            </div>
+
+            <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm text-gray-700 dark:text-gray-300">
+                  Action Items/Meeting
+                </span>
+                <span className="font-medium text-gray-900 dark:text-white">
+                  {collaboration.avgActionItems}
+                </span>
+              </div>
+              <div className="text-xs text-gray-600 dark:text-gray-400">
+                {collaboration.completionRate}% completion rate
+              </div>
+            </div>
+
+            <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm text-gray-700 dark:text-gray-300">
+                  Follow-up Rate
+                </span>
+                <span className="font-medium text-gray-900 dark:text-white">
+                  {collaboration.followUpRate}%
+                </span>
+              </div>
+              <div className="text-xs text-gray-600 dark:text-gray-400">
+                Within 24 hours
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </motion.div>
   )
 }
 

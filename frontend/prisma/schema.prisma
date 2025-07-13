@@ -41,6 +41,7 @@ model User {
   createdActionItems  MeetingActionItem[]
   assignedActionItems MeetingActionItem[]  @relation("ActionItemAssignee")
   sharedMeetings      MeetingShareSetting[] @relation("SharedMeetings")
+  sharedRepositories  RepositoryShareSetting[] @relation("SharedRepositories")
   notifications       Notification[]       @relation("UserNotifications")
   meetingQAs          MeetingQA[]
   meetings            Meeting[]
@@ -75,6 +76,7 @@ model Repository {
   user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   files               RepositoryFile[]
   questionAttachments QuestionAttachment[]
+  shareSettings       RepositoryShareSetting[]
 
   @@map("repositories")
 }
@@ -325,6 +327,22 @@ model Notification {
   user        User                @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
   
   @@map("notifications")
+}
+
+// Repository share settings model
+model RepositoryShareSetting {
+  id            String            @id @default(uuid())
+  repositoryId  String            @map("repository_id")
+  userId        String            @map("user_id") // User being shared with
+  permission    SharePermission   @default(VIEW)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  
+  repository    Repository        @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  user          User              @relation("SharedRepositories", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([repositoryId, userId])
+  @@map("repository_share_settings")
 }
 
 enum RepositoryStatus {
