@@ -13,8 +13,8 @@ export default function CallbackPage() {
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        const code = searchParams.get('code')
-        const error = searchParams.get('error')
+        const code = searchParams?.get('code')
+        const error = searchParams?.get('error')
 
         if (error) {
           setStatus('error')

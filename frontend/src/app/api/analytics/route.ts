@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { getUserFromRequest } from '../../../lib/auth';
 
 const prisma = new PrismaClient();
 
@@ -11,6 +12,12 @@ export async function GET(request: NextRequest) {
 
     if (!repositoryId) {
       return NextResponse.json({ error: 'Repository ID is required' }, { status: 400 });
+    }
+
+    // Get current user
+    const user = await getUserFromRequest(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     // Calculate date range

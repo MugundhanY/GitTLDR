@@ -48,7 +48,7 @@ export default function CommitsPage() {
   const params = useParams();
   const router = useRouter();
   const { userData } = useUserData();
-  const repositoryId = params.id as string;
+  const repositoryId = params?.id as string;
 
   const [repository, setRepository] = useState<Repository | null>(null);
   const [commits, setCommits] = useState<CommitData[]>([]);

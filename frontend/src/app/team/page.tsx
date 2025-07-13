@@ -11,6 +11,7 @@ import {
   EyeIcon,
   PencilIcon,
   TrashIcon,
+  DocumentArrowDownIcon,
   DocumentTextIcon,
   VideoCameraIcon,
   ChatBubbleLeftRightIcon,
@@ -54,12 +55,11 @@ export default function TeamPage() {
   const [sharedRepositories, setSharedRepositories] = useState<SharedRepository[]>([])
   const [shareSettings, setShareSettings] = useState<ShareSetting[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'shared-with-me' | 'my-shares'>('shared-with-me')
+  const [activeTab, setActiveTab] = useState<'shared-with-me' | 'export-sharing'>('shared-with-me')
   const [showShareModal, setShowShareModal] = useState(false)
   const [shareEmail, setShareEmail] = useState('')
   const [sharePermission, setSharePermission] = useState<'VIEW' | 'EDIT'>('VIEW')
   const [isSharing, setIsSharing] = useState(false)
-  const [shareUrl, setShareUrl] = useState('')
 
   useEffect(() => {
     fetchTeamData()
@@ -82,11 +82,6 @@ export default function TeamPage() {
           const { shareSettings: settings } = await shareResponse.json()
           setShareSettings(settings)
         }
-        
-        // Generate share URL
-        if (typeof window !== 'undefined') {
-          setShareUrl(`${window.location.origin}/repositories/${selectedRepository.id}`)
-        }
       }
     } catch (error) {
       console.error('Error fetching team data:', error)
@@ -104,16 +99,15 @@ export default function TeamPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: shareEmail,
+          email: shareEmail.trim(),
           permission: sharePermission
         })
       })
 
       if (response.ok) {
-        const { shareSetting } = await response.json()
-        setShareSettings(prev => [...prev, shareSetting])
-        setShareEmail('')
+        await fetchTeamData()
         setShowShareModal(false)
+        setShareEmail('')
         alert('Repository shared successfully!')
       } else {
         const { error } = await response.json()
@@ -127,16 +121,16 @@ export default function TeamPage() {
     }
   }
 
-  const handleRemoveShare = async (userId: string) => {
+  const handleRemoveShare = async (shareId: string) => {
     if (!selectedRepository) return
     
     try {
-      const response = await fetch(`/api/repositories/${selectedRepository.id}/share?userId=${userId}`, {
+      const response = await fetch(`/api/repositories/${selectedRepository.id}/share?userId=${shareId}`, {
         method: 'DELETE'
       })
 
       if (response.ok) {
-        setShareSettings(prev => prev.filter(setting => setting.user.id !== userId))
+        await fetchTeamData()
         alert('Share removed successfully!')
       } else {
         alert('Failed to remove share')
@@ -147,10 +141,48 @@ export default function TeamPage() {
     }
   }
 
-  const copyShareUrl = () => {
-    if (typeof window !== 'undefined') {
-      navigator.clipboard.writeText(shareUrl)
-      alert('Share URL copied to clipboard!')
+  const copyExportLink = (type: 'meetings' | 'files' | 'qna') => {
+    if (typeof window !== 'undefined' && selectedRepository) {
+      const baseUrl = `${window.location.origin}/repositories/${selectedRepository.id}`
+      const exportUrl = `${baseUrl}/${type}?export=true`
+      navigator.clipboard.writeText(exportUrl)
+      alert(`${type.charAt(0).toUpperCase() + type.slice(1)} export link copied to clipboard!`)
+    }
+  }
+
+  const handleExport = async (type: 'meetings' | 'files' | 'qna') => {
+    if (!selectedRepository) return
+    
+    try {
+      let exportUrl = ''
+      switch (type) {
+        case 'meetings':
+          exportUrl = `/api/meetings?repositoryId=${selectedRepository.id}&export=true`
+          break
+        case 'files':
+          exportUrl = `/api/repositories/${selectedRepository.id}/files?export=true`
+          break
+        case 'qna':
+          exportUrl = `/api/qna/export?repositoryId=${selectedRepository.id}`
+          break
+      }
+      
+      const response = await fetch(exportUrl)
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.style.display = 'none'
+        a.href = url
+        a.download = `${selectedRepository.name}-${type}-export.json`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+      }
+    } catch (error) {
+      console.error(`Error exporting ${type}:`, error)
+      alert(`Failed to export ${type}`)
     }
   }
 
@@ -185,11 +217,11 @@ export default function TeamPage() {
             {selectedRepository && (
               <div className="flex items-center gap-3">
                 <button
-                  onClick={copyShareUrl}
+                  onClick={() => copyExportLink('files')}
                   className="flex items-center gap-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
                 >
                   <LinkIcon className="w-4 h-4" />
-                  Copy URL
+                  Copy Export Link
                 </button>
                 <button
                   onClick={() => setShowShareModal(true)}
@@ -215,14 +247,14 @@ export default function TeamPage() {
               Shared with Me ({sharedRepositories.length})
             </button>
             <button
-              onClick={() => setActiveTab('my-shares')}
+              onClick={() => setActiveTab('export-sharing')}
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                activeTab === 'my-shares'
+                activeTab === 'export-sharing'
                   ? 'bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400'
                   : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
               }`}
             >
-              My Shares ({shareSettings.length})
+              Export & Share ({shareSettings.length})
             </button>
           </div>
 
@@ -255,25 +287,21 @@ export default function TeamPage() {
                         <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
                           {repo.description || 'No description available'}
                         </p>
-                        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                          <div className="flex items-center gap-1">
-                            <img
-                              src={repo.owner.avatarUrl || '/default-avatar.png'}
-                              alt={repo.owner.name}
-                              className="w-4 h-4 rounded-full"
-                            />
-                            {repo.owner.name}
-                          </div>
-                          <span>•</span>
-                          <span>
-                            Shared {new Date(repo.sharedAt).toLocaleDateString()}
+                        <div className="flex items-center gap-2">
+                          <img
+                            src={repo.owner.avatarUrl || '/default-avatar.png'}
+                            alt={repo.owner.name}
+                            className="w-6 h-6 rounded-full"
+                          />
+                          <span className="text-sm text-gray-600 dark:text-gray-400">
+                            by {repo.owner.name}
                           </span>
                         </div>
                       </div>
-                      <span className={`px-2 py-1 text-xs rounded-full ${
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
                         repo.permission === 'EDIT'
-                          ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400'
-                          : 'bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400'
+                          ? 'bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-400'
+                          : 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-400'
                       }`}>
                         {repo.permission === 'EDIT' ? (
                           <div className="flex items-center gap-1">
@@ -324,12 +352,74 @@ export default function TeamPage() {
               )}
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-6">
               {selectedRepository ? (
                 <>
+                  {/* Export Options */}
+                  <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                      <DocumentArrowDownIcon className="w-5 h-5" />
+                      Export Repository Data
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400 mb-6">
+                      Export and share repository data instead of providing direct access. Recipients can view exported files, meetings, and Q&A data.
+                    </p>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                      <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <DocumentTextIcon className="w-5 h-5 text-blue-600" />
+                          <span className="font-medium text-blue-900 dark:text-blue-300">Files Export</span>
+                        </div>
+                        <p className="text-sm text-blue-700 dark:text-blue-400 mb-3">
+                          Export all file summaries and analysis
+                        </p>
+                        <button
+                          onClick={() => handleExport('files')}
+                          className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                        >
+                          Export Files
+                        </button>
+                      </div>
+                      
+                      <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <VideoCameraIcon className="w-5 h-5 text-purple-600" />
+                          <span className="font-medium text-purple-900 dark:text-purple-300">Meetings Export</span>
+                        </div>
+                        <p className="text-sm text-purple-700 dark:text-purple-400 mb-3">
+                          Export meeting summaries and transcripts
+                        </p>
+                        <button
+                          onClick={() => handleExport('meetings')}
+                          className="w-full py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+                        >
+                          Export Meetings
+                        </button>
+                      </div>
+                      
+                      <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <ChatBubbleLeftRightIcon className="w-5 h-5 text-green-600" />
+                          <span className="font-medium text-green-900 dark:text-green-300">Q&A Export</span>
+                        </div>
+                        <p className="text-sm text-green-700 dark:text-green-400 mb-3">
+                          Export questions and answers
+                        </p>
+                        <button
+                          onClick={() => handleExport('qna')}
+                          className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                        >
+                          Export Q&A
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Current Shares */}
                   <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                      Repository: {selectedRepository.name}
+                      Current Repository Shares
                     </h3>
                     
                     {shareSettings.length === 0 ? (
@@ -339,7 +429,7 @@ export default function TeamPage() {
                           Not Shared Yet
                         </h4>
                         <p className="text-gray-600 dark:text-gray-400 mb-4">
-                          Share this repository with team members to collaborate.
+                          Share this repository with team members or export data to share externally.
                         </p>
                         <button
                           onClick={() => setShowShareModal(true)}
@@ -372,16 +462,27 @@ export default function TeamPage() {
                             </div>
                             
                             <div className="flex items-center gap-3">
-                              <span className={`px-2 py-1 text-xs rounded-full ${
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                                 setting.permission === 'EDIT'
-                                  ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400'
-                                  : 'bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400'
+                                  ? 'bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-400'
+                                  : 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-400'
                               }`}>
-                                {setting.permission}
+                                {setting.permission === 'EDIT' ? (
+                                  <div className="flex items-center gap-1">
+                                    <PencilIcon className="w-3 h-3" />
+                                    Edit
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-1">
+                                    <EyeIcon className="w-3 h-3" />
+                                    View
+                                  </div>
+                                )}
                               </span>
+                              
                               <button
-                                onClick={() => handleRemoveShare(setting.user.id)}
-                                className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                                onClick={() => handleRemoveShare(setting.id)}
+                                className="p-1 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                               >
                                 <TrashIcon className="w-4 h-4" />
                               </button>
@@ -399,7 +500,7 @@ export default function TeamPage() {
                     Select a Repository
                   </h3>
                   <p className="text-gray-600 dark:text-gray-400">
-                    Choose a repository to manage its sharing settings.
+                    Choose a repository from the sidebar to manage exports and sharing.
                   </p>
                 </div>
               )}
@@ -415,13 +516,15 @@ export default function TeamPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowShareModal(false)}
           >
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
+              initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white dark:bg-gray-900 rounded-xl max-w-md w-full p-6"
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white dark:bg-gray-900 rounded-xl p-6 w-full max-w-md border border-gray-200 dark:border-gray-700"
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -444,26 +547,26 @@ export default function TeamPage() {
                     type="email"
                     value={shareEmail}
                     onChange={(e) => setShareEmail(e.target.value)}
-                    placeholder="Enter user's email"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    placeholder="Enter user's email address"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Permission
+                    Permission Level
                   </label>
                   <select
                     value={sharePermission}
                     onChange={(e) => setSharePermission(e.target.value as 'VIEW' | 'EDIT')}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
                   >
                     <option value="VIEW">View Only</option>
                     <option value="EDIT">View & Edit</option>
                   </select>
                 </div>
 
-                <div className="flex items-center gap-3 pt-4">
+                <div className="flex gap-3 pt-4">
                   <button
                     onClick={() => setShowShareModal(false)}
                     className="flex-1 px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"

@@ -59,6 +59,39 @@ export default function Sidebar({ selectedRepository }: SidebarProps) {
   const { isCollapsed, toggleSidebar } = useSidebar();
   const { statsRefreshTrigger } = useQnA();
   const { data: meetingCount, isLoading: meetingCountLoading } = useMeetingCount(selectedRepository?.id);
+  
+  const { data: teamData, isLoading: teamLoading } = useQuery({
+    queryKey: ['teamData', selectedRepository?.id],
+    queryFn: async () => {
+      try {
+        const [sharedResponse, shareResponse] = await Promise.all([
+          fetch('/api/repositories/shared'),
+          selectedRepository?.id ? fetch(`/api/repositories/${selectedRepository.id}/share`) : null
+        ]);
+        
+        let sharedCount = 0;
+        let shareCount = 0;
+        
+        if (sharedResponse.ok) {
+          const { sharedRepositories } = await sharedResponse.json();
+          sharedCount = sharedRepositories?.length || 0;
+        }
+        
+        if (shareResponse?.ok) {
+          const { shareSettings } = await shareResponse.json();
+          shareCount = shareSettings?.length || 0;
+        }
+        
+        return sharedCount + shareCount;
+      } catch (error) {
+        console.error('Error fetching team data:', error);
+        return 0;
+      }
+    },
+    enabled: true,
+    staleTime: 1000 * 60 * 5 // 5 minutes
+  });
+  
   const [showRepoDropdown, setShowRepoDropdown] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');const dropdownRef = useRef<HTMLDivElement>(null);
   // Refresh stats when QnA context triggers an update (with throttling)
@@ -149,7 +182,7 @@ export default function Sidebar({ selectedRepository }: SidebarProps) {
       icon: UsersIcon,
       description: 'Collaboration hub',
       badge: null,
-      count: '8'
+      count: teamData?.toString() || (teamLoading ? '...' : '0')
     },
   ];
 

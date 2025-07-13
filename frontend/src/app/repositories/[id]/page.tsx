@@ -38,7 +38,7 @@ interface Question {
 export default function RepositoryPage() {
   const params = useParams()
   const router = useRouter()
-  const repositoryId = params.id as string
+  const repositoryId = params?.id as string
   const { incrementQuestionCount, triggerStatsRefreshOnCompletion } = useQnA()
 
   // React Query: Fetch repository details

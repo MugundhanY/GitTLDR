@@ -13,7 +13,7 @@ export default function AuthPage() {
 
   // Get error from URL if present
   useEffect(() => {
-    const errorMessage = searchParams.get('error');
+    const errorMessage = searchParams?.get('error');
     if (errorMessage) {
       setError(errorMessage);
     }
