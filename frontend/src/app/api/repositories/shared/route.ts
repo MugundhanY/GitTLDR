@@ -47,7 +47,6 @@ export async function GET(request: NextRequest) {
         fullName: share.repository.fullName,
         description: share.repository.description,
         owner: share.repository.user,
-        permission: share.permission,
         sharedAt: share.createdAt,
         stats: {
           files: share.repository._count.files,

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromRequest } from '@/lib/auth';
+import { checkRepositoryAccess } from '@/lib/repository-access';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 // GET /api/repositories/[id]/commits - Get commit history for a repository
 export async function GET(
@@ -17,21 +21,13 @@ export async function GET(
     const page = parseInt(searchParams.get('page') || '1');
     const perPage = Math.min(parseInt(searchParams.get('per_page') || '15'), 50); // Max 50 per page
 
-    // Get repository info from database to get GitHub URL
-    const { PrismaClient } = await import('@prisma/client');
-    const prisma = new PrismaClient();    const repository = await prisma.repository.findFirst({
-      where: {
-        id: repositoryId,
-        userId: user.id,
-      },
-    });
-
-    if (!repository) {
-      return NextResponse.json(
-        { error: 'Repository not found' },
-        { status: 404 }
-      );
+    // Check repository access
+    const accessResult = await checkRepositoryAccess(repositoryId, user.id);
+    if (!accessResult.hasAccess) {
+      return NextResponse.json({ error: 'Repository not found or access denied' }, { status: 404 });
     }
+
+    const repository = accessResult.repository;
 
     // Extract owner and repo from GitHub URL
     const urlMatch = repository.url.match(/github\.com\/([^\/]+)\/([^\/]+)/);

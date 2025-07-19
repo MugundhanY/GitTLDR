@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { getUserFromRequest } from '@/lib/auth';
+import { checkRepositoryAccess } from '@/lib/repository-access';
 
 const prisma = new PrismaClient();
 
@@ -66,25 +68,51 @@ export async function POST(request: NextRequest) {
 // GET /api/meetings - Get user's meetings
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-    const repositoryId = searchParams.get('repositoryId');
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'User ID is required' },
-        { status: 400 }
-      );
+    const user = await getUserFromRequest(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Build where clause
-    const where: any = {
-      userId: userId
-    };
+    const { searchParams } = new URL(request.url);
+    const repositoryId = searchParams.get('repositoryId');
 
-    // Filter by repository if provided
+    // Build where clause
+    let where: any = {};
+
     if (repositoryId) {
+      // Check repository access if repositoryId is provided
+      const hasAccess = await checkRepositoryAccess(repositoryId, user.id);
+      if (!hasAccess) {
+        return NextResponse.json({ error: 'Repository not found or access denied' }, { status: 404 });
+      }
+      
       where.repositoryId = repositoryId;
+    } else {
+      // If no repositoryId, get meetings from repositories the user has access to
+      const userRepositories = await prisma.repository.findMany({
+        where: {
+          OR: [
+            { userId: user.id }, // User owns the repository
+            { 
+              shareSettings: {
+                some: {
+                  userId: user.id // User has been shared the repository
+                }
+              }
+            }
+          ]
+        },
+        select: { id: true }
+      });
+
+      const repositoryIds = userRepositories.map(repo => repo.id);
+      
+      where = {
+        OR: [
+          { userId: user.id }, // User's own meetings
+          { repositoryId: { in: repositoryIds } } // Meetings in accessible repositories
+        ]
+      };
     }
 
     // Fetch meetings from database using Prisma
@@ -106,7 +134,7 @@ export async function GET(request: NextRequest) {
         },
         favorites: {
           where: {
-            userId: userId
+            userId: user.id
           },
           select: {
             id: true

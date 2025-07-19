@@ -50,3 +50,19 @@ export function CardFooter({ children, className }: CardProps) {
     </div>
   )
 }
+
+export function CardTitle({ children, className }: CardProps) {
+  return (
+    <h3 className={cn('text-lg font-semibold leading-none tracking-tight text-slate-900 dark:text-white', className)}>
+      {children}
+    </h3>
+  )
+}
+
+export function CardDescription({ children, className }: CardProps) {
+  return (
+    <p className={cn('text-sm text-slate-500 dark:text-slate-400 mt-1.5', className)}>
+      {children}
+    </p>
+  )
+}

@@ -42,6 +42,8 @@ model User {
   assignedActionItems MeetingActionItem[]  @relation("ActionItemAssignee")
   sharedMeetings      MeetingShareSetting[] @relation("SharedMeetings")
   sharedRepositories  RepositoryShareSetting[] @relation("SharedRepositories")
+  accessRequests      RepositoryAccessRequest[] @relation("AccessRequests")
+  reviewedRequests    RepositoryAccessRequest[] @relation("ReviewedRequests")
   notifications       Notification[]       @relation("UserNotifications")
   meetingQAs          MeetingQA[]
   meetings            Meeting[]
@@ -77,6 +79,7 @@ model Repository {
   files               RepositoryFile[]
   questionAttachments QuestionAttachment[]
   shareSettings       RepositoryShareSetting[]
+  accessRequests       RepositoryAccessRequest[]
 
   @@map("repositories")
 }
@@ -299,7 +302,6 @@ model MeetingShareSetting {
   id          String            @id @default(uuid())
   meetingId   String            @map("meeting_id")
   userId      String            @map("user_id") // User being shared with
-  permission  SharePermission   @default(VIEW)
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
   
@@ -334,7 +336,6 @@ model RepositoryShareSetting {
   id            String            @id @default(uuid())
   repositoryId  String            @map("repository_id")
   userId        String            @map("user_id") // User being shared with
-  permission    SharePermission   @default(VIEW)
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
   
@@ -343,6 +344,32 @@ model RepositoryShareSetting {
   
   @@unique([repositoryId, userId])
   @@map("repository_share_settings")
+}
+
+// Repository access request model (for URL sharing)
+model RepositoryAccessRequest {
+  id            String            @id @default(uuid())
+  repositoryId  String            @map("repository_id")
+  userId        String            @map("user_id") // User requesting access
+  message       String?           // Optional message from requester
+  status        AccessRequestStatus @default(PENDING)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  reviewedAt    DateTime?         @map("reviewed_at")
+  reviewedBy    String?           @map("reviewed_by") // Admin who approved/denied
+  
+  repository    Repository        @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  user          User              @relation("AccessRequests", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer      User?             @relation("ReviewedRequests", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  
+  @@unique([repositoryId, userId])
+  @@map("repository_access_requests")
+}
+
+enum AccessRequestStatus {
+  PENDING
+  APPROVED
+  DENIED
 }
 
 enum RepositoryStatus {
@@ -372,11 +399,6 @@ enum ActionItemPriority {
   HIGH
 }
 
-enum SharePermission {
-  VIEW
-  EDIT
-}
-
 enum NotificationType {
   REPO_CREATED
   REPO_PROCESSED
@@ -390,4 +412,7 @@ enum NotificationType {
   ACTION_ITEM_COMPLETED
   COMMENT_ADDED
   MEETING_SHARED
+  ACCESS_REQUEST_RECEIVED
+  ACCESS_REQUEST_APPROVED
+  ACCESS_REQUEST_DENIED
 }

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { getUserFromRequest } from '@/lib/auth';
+import { checkRepositoryAccess } from '@/lib/repository-access';
 
 const prisma = new PrismaClient();
 
@@ -8,15 +10,46 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const user = await getUserFromRequest(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id: meetingId } = await params;
     const body = await request.json();
-    const { question, user_id } = body;
+    const { question } = body;
 
     if (!question || !meetingId) {
       return NextResponse.json(
         { error: 'Question and meeting ID are required' },
         { status: 400 }
       );
+    }
+
+    // Check if user has access to the meeting
+    const meeting = await prisma.meeting.findUnique({
+      where: { id: meetingId },
+      select: { 
+        id: true, 
+        userId: true, 
+        repositoryId: true 
+      }
+    });
+
+    if (!meeting) {
+      return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
+    }
+
+    // Check access: user owns the meeting OR has access to the repository
+    let hasAccess = meeting.userId === user.id;
+
+    if (!hasAccess && meeting.repositoryId) {
+      const accessResult = await checkRepositoryAccess(meeting.repositoryId, user.id);
+      hasAccess = accessResult.hasAccess;
+    }
+
+    if (!hasAccess) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
 
     // Forward to Python worker
@@ -30,7 +63,7 @@ export async function POST(
       body: JSON.stringify({
         meeting_id: meetingId,
         question,
-        user_id: user_id || 'default-user'
+        user_id: user.id
       })
     });
 
@@ -53,7 +86,7 @@ export async function POST(
         await prisma.meetingQA.create({
           data: {
             meetingId,
-            userId: user_id || 'default-user',
+            userId: user.id,
             question,
             answer: data.result.answer || 'No answer available',
             confidence: data.result.confidence || 0.0,

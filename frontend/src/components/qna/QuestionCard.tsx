@@ -140,51 +140,14 @@ const QuestionCard = memo(({
   }
 
   useEffect(() => {
-    // Fetch feedback state for this question and user
-    async function fetchFeedback() {
-      try {
-        const res = await fetch(`/api/feedback?answerId=${question.id}&userId=1&type=qna`)
-        if (!res.ok) {
-          setFeedback(null)
-          return
-        }
-        const text = await res.text()
-        if (!text) {
-          setFeedback(null)
-          return
-        }
-        const data = JSON.parse(text)
-        if (data.feedback && data.feedback.value) {
-          setFeedback(data.feedback.value)
-        } else {
-          setFeedback(null)
-        }
-      } catch (e) {
-        setFeedback(null)
-      }
-    }
-    fetchFeedback()
+    // Feedback is disabled, set to null
+    setFeedback(null)
   }, [question.id])
 
   const handleFeedback = async (value: 'like' | 'dislike') => {
-    // Optimistic update
-    const newValue = feedback === value ? null : value;
-    setFeedback(newValue);
-    try {
-      await fetch('/api/feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          answerId: question.id,
-          type: 'qna',
-          value: newValue,
-          userId: '1',
-        })
-      });
-    } catch (e) {
-      // Revert on error
-      setFeedback(feedback);
-    }
+    // Feedback feature is disabled
+    console.log('Feedback feature is currently disabled')
+    return
   }
 
   useEffect(() => {

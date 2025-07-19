@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromRequest } from '@/lib/auth';
 import { PrismaClient } from '@prisma/client';
+import { checkRepositoryAccess } from '@/lib/repository-access';
 
 const prisma = new PrismaClient();
 
@@ -72,21 +73,18 @@ export async function GET(
       return NextResponse.json(response);
     }
 
-    // Verify repository ownership
-    const repository = await prisma.repository.findFirst({
-      where: {
-        id: repositoryId,
-        userId: user.id,
-      },
-    });
+    // Verify repository access (owner or team member)
+    const accessResult = await checkRepositoryAccess(repositoryId, user.id);
 
-    if (!repository) {
+    if (!accessResult.hasAccess) {
       await prisma.$disconnect();
       return NextResponse.json(
-        { error: 'Repository not found' },
+        { error: 'Repository not found or access denied' },
         { status: 404 }
       );
     }
+
+    const repository = accessResult.repository;
 
     // Check if repository has any files at all for debugging
     const totalFileCount = await prisma.repositoryFile.count({

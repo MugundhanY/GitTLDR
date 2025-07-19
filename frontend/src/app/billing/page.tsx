@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import { toast } from 'sonner'
 import {
   CreditCardIcon,
   BoltIcon,
@@ -17,8 +18,36 @@ import {
   RocketLaunchIcon,
   StarIcon,
   GiftIcon,
-  ExclamationTriangleIcon
+  ExclamationTriangleIcon,
+  DocumentArrowDownIcon,
+  ArrowTrendingUpIcon,
+  CurrencyDollarIcon
 } from '@heroicons/react/24/outline'
+import { Line, Bar } from 'react-chartjs-2'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ChartOptions
+} from 'chart.js'
+
+// Register Chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend
+)
 
 interface CreditPackage {
   id: string
@@ -45,7 +74,17 @@ interface BillingData {
   totalPurchased: number
   totalUsed: number
   monthlyUsage: number
+  totalSpent: number
   transactions: Transaction[]
+  creditsChart: {
+    labels: string[]
+    purchased: number[]
+    used: number[]
+  }
+  spendingChart: {
+    labels: string[]
+    amounts: number[]
+  }
 }
 
 export default function BillingPage() {
@@ -56,51 +95,9 @@ export default function BillingPage() {
   const { data: billingData, isLoading, refetch } = useQuery<BillingData>({
     queryKey: ['billing', timeRange],
     queryFn: async () => {
-      // Mock data - replace with actual API call
-      return {
-        currentCredits: 2450,
-        totalPurchased: 5000,
-        totalUsed: 2550,
-        monthlyUsage: 750,
-        transactions: [
-          {
-            id: 'txn_001',
-            type: 'purchase',
-            amount: 99.99,
-            credits: 1000,
-            description: 'Professional Credit Package',
-            date: '2025-07-01T10:30:00Z',
-            status: 'completed'
-          },
-          {
-            id: 'txn_002',
-            type: 'usage',
-            amount: 0,
-            credits: -50,
-            description: 'AI Q&A Processing - project-alpha',
-            date: '2025-07-01T09:15:00Z',
-            status: 'completed'
-          },
-          {
-            id: 'txn_003',
-            type: 'usage',
-            amount: 0,
-            credits: -120,
-            description: 'Meeting Transcript Processing - team-sync.mp4',
-            date: '2025-06-30T16:45:00Z',
-            status: 'completed'
-          },
-          {
-            id: 'txn_004',
-            type: 'bonus',
-            amount: 0,
-            credits: 100,
-            description: 'Welcome Bonus',
-            date: '2025-06-29T12:00:00Z',
-            status: 'completed'
-          }
-        ]
-      }
+      const response = await fetch(`/api/billing?timeRange=${timeRange}`)
+      if (!response.ok) throw new Error('Failed to fetch billing data')
+      return response.json()
     }
   })
 
@@ -156,22 +153,47 @@ export default function BillingPage() {
         body: JSON.stringify({
           packageId: package_.id,
           credits: package_.credits,
-          amount: package_.price
+          amount: package_.price,
+          packageName: package_.name
         }),
       })
 
       if (response.ok) {
         const { url } = await response.json()
+        toast.success('Redirecting to checkout...')
         window.location.href = url
       } else {
         throw new Error('Failed to create checkout session')
       }
     } catch (error) {
       console.error('Error creating checkout session:', error)
-      alert('Failed to process purchase. Please try again.')
+      toast.error('Failed to process purchase. Please try again.')
     } finally {
       setIsProcessing(false)
       setSelectedPackage(null)
+    }
+  }
+
+  const downloadInvoice = async (transactionId: string) => {
+    try {
+      const response = await fetch(`/api/billing/invoice/${transactionId}`)
+      if (!response.ok) throw new Error('Failed to download invoice')
+      
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.style.display = 'none'
+      a.href = url
+      a.download = `invoice-${transactionId}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+      
+      toast.success('Invoice downloaded successfully')
+    } catch (error) {
+      console.error('Error downloading invoice:', error)
+      toast.error('Failed to download invoice')
     }
   }
 
@@ -198,6 +220,72 @@ export default function BillingPage() {
       case 'failed': return 'text-red-600 bg-red-100 dark:bg-red-900/20 dark:text-red-400'
       default: return 'text-slate-600 bg-slate-100 dark:bg-slate-800 dark:text-slate-400'
     }
+  }
+
+  // Chart configurations
+  const chartOptions: ChartOptions<'line' | 'bar'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'top' as const,
+      },
+      title: {
+        display: false,
+      },
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        grid: {
+          color: 'rgba(156, 163, 175, 0.1)',
+        },
+        ticks: {
+          color: 'rgba(156, 163, 175, 0.8)',
+        },
+      },
+      x: {
+        grid: {
+          color: 'rgba(156, 163, 175, 0.1)',
+        },
+        ticks: {
+          color: 'rgba(156, 163, 175, 0.8)',
+        },
+      },
+    },
+  }
+
+  const creditsChartData = {
+    labels: billingData?.creditsChart?.labels || [],
+    datasets: [
+      {
+        label: 'Credits Purchased',
+        data: billingData?.creditsChart?.purchased || [],
+        borderColor: 'rgb(34, 197, 94)',
+        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+        tension: 0.4,
+      },
+      {
+        label: 'Credits Used',
+        data: billingData?.creditsChart?.used || [],
+        borderColor: 'rgb(239, 68, 68)',
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        tension: 0.4,
+      },
+    ],
+  }
+
+  const spendingChartData = {
+    labels: billingData?.spendingChart?.labels || [],
+    datasets: [
+      {
+        label: 'Amount Spent ($)',
+        data: billingData?.spendingChart?.amounts || [],
+        backgroundColor: 'rgba(59, 130, 246, 0.6)',
+        borderColor: 'rgb(59, 130, 246)',
+        borderWidth: 1,
+      },
+    ],
   }
 
   if (isLoading) {
@@ -281,14 +369,66 @@ export default function BillingPage() {
             <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/20 rounded-xl flex items-center justify-center">
-                  <ClockIcon className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+                  <CurrencyDollarIcon className="w-6 h-6 text-orange-600 dark:text-orange-400" />
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                    {billingData?.monthlyUsage.toLocaleString()}
+                    ${billingData?.totalSpent?.toFixed(2) || '0.00'}
                   </p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">This Month</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Total Spent</p>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Charts Section */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            {/* Credits Usage Chart */}
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                  Credits Overview
+                </h3>
+                <div className="flex gap-2">
+                  {(['7d', '30d', '90d', '1y'] as const).map((range) => (
+                    <button
+                      key={range}
+                      onClick={() => setTimeRange(range)}
+                      className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                        timeRange === range
+                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                          : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      {range.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="h-64">
+                {isLoading ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  </div>
+                ) : (
+                  <Line data={creditsChartData} options={chartOptions} />
+                )}
+              </div>
+            </div>
+
+            {/* Spending Chart */}
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">
+                Monthly Spending
+              </h3>
+              <div className="h-64">
+                {isLoading ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  </div>
+                ) : (
+                  <Bar data={spendingChartData} options={chartOptions} />
+                )}
               </div>
             </div>
           </div>
@@ -384,8 +524,9 @@ export default function BillingPage() {
                         Credit Usage
                       </h3>
                       <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                        Credits are consumed when processing files, generating AI responses, and transcribing meetings. 
-                        Each operation has different credit costs based on complexity and resource usage.
+                        Credits are primarily consumed when creating and processing new repositories. 
+                        Each repository creation uses credits based on the repository size, file count, and complexity of analysis.
+                        Q&A queries and meeting features do not consume credits.
                       </p>
                     </div>
                   </div>
@@ -410,7 +551,7 @@ export default function BillingPage() {
                 </div>
                 
                 <div className="space-y-4">
-                  {billingData?.transactions.map((transaction) => (
+                  {billingData?.transactions.map((transaction: Transaction) => (
                     <div key={transaction.id} className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
                       {getTransactionIcon(transaction.type, transaction.status)}
                       <div className="flex-1 min-w-0">
@@ -424,6 +565,15 @@ export default function BillingPage() {
                           <span className="text-xs text-slate-500 dark:text-slate-400">
                             {new Date(transaction.date).toLocaleDateString()}
                           </span>
+                          {transaction.type === 'purchase' && (
+                            <button
+                              onClick={() => downloadInvoice(transaction.id)}
+                              className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 flex items-center gap-1"
+                            >
+                              <DocumentArrowDownIcon className="w-3 h-3" />
+                              Invoice
+                            </button>
+                          )}
                         </div>
                       </div>
                       <div className="text-right">

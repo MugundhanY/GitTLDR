@@ -456,33 +456,14 @@ export default function ThinkingProcess({
     }
   }
   const handleStepFeedback = async (stepId: string, value: 'like' | 'dislike') => {
-    setStepFeedbackLoading(f => ({ ...f, [stepId]: true }))
-    await fetch('/api/feedback', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        stepId,
-        type: 'step',
-        value,
-        userId: '1',
-      })
-    })
-    setStepFeedback(f => ({ ...f, [stepId]: value }))
-    setStepFeedbackLoading(f => ({ ...f, [stepId]: false }))
+    // Feedback feature is disabled
+    console.log('Step feedback feature is currently disabled')
+    return
   }
   const handleFinalFeedback = async (value: 'like' | 'dislike') => {
-    setFinalFeedbackLoading(true)
-    await fetch('/api/feedback', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'deep',
-        value,
-        userId: '1',
-      })
-    })
-    setFinalFeedback(value)
-    setFinalFeedbackLoading(false)
+    // Feedback feature is disabled
+    console.log('Final feedback feature is currently disabled')
+    return
   }
 
   if (!isVisible) return null

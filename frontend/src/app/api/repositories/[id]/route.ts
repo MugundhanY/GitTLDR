@@ -37,7 +37,7 @@ export async function GET(
 
     let permission = 'OWNER';
     
-    // If not owned, check if it's shared with the user
+    // If not owned, check if it's shared with the user (team member access)
     if (!repository) {
       const shareSettings = await prisma.repositoryShareSetting.findFirst({
         where: {
@@ -63,7 +63,6 @@ export async function GET(
 
       if (shareSettings) {
         repository = shareSettings.repository;
-        permission = shareSettings.permission;
       }
     }
 

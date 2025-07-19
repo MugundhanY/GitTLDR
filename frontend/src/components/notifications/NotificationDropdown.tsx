@@ -24,20 +24,14 @@ import {
 
 interface Notification {
   id: string;
-  type: 'success' | 'error' | 'warning' | 'info' | 'processing';
+  type: string;
   title: string;
   message: string;
-  timestamp: string;
-  read: boolean;
-  category: 'repository' | 'meeting' | 'qna' | 'system';
+  createdAt: string;
+  isRead: boolean;
   actionUrl?: string;
-  repositoryId?: string;
-  repositoryName?: string;
-  action?: {
-    label: string;
-    href?: string;
-    onClick?: () => void;
-  };
+  actionLabel?: string;
+  metadata?: Record<string, any>;
 }
 // Simple date formatter to avoid external dependency
 const formatTimeAgo = (date: Date) => {
@@ -66,50 +60,17 @@ export default function NotificationDropdown({ className = '' }: NotificationDro
 
   // Fetch notifications dynamically
   const { data: notificationsData = { notifications: [], unreadCount: 0 }, isLoading, refetch } = useQuery({
-    queryKey: ['notifications', selectedRepository?.id],
+    queryKey: ['notifications'],
     queryFn: async () => {
-      const response = await fetch(`/api/notifications${selectedRepository?.id ? `?repositoryId=${selectedRepository.id}` : ''}`);
+      const response = await fetch('/api/notifications');
       if (!response.ok) {
-        // Return mock data if API fails
-        return {
-          notifications: [
-            {
-              id: '1',
-              type: 'success' as const,
-              title: 'Repository Processing Complete',
-              message: `Your repository has been successfully processed and is ready for Q&A.`,
-              timestamp: new Date().toISOString(),
-              read: false,
-              category: 'repository' as const,
-              actionUrl: '/qna',
-              repositoryId: selectedRepository?.id,
-              repositoryName: selectedRepository?.name
-            },
-            {
-              id: '2',
-              type: 'processing' as const,
-              title: 'Meeting Upload Processing',
-              message: 'Your meeting recording is being transcribed and summarized.',
-              timestamp: new Date(Date.now() - 300000).toISOString(),
-              read: false,
-              category: 'meeting' as const,
-              actionUrl: '/meetings'
-            },
-            {
-              id: '3',
-              type: 'info' as const,
-              title: 'New Q&A Feature Available',
-              message: 'Try our enhanced deep research mode for more comprehensive answers.',
-              timestamp: new Date(Date.now() - 3600000).toISOString(),
-              read: true,
-              category: 'system' as const,
-              actionUrl: '/qna'
-            }
-          ],
-          unreadCount: 2
-        };
+        throw new Error('Failed to fetch notifications');
       }
-      return await response.json();
+      const data = await response.json();
+      return {
+        notifications: data.notifications || [],
+        unreadCount: data.notifications?.filter((n: any) => !n.isRead).length || 0
+      };
     },
     refetchInterval: 30000, // Refetch every 30 seconds
     staleTime: 10000 // Consider data stale after 10 seconds
@@ -117,10 +78,33 @@ export default function NotificationDropdown({ className = '' }: NotificationDro
 
   const { notifications, unreadCount } = notificationsData;
 
+  // Handle notification action button clicks
+  const handleNotificationAction = (notification: Notification) => {
+    if (notification.actionUrl) {
+      // If it's a repository-related notification, handle repository selection
+      if (notification.actionUrl.includes('/repositories/')) {
+        const repoId = notification.actionUrl.split('/repositories/')[1];
+        if (repoId && selectedRepository?.id !== repoId) {
+          // Set repository in context if available
+          window.location.href = notification.actionUrl;
+        } else {
+          window.location.href = notification.actionUrl;
+        }
+      } else {
+        // For other notifications, just navigate
+        window.location.href = notification.actionUrl;
+      }
+    }
+  };
+
   const markAsRead = async (notificationId: string) => {
     try {
-      await fetch(`/api/notifications/${notificationId}/read`, { method: 'POST' });
-      // Optimistic update could be added here
+      const response = await fetch(`/api/notifications?id=${notificationId}&action=markAsRead`, {
+        method: 'PUT'
+      });
+      if (response.ok) {
+        refetch();
+      }
     } catch (error) {
       console.error('Failed to mark notification as read:', error);
     }
@@ -128,8 +112,13 @@ export default function NotificationDropdown({ className = '' }: NotificationDro
 
   const markAllAsRead = async () => {
     try {
-      await fetch('/api/notifications/mark-all-read', { method: 'POST' });
-      // Optimistic update could be added here
+      // Mark all notifications as read for current user
+      const promises = notifications
+        .filter((n: Notification) => !n.isRead)
+        .map((n: Notification) => markAsRead(n.id));
+      
+      await Promise.all(promises);
+      refetch();
     } catch (error) {
       console.error('Failed to mark all notifications as read:', error);
     }
@@ -137,8 +126,12 @@ export default function NotificationDropdown({ className = '' }: NotificationDro
 
   const removeNotification = async (notificationId: string) => {
     try {
-      await fetch(`/api/notifications/${notificationId}`, { method: 'DELETE' });
-      // Optimistic update could be added here
+      const response = await fetch(`/api/notifications?id=${notificationId}`, { 
+        method: 'DELETE' 
+      });
+      if (response.ok) {
+        refetch();
+      }
     } catch (error) {
       console.error('Failed to remove notification:', error);
     }
@@ -155,37 +148,59 @@ export default function NotificationDropdown({ className = '' }: NotificationDro
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const getNotificationIcon = (type: Notification['type'], size = 'w-5 h-5') => {
+  const getNotificationIcon = (type: string, size = 'w-5 h-5') => {
     switch (type) {
-      case 'success':
+      case 'access_request':
+        return <InformationCircleIcon className={`${size} text-orange-500`} />;
+      case 'access_approved':
         return <CheckCircleIcon className={`${size} text-green-500`} />;
-      case 'error':
+      case 'access_denied':
         return <XCircleIcon className={`${size} text-red-500`} />;
-      case 'warning':
+      case 'repository_created':
+      case 'repository_processed':
+        return <CheckCircleIcon className={`${size} text-green-500`} />;
+      case 'repository_failed':
+        return <XCircleIcon className={`${size} text-red-500`} />;
+      case 'meeting_uploaded':
+      case 'meeting_processed':
+        return <VideoCameraIcon className={`${size} text-blue-500`} />;
+      case 'meeting_failed':
+        return <XCircleIcon className={`${size} text-red-500`} />;
+      case 'meeting_shared':
+        return <VideoCameraIcon className={`${size} text-purple-500`} />;
+      case 'credits_low':
+      case 'credits_depleted':
         return <ExclamationTriangleIcon className={`${size} text-yellow-500`} />;
-      case 'processing':
-        return <ArrowPathIcon className={`${size} text-blue-500 animate-spin`} />;
+      case 'action_item_assigned':
+      case 'action_item_completed':
+        return <DocumentTextIcon className={`${size} text-indigo-500`} />;
+      case 'comment_added':
+        return <ChatBubbleLeftRightIcon className={`${size} text-blue-500`} />;
       default:
         return <InformationCircleIcon className={`${size} text-blue-500`} />;
     }
   };
 
   const filteredNotifications = filter === 'unread' 
-    ? notifications.filter((n: Notification) => !n.read)
+    ? notifications.filter((n: Notification) => !n.isRead)
     : notifications;
 
   const recentNotifications = filteredNotifications.slice(0, 10);
 
   const handleNotificationClick = (notification: Notification) => {
-    if (!notification.read) {
+    if (!notification.isRead) {
       markAsRead(notification.id);
     }
   };
 
   const clearAllNotifications = async () => {
     try {
-      await fetch('/api/notifications/clear-all', { method: 'DELETE' });
-      // Optimistic update could be added here
+      // Delete all notifications for the user
+      const promises = notifications.map((n: Notification) => 
+        fetch(`/api/notifications?id=${n.id}`, { method: 'DELETE' })
+      );
+      await Promise.all(promises);
+      refetch();
     } catch (error) {
       console.error('Failed to clear all notifications:', error);
     }
@@ -312,12 +327,12 @@ export default function NotificationDropdown({ className = '' }: NotificationDro
                   <div
                     key={notification.id}
                     className={`relative p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer group ${
-                      !notification.read ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''
+                      !notification.isRead ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''
                     }`}
                     onClick={() => handleNotificationClick(notification)}
                   >
                     {/* Unread Indicator */}
-                    {!notification.read && (
+                    {!notification.isRead && (
                       <div className="absolute left-2 top-1/2 transform -translate-y-1/2 w-2 h-2 bg-blue-500 rounded-full"></div>
                     )}
 
@@ -341,18 +356,12 @@ export default function NotificationDropdown({ className = '' }: NotificationDro
                             {/* Metadata */}
                             <div className="flex items-center justify-between mt-2">
                               <div className="flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
-                                <span>{formatTimeAgo(new Date(notification.timestamp))}</span>
-                                {notification.repositoryName && (
-                                  <>
-                                    <span>•</span>
-                                    <span className="font-medium">{notification.repositoryName}</span>
-                                  </>
-                                )}
+                                <span>{formatTimeAgo(new Date(notification.createdAt))}</span>
                               </div>
                               
                               {/* Actions */}
                               <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                {!notification.read && (
+                                {!notification.isRead && (
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -378,27 +387,18 @@ export default function NotificationDropdown({ className = '' }: NotificationDro
                             </div>
 
                             {/* Action Button */}
-                            {notification.action && (
+                            {notification.actionUrl && (
                               <div className="mt-3">
-                                {notification.action.href ? (
-                                  <Link
-                                    href={notification.action.href}
-                                    className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors"
-                                    onClick={() => setIsOpen(false)}
-                                  >
-                                    {notification.action.label}
-                                  </Link>
-                                ) : (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      notification.action?.onClick?.();
-                                    }}
-                                    className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors"
-                                  >
-                                    {notification.action.label}
-                                  </button>
-                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleNotificationAction(notification);
+                                    setIsOpen(false);
+                                  }}
+                                  className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors"
+                                >
+                                  {notification.actionLabel || 'View'}
+                                </button>
                               </div>
                             )}
                           </div>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromRequest } from '@/lib/auth';
 import { PrismaClient } from '@prisma/client';
 import { B2StorageService } from '@/lib/b2-storage';
+import { checkRepositoryAccess } from '@/lib/repository-access';
 
 const prisma = new PrismaClient();
 
@@ -18,14 +19,17 @@ export async function GET(
 
     const { id: repositoryId, fileId } = await params;
 
-    // Verify repository ownership and get file info
+    // Check repository access
+    const accessResult = await checkRepositoryAccess(repositoryId, user.id);
+    if (!accessResult.hasAccess) {
+      return NextResponse.json({ error: 'Repository not found or access denied' }, { status: 404 });
+    }
+
+    // Get file info
     const file = await prisma.repositoryFile.findFirst({
       where: {
         id: fileId,
         repositoryId,
-        repository: {
-          userId: user.id,
-        },
       },
       include: {
         repository: {

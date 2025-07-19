@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { toast } from 'sonner'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { useRepository } from '@/contexts/RepositoryContext'
 import {
@@ -18,6 +19,16 @@ import {
   LinkIcon
 } from '@heroicons/react/24/outline'
 
+interface TeamMember {
+  id: string
+  name: string
+  email: string
+  avatarUrl?: string
+  role: 'OWNER' | 'MEMBER'
+  joinedAt: string
+  status: 'ACTIVE' | 'PENDING'
+}
+
 interface SharedRepository {
   id: string
   name: string
@@ -29,7 +40,6 @@ interface SharedRepository {
     email: string
     avatarUrl?: string
   }
-  permission: 'VIEW' | 'EDIT'
   sharedAt: string
   stats: {
     files: number
@@ -46,7 +56,19 @@ interface ShareSetting {
     email: string
     avatarUrl?: string
   }
-  permission: 'VIEW' | 'EDIT'
+  createdAt: string
+}
+
+interface AccessRequest {
+  id: string
+  user: {
+    id: string
+    name: string
+    email: string
+    avatarUrl?: string
+  }
+  message?: string
+  status: 'PENDING' | 'APPROVED' | 'DENIED'
   createdAt: string
 }
 
@@ -54,12 +76,16 @@ export default function TeamPage() {
   const { selectedRepository } = useRepository()
   const [sharedRepositories, setSharedRepositories] = useState<SharedRepository[]>([])
   const [shareSettings, setShareSettings] = useState<ShareSetting[]>([])
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
+  const [accessRequests, setAccessRequests] = useState<AccessRequest[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'shared-with-me' | 'export-sharing'>('shared-with-me')
+  const [activeTab, setActiveTab] = useState<'shared-with-me' | 'export-sharing' | 'team-members' | 'access-requests'>('shared-with-me')
   const [showShareModal, setShowShareModal] = useState(false)
+  const [showMemberModal, setShowMemberModal] = useState(false)
   const [shareEmail, setShareEmail] = useState('')
-  const [sharePermission, setSharePermission] = useState<'VIEW' | 'EDIT'>('VIEW')
   const [isSharing, setIsSharing] = useState(false)
+  const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null)
+  const [userRole, setUserRole] = useState<'OWNER' | 'MEMBER'>('MEMBER')
 
   useEffect(() => {
     fetchTeamData()
@@ -75,12 +101,30 @@ export default function TeamPage() {
         setSharedRepositories(shared)
       }
 
-      // Fetch share settings for current repository
+      // Fetch data for current repository
       if (selectedRepository) {
+        // Fetch share settings
         const shareResponse = await fetch(`/api/repositories/${selectedRepository.id}/share`)
         if (shareResponse.ok) {
           const { shareSettings: settings } = await shareResponse.json()
           setShareSettings(settings)
+        }
+
+        // Fetch team members
+        const membersResponse = await fetch(`/api/repositories/${selectedRepository.id}/members`)
+        if (membersResponse.ok) {
+          const { members, userRole: role } = await membersResponse.json()
+          setTeamMembers(members)
+          setUserRole(role)
+        }
+
+        // Fetch access requests (owner only)
+        if (userRole === 'OWNER') {
+          const accessResponse = await fetch(`/api/repositories/${selectedRepository.id}/access-requests`)
+          if (accessResponse.ok) {
+            const { accessRequests } = await accessResponse.json()
+            setAccessRequests(accessRequests)
+          }
         }
       }
     } catch (error) {
@@ -99,8 +143,7 @@ export default function TeamPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: shareEmail.trim(),
-          permission: sharePermission
+          email: shareEmail.trim()
         })
       })
 
@@ -108,14 +151,14 @@ export default function TeamPage() {
         await fetchTeamData()
         setShowShareModal(false)
         setShareEmail('')
-        alert('Repository shared successfully!')
+        toast.success('Repository shared successfully!')
       } else {
         const { error } = await response.json()
-        alert(error || 'Failed to share repository')
+        toast.error(error || 'Failed to share repository')
       }
     } catch (error) {
       console.error('Error sharing repository:', error)
-      alert('Failed to share repository')
+      toast.error('Failed to share repository')
     } finally {
       setIsSharing(false)
     }
@@ -131,13 +174,63 @@ export default function TeamPage() {
 
       if (response.ok) {
         await fetchTeamData()
-        alert('Share removed successfully!')
+        toast.success('Share removed successfully!')
       } else {
-        alert('Failed to remove share')
+        toast.error('Failed to remove share')
       }
     } catch (error) {
       console.error('Error removing share:', error)
-      alert('Failed to remove share')
+      toast.error('Failed to remove share')
+    }
+  }
+
+  const handleRemoveMember = async (memberId: string) => {
+    if (!selectedRepository) return
+    
+    if (!confirm('Are you sure you want to remove this member?')) return
+    
+    try {
+      const response = await fetch(`/api/repositories/${selectedRepository.id}/members?memberId=${memberId}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        await fetchTeamData()
+        toast.success('Member removed successfully!')
+      } else {
+        const { error } = await response.json()
+        toast.error(error || 'Failed to remove member')
+      }
+    } catch (error) {
+      console.error('Error removing member:', error)
+      toast.error('Failed to remove member')
+    }
+  }
+
+  // Handle access request approval/denial
+  const handleAccessRequest = async (requestId: string, action: 'APPROVED' | 'DENIED') => {
+    if (!selectedRepository) return
+    
+    try {
+      const response = await fetch(`/api/repositories/${selectedRepository.id}/access-requests`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestId,
+          action
+        })
+      })
+
+      if (response.ok) {
+        await fetchTeamData()
+        toast.success(`Access request ${action.toLowerCase()} successfully!`)
+      } else {
+        const { error } = await response.json()
+        toast.error(error || `Failed to ${action.toLowerCase()} access request`)
+      }
+    } catch (error) {
+      console.error('Error handling access request:', error)
+      toast.error(`Failed to ${action.toLowerCase()} access request`)
     }
   }
 
@@ -146,7 +239,15 @@ export default function TeamPage() {
       const baseUrl = `${window.location.origin}/repositories/${selectedRepository.id}`
       const exportUrl = `${baseUrl}/${type}?export=true`
       navigator.clipboard.writeText(exportUrl)
-      alert(`${type.charAt(0).toUpperCase() + type.slice(1)} export link copied to clipboard!`)
+      toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} export link copied to clipboard!`)
+    }
+  }
+
+  const copyShareURL = () => {
+    if (typeof window !== 'undefined' && selectedRepository) {
+      const shareUrl = `${window.location.origin}/share/${selectedRepository.id}`
+      navigator.clipboard.writeText(shareUrl)
+      toast.success('Repository share URL copied to clipboard!')
     }
   }
 
@@ -182,7 +283,7 @@ export default function TeamPage() {
       }
     } catch (error) {
       console.error(`Error exporting ${type}:`, error)
-      alert(`Failed to export ${type}`)
+      toast.error(`Failed to export ${type}`)
     }
   }
 
@@ -224,6 +325,13 @@ export default function TeamPage() {
                   Copy Export Link
                 </button>
                 <button
+                  onClick={copyShareURL}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+                >
+                  <ShareIcon className="w-4 h-4" />
+                  Copy Share URL
+                </button>
+                <button
                   onClick={() => setShowShareModal(true)}
                   className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
@@ -246,6 +354,30 @@ export default function TeamPage() {
             >
               Shared with Me ({sharedRepositories.length})
             </button>
+            {selectedRepository && (
+              <button
+                onClick={() => setActiveTab('team-members')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  activeTab === 'team-members'
+                    ? 'bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+              >
+                Team Members ({teamMembers.length})
+              </button>
+            )}
+            {selectedRepository && userRole === 'OWNER' && (
+              <button
+                onClick={() => setActiveTab('access-requests')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  activeTab === 'access-requests'
+                    ? 'bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+              >
+                Access Requests ({accessRequests.filter(req => req.status === 'PENDING').length})
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('export-sharing')}
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
@@ -298,22 +430,11 @@ export default function TeamPage() {
                           </span>
                         </div>
                       </div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        repo.permission === 'EDIT'
-                          ? 'bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-400'
-                          : 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-400'
-                      }`}>
-                        {repo.permission === 'EDIT' ? (
-                          <div className="flex items-center gap-1">
-                            <PencilIcon className="w-3 h-3" />
-                            Edit
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1">
-                            <EyeIcon className="w-3 h-3" />
-                            View
-                          </div>
-                        )}
+                      <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-400">
+                        <div className="flex items-center gap-1">
+                          <EyeIcon className="w-3 h-3" />
+                          Member
+                        </div>
                       </span>
                     </div>
 
@@ -340,15 +461,230 @@ export default function TeamPage() {
                         <span className="text-xs text-gray-600 dark:text-gray-400">Q&A</span>
                       </div>
                     </div>
-
-                    <button
-                      onClick={() => window.location.href = `/repositories/${repo.id}`}
-                      className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                      Access Repository
-                    </button>
                   </motion.div>
                 ))
+              )}
+            </div>
+          ) : activeTab === 'team-members' ? (
+            <div className="space-y-6">
+              {selectedRepository ? (
+                <>
+                  {/* Team Members List */}
+                  <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        Team Members ({teamMembers.length})
+                      </h3>
+                      {userRole === 'OWNER' && (
+                        <button
+                          onClick={() => setShowShareModal(true)}
+                          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          <UsersIcon className="w-4 h-4" />
+                          Add Member
+                        </button>
+                      )}
+                    </div>
+
+                    {teamMembers.length === 0 ? (
+                      <div className="text-center py-8">
+                        <UsersIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                        <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                          No Team Members
+                        </h4>
+                        <p className="text-gray-600 dark:text-gray-400 mb-4">
+                          Add team members to collaborate on this repository.
+                        </p>
+                        {userRole === 'OWNER' && (
+                          <button
+                            onClick={() => setShowShareModal(true)}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                          >
+                            Add First Member
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {teamMembers.map((member) => (
+                          <div
+                            key={member.id}
+                            className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                          >
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={member.avatarUrl || '/default-avatar.png'}
+                                alt={member.name}
+                                className="w-10 h-10 rounded-full"
+                              />
+                              <div>
+                                <div className="font-medium text-gray-900 dark:text-white">
+                                  {member.name}
+                                  {member.role === 'OWNER' && (
+                                    <span className="ml-2 px-2 py-1 bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400 text-xs rounded-full">
+                                      Owner
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-sm text-gray-600 dark:text-gray-400">
+                                  {member.email}
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-3">
+                              {member.role !== 'OWNER' && (
+                                <>
+                                  <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400">
+                                    <div className="flex items-center gap-1">
+                                      <UsersIcon className="w-3 h-3" />
+                                      Member
+                                    </div>
+                                  </span>
+                                  
+                                  {userRole === 'OWNER' && (
+                                    <button
+                                      onClick={() => handleRemoveMember(member.id)}
+                                      className="p-1 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                                    >
+                                      <TrashIcon className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                              
+                              {member.role === 'OWNER' && (
+                                <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/20 text-purple-800 dark:text-purple-400">
+                                  <div className="flex items-center gap-1">
+                                    <UsersIcon className="w-3 h-3" />
+                                    Owner
+                                  </div>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-12">
+                  <UsersIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                    Select a Repository
+                  </h3>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    Choose a repository from the sidebar to view and manage team members.
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : activeTab === 'access-requests' ? (
+            <div className="space-y-6">
+              {selectedRepository && userRole === 'OWNER' ? (
+                <>
+                  {/* Access Requests */}
+                  <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        Access Requests ({accessRequests.filter(req => req.status === 'PENDING').length} pending)
+                      </h3>
+                    </div>
+
+                    {accessRequests.length === 0 ? (
+                      <div className="text-center py-8">
+                        <UsersIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                        <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                          No Access Requests
+                        </h4>
+                        <p className="text-gray-600 dark:text-gray-400">
+                          No one has requested access to this repository yet.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {accessRequests.map((request) => (
+                          <div
+                            key={request.id}
+                            className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center">
+                                {request.user.avatarUrl ? (
+                                  <img
+                                    src={request.user.avatarUrl}
+                                    alt={request.user.name}
+                                    className="w-full h-full rounded-full object-cover"
+                                  />
+                                ) : (
+                                  <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                                    {request.user.name.charAt(0).toUpperCase()}
+                                  </span>
+                                )}
+                              </div>
+                              <div>
+                                <div className="font-medium text-gray-900 dark:text-white">
+                                  {request.user.name}
+                                </div>
+                                <div className="text-sm text-gray-600 dark:text-gray-400">
+                                  {request.user.email}
+                                </div>
+                                {request.message && (
+                                  <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                    &ldquo;{request.message}&rdquo;
+                                  </div>
+                                )}
+                                <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                                  Requested {new Date(request.createdAt).toLocaleDateString()}
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                request.status === 'PENDING'
+                                  ? 'bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-400'
+                                  : request.status === 'APPROVED'
+                                  ? 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-400'
+                                  : 'bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-400'
+                              }`}>
+                                {request.status}
+                              </span>
+                              
+                              {request.status === 'PENDING' && (
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => handleAccessRequest(request.id, 'APPROVED')}
+                                    className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    onClick={() => handleAccessRequest(request.id, 'DENIED')}
+                                    className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition-colors"
+                                  >
+                                    Deny
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-12">
+                  <UsersIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                    Access Denied
+                  </h3>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    Only repository owners can view access requests.
+                  </p>
+                </div>
               )}
             </div>
           ) : (
@@ -462,22 +798,11 @@ export default function TeamPage() {
                             </div>
                             
                             <div className="flex items-center gap-3">
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                setting.permission === 'EDIT'
-                                  ? 'bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-400'
-                                  : 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-400'
-                              }`}>
-                                {setting.permission === 'EDIT' ? (
-                                  <div className="flex items-center gap-1">
-                                    <PencilIcon className="w-3 h-3" />
-                                    Edit
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center gap-1">
-                                    <EyeIcon className="w-3 h-3" />
-                                    View
-                                  </div>
-                                )}
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-400">
+                                <div className="flex items-center gap-1">
+                                  <EyeIcon className="w-3 h-3" />
+                                  Member
+                                </div>
                               </span>
                               
                               <button
@@ -550,20 +875,6 @@ export default function TeamPage() {
                     placeholder="Enter user's email address"
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
                   />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Permission Level
-                  </label>
-                  <select
-                    value={sharePermission}
-                    onChange={(e) => setSharePermission(e.target.value as 'VIEW' | 'EDIT')}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
-                  >
-                    <option value="VIEW">View Only</option>
-                    <option value="EDIT">View & Edit</option>
-                  </select>
                 </div>
 
                 <div className="flex gap-3 pt-4">

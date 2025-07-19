@@ -243,8 +243,7 @@ export async function GET(request: NextRequest) {
       avatarUrl: share.repository.avatarUrl,
       createdAt: share.repository.createdAt,
       updatedAt: share.repository.updatedAt,
-      isShared: true,
-      permission: share.permission
+      isShared: true
     }));
 
     // Combine and deduplicate repositories

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { getUserFromRequest } from '../../../lib/auth';
+import { checkRepositoryAccess } from '@/lib/repository-access';
 
 const prisma = new PrismaClient();
 
@@ -24,30 +25,14 @@ export async function GET(request: NextRequest) {
     const daysAgo = timeRange === '7d' ? 7 : timeRange === '90d' ? 90 : timeRange === '1y' ? 365 : 30;
     const startDate = new Date(Date.now() - (daysAgo * 24 * 60 * 60 * 1000));
 
-    // Get repository data
-    const repository = await prisma.repository.findUnique({
-      where: { id: repositoryId },
-      include: {
-        files: true,
-        user: true
-      }
-    });
+    // Check if user has access to this repository (owner or team member)
+    const accessResult = await checkRepositoryAccess(repositoryId, user.id);
 
-    if (!repository) {
-      return NextResponse.json({ error: 'Repository not found' }, { status: 404 });
+    if (!accessResult.hasAccess) {
+      return NextResponse.json({ error: 'Repository not found or access denied' }, { status: 404 });
     }
 
-    // Check if user has access to this repository (owns it or has it shared)
-    const hasAccess = repository.userId === user.id || await prisma.repositoryShareSetting.findFirst({
-      where: {
-        repositoryId: repositoryId,
-        userId: user.id
-      }
-    });
-
-    if (!hasAccess) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
-    }
+    const repository = accessResult.repository;
 
     // Get meetings for this repository
     const meetings = await prisma.meeting.findMany({
@@ -123,7 +108,7 @@ export async function GET(request: NextRequest) {
     const languageStats: Record<string, { count: number; size: number }> = {};
     let totalSize = 0;
 
-    files.forEach(file => {
+    files.forEach((file: any) => {
       const language = file.language || 'Unknown';
       const size = file.size || 0;
       
@@ -159,7 +144,7 @@ export async function GET(request: NextRequest) {
         return questionDate.toDateString() === date.toDateString();
       }).length;
 
-      const dayFiles = files.filter(f => {
+      const dayFiles = files.filter((f: any) => {
         if (!f.createdAt) return false;
         const fileDate = new Date(f.createdAt);
         return fileDate.toDateString() === date.toDateString();
@@ -265,10 +250,10 @@ export async function GET(request: NextRequest) {
         totalSize,
         languages,
         recentFiles: files
-          .filter(f => f.createdAt)
-          .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())
+          .filter((f: any) => f.createdAt)
+          .sort((a: any, b: any) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())
           .slice(0, 10)
-          .map(f => ({
+          .map((f: any) => ({
             path: f.path,
             language: f.language || 'Unknown',
             size: f.size || 0,

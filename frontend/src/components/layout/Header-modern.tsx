@@ -48,10 +48,80 @@ export function Header() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
+  const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null);
   const themeDropdownRef = useRef<HTMLDivElement>(null);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
   const searchDropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  // Separate search function for manual triggering
+  const performGlobalSearch = async (query: string) => {
+    if (!query.trim() || !selectedRepository?.id) {
+      setSearchResults([]);
+      setShowSearchResults(false);
+      return;
+    }
+
+    try {
+      // Search in multiple areas
+      const [filesRes, questionsRes, meetingsRes] = await Promise.allSettled([
+        fetch(`/api/repositories/${selectedRepository.id}/files?search=${encodeURIComponent(query)}`),
+        fetch(`/api/qna?repositoryId=${selectedRepository.id}&search=${encodeURIComponent(query)}`),
+        fetch(`/api/meetings?repositoryId=${selectedRepository.id}&search=${encodeURIComponent(query)}`)
+      ]);
+
+      const results: any[] = [];
+
+      // Add file results
+      if (filesRes.status === 'fulfilled' && filesRes.value.ok) {
+        const filesData = await filesRes.value.json();
+        if (filesData.files) {
+          results.push(...filesData.files.slice(0, 3).map((file: any) => ({
+            type: 'file',
+            title: file.name,
+            path: file.path,
+            href: `/files?file=${file.id}`,
+            description: file.summary || `${file.language} file`
+          })));
+        }
+      }
+
+      // Add Q&A results
+      if (questionsRes.status === 'fulfilled' && questionsRes.value.ok) {
+        const questionsData = await questionsRes.value.json();
+        if (questionsData.questions) {
+          results.push(...questionsData.questions.slice(0, 3).map((question: any) => ({
+            type: 'question',
+            title: question.query,
+            href: `/qna#question-${question.id}`,
+            description: question.answer ? question.answer.substring(0, 100) + '...' : 'Q&A'
+          })));
+        }
+      }
+
+      // Add meeting results
+      if (meetingsRes.status === 'fulfilled' && meetingsRes.value.ok) {
+        const meetingsData = await meetingsRes.value.json();
+        if (meetingsData.meetings) {
+          results.push(...meetingsData.meetings.slice(0, 3).map((meeting: any) => ({
+            type: 'meeting',
+            title: meeting.title,
+            href: `/meetings/${meeting.id}`,
+            description: meeting.summary || 'Meeting recording'
+          })));
+        }
+      }
+
+      setSearchResults(results);
+      setShowSearchResults(results.length > 0);
+    } catch (error) {
+      console.error('Search error:', error);
+      setSearchResults([]);
+      setShowSearchResults(false);
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -68,6 +138,25 @@ export function Header() {
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Handle Ctrl+K keyboard shortcut for search
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check for Ctrl+K (Windows/Linux) or Cmd+K (Mac)
+      if ((event.ctrlKey || event.metaKey) && event.key === 'k') {
+        event.preventDefault();
+        // Focus on search input if it exists
+        const searchInput = document.querySelector('input[placeholder*="Search"]') as HTMLInputElement;
+        if (searchInput) {
+          searchInput.focus();
+          searchInput.select();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   // Handle search functionality
@@ -209,95 +298,123 @@ export function Header() {
               </Link>
             </div>
 
-            {/* Search Bar - Hidden on small screens, shown in mobile menu */}
-            <div className="hidden md:flex flex-1 max-w-md mx-4 lg:mx-8 relative" ref={searchDropdownRef}>
-              <div className="relative">
-                <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search files, commits, issues..."
-                  className="w-full pl-10 pr-4 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-                  value={globalSearchQuery}
-                  onChange={(e) => setGlobalSearchQuery(e.target.value)}
-                  onFocus={() => globalSearchQuery && setShowSearchResults(true)}
-                />
-                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                  <kbd className="hidden lg:inline-flex items-center px-2 py-1 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono text-slate-600 dark:text-slate-400">
-                    ⌘K
-                  </kbd>
+            {/* Search Bar - Responsive design for PC and tablet - Only shown when repository is selected */}
+            {selectedRepository && (
+              <div className="hidden md:flex flex-1 max-w-lg lg:max-w-xl xl:max-w-2xl mx-4 lg:mx-8 relative" ref={searchDropdownRef}>
+                <div className="relative w-full">
+                  <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 lg:w-5 lg:h-5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search files, commits, issues..."
+                    className="w-full pl-10 lg:pl-11 pr-16 lg:pr-20 py-1.5 lg:py-2 text-sm lg:text-base border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all duration-200 shadow-sm hover:shadow-md focus:shadow-lg"
+                    value={globalSearchQuery}
+                    onChange={(e) => {
+                      setGlobalSearchQuery(e.target.value);
+                      // Clear existing timeout
+                      if (searchTimeout) {
+                        clearTimeout(searchTimeout);
+                      }
+                      // Debounce search for better performance
+                      if (e.target.value.trim()) {
+                        const timeout = setTimeout(() => {
+                          setIsSearching(true);
+                          performGlobalSearch(e.target.value);
+                        }, 500);
+                        setSearchTimeout(timeout);
+                      } else {
+                        setShowSearchResults(false);
+                        setIsSearching(false);
+                      }
+                    }}
+                    onFocus={() => globalSearchQuery && setShowSearchResults(true)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        router.push(`/search?q=${encodeURIComponent(globalSearchQuery)}`);
+                        setShowSearchResults(false);
+                      }
+                      if (e.key === 'Escape') {
+                        setShowSearchResults(false);
+                      }
+                    }}
+                  />
+                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                    <kbd className="hidden lg:inline-flex items-center px-2 py-1 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono text-slate-600 dark:text-slate-400">
+                      ⌘K
+                    </kbd>
+                  </div>
                 </div>
-              </div>
-              
-              {/* Search Results Dropdown */}
-              {showSearchResults && (searchResults.length > 0 || isSearching) && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 z-50 max-h-96 overflow-y-auto">
-                  {isSearching ? (
-                    <div className="p-4 text-center">
-                      <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                      <p className="text-sm text-slate-500 dark:text-slate-400">Searching...</p>
-                    </div>
-                  ) : (
-                    <div className="py-2">
-                      {searchResults.length === 0 ? (
-                        <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">
-                          No results found for &quot;{globalSearchQuery}&quot;
-                        </div>
-                      ) : (
-                        <>
-                          {searchResults.map((result, index) => (
-                            <Link
-                              key={index}
-                              href={result.href}
-                              className="flex items-start px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                              onClick={() => {
-                                setShowSearchResults(false);
-                                setGlobalSearchQuery('');
-                              }}
-                            >
-                              <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mr-3">
-                                {result.type === 'file' && (
-                                  <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                  </svg>
-                                )}
-                                {result.type === 'question' && (
-                                  <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                  </svg>
-                                )}
-                                {result.type === 'meeting' && (
-                                  <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                  </svg>
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-slate-900 dark:text-white truncate">
-                                  {result.title}
-                                </p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                  {result.description}
-                                </p>
-                                {result.path && (
-                                  <p className="text-xs text-slate-400 dark:text-slate-500 truncate font-mono">
-                                    {result.path}
-                                  </p>
-                                )}
-                              </div>
-                            </Link>
-                          ))}
-                          <div className="border-t border-slate-200 dark:border-slate-700 px-4 py-2">
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              Press Enter to search all content
-                            </p>
+                
+                {/* Search Results Dropdown */}
+                {showSearchResults && (searchResults.length > 0 || isSearching) && (
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 z-50 max-h-96 overflow-y-auto">
+                    {isSearching ? (
+                      <div className="p-4 text-center">
+                        <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Searching...</p>
+                      </div>
+                    ) : (
+                      <div className="py-2">
+                        {searchResults.length === 0 ? (
+                          <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">
+                            No results found for &quot;{globalSearchQuery}&quot;
                           </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+                        ) : (
+                          <>
+                            {searchResults.map((result, index) => (
+                              <Link
+                                key={index}
+                                href={result.href}
+                                className="flex items-start px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                                onClick={() => {
+                                  setShowSearchResults(false);
+                                  setGlobalSearchQuery('');
+                                }}
+                              >
+                                <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mr-3">
+                                  {result.type === 'file' && (
+                                    <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                  )}
+                                  {result.type === 'question' && (
+                                    <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                  )}
+                                  {result.type === 'meeting' && (
+                                    <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                    </svg>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                                    {result.title}
+                                  </p>
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                    {result.description}
+                                  </p>
+                                  {result.path && (
+                                    <p className="text-xs text-slate-400 dark:text-slate-500 truncate font-mono">
+                                      {result.path}
+                                    </p>
+                                  )}
+                                </div>
+                              </Link>
+                            ))}
+                            <div className="border-t border-slate-200 dark:border-slate-700 px-4 py-2">
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                Press Enter to search all content
+                              </p>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Right Side Actions */}
             <div className="flex items-center space-x-2 sm:space-x-3">

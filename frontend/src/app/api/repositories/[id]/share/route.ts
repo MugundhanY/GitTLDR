@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { getUserFromRequest } from '@/lib/auth';
+import { checkRepositoryManagementAccess } from '@/lib/repository-access';
+import { triggerNotification, NotificationTemplates } from '@/lib/notifications';
 
 const prisma = new PrismaClient();
 
@@ -17,15 +19,10 @@ export async function GET(
 
     const { id: repositoryId } = await params;
 
-    // Check if user owns the repository
-    const repository = await prisma.repository.findFirst({
-      where: {
-        id: repositoryId,
-        userId: user.id
-      }
-    });
+    // Check if user can manage sharing (only owners)
+    const canManageSharing = await checkRepositoryManagementAccess(repositoryId, user.id);
 
-    if (!repository) {
+    if (!canManageSharing) {
       return NextResponse.json({ error: 'Repository not found or access denied' }, { status: 404 });
     }
 
@@ -65,21 +62,16 @@ export async function POST(
     }
 
     const { id: repositoryId } = await params;
-    const { email, permission = 'VIEW' } = await request.json();
+    const { email } = await request.json();
 
     if (!email) {
       return NextResponse.json({ error: 'Email is required' }, { status: 400 });
     }
 
-    // Check if user owns the repository
-    const repository = await prisma.repository.findFirst({
-      where: {
-        id: repositoryId,
-        userId: user.id
-      }
-    });
+    // Check if user owns the repository (only owners can share)
+    const canManageSharing = await checkRepositoryManagementAccess(repositoryId, user.id);
 
-    if (!repository) {
+    if (!canManageSharing) {
       return NextResponse.json({ error: 'Repository not found or access denied' }, { status: 404 });
     }
 
@@ -106,12 +98,11 @@ export async function POST(
       return NextResponse.json({ error: 'Repository already shared with this user' }, { status: 400 });
     }
 
-    // Create share setting
+    // Create share setting (all members have full access)
     const shareSetting = await prisma.repositoryShareSetting.create({
       data: {
         repositoryId: repositoryId,
-        userId: targetUser.id,
-        permission: permission
+        userId: targetUser.id
       },
       include: {
         user: {
@@ -121,73 +112,42 @@ export async function POST(
             email: true,
             avatarUrl: true
           }
+        },
+        repository: {
+          select: {
+            id: true,
+            name: true
+          }
         }
       }
     });
+
+    // Get current user info for notification
+    const currentUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { name: true, email: true }
+    });
+
+    // Send notification to the user who was shared the repository
+    try {
+      const notification = NotificationTemplates.REPOSITORY_SHARED(
+        shareSetting.repository.name,
+        currentUser?.name || user.email || 'Someone',
+        repositoryId
+      );
+      
+      await triggerNotification({
+        userId: targetUser.id,
+        ...notification
+      });
+    } catch (notifError) {
+      console.error('Failed to send notification:', notifError);
+      // Don't fail the sharing if notification fails
+    }
 
     return NextResponse.json({ shareSetting });
   } catch (error) {
     console.error('Error sharing repository:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
-}
-
-// Update share permission
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const user = await getUserFromRequest(request);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { id: repositoryId } = await params;
-    const { userId: targetUserId, permission } = await request.json();
-
-    if (!targetUserId || !permission) {
-      return NextResponse.json({ error: 'User ID and permission are required' }, { status: 400 });
-    }
-
-    // Check if user owns the repository
-    const repository = await prisma.repository.findFirst({
-      where: {
-        id: repositoryId,
-        userId: user.id
-      }
-    });
-
-    if (!repository) {
-      return NextResponse.json({ error: 'Repository not found or access denied' }, { status: 404 });
-    }
-
-    // Update share setting
-    const updatedShare = await prisma.repositoryShareSetting.update({
-      where: {
-        repositoryId_userId: {
-          repositoryId: repositoryId,
-          userId: targetUserId
-        }
-      },
-      data: {
-        permission: permission
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            avatarUrl: true
-          }
-        }
-      }
-    });
-
-    return NextResponse.json({ shareSetting: updatedShare });
-  } catch (error) {
-    console.error('Error updating repository share permission:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -211,15 +171,10 @@ export async function DELETE(
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }
 
-    // Check if user owns the repository
-    const repository = await prisma.repository.findFirst({
-      where: {
-        id: repositoryId,
-        userId: user.id
-      }
-    });
+    // Check if user owns the repository (only owners can manage shares)
+    const canManageSharing = await checkRepositoryManagementAccess(repositoryId, user.id);
 
-    if (!repository) {
+    if (!canManageSharing) {
       return NextResponse.json({ error: 'Repository not found or access denied' }, { status: 404 });
     }
 
