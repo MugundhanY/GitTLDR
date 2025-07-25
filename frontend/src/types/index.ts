@@ -11,44 +11,47 @@ export interface UserSettings {
     location?: string
     company?: string
     website?: string
-    github?: string
     githubLogin?: string
     publicRepos?: number
     followers?: number
     following?: number
-    githubCreatedAt?: string
-    twitter?: string
-    linkedin?: string
-    joinedAt: string
+    githubCreatedAt?: string | Date
+    joinedAt: string | Date
   }
   stats: {
-    repositories: number
-    repositoryCount?: number
-    meetings: number
-    qaQuestions: number
-    credits: number
-    currentCredits?: number
-    totalCreditsUsed?: number
-    recentTransactions?: number
-    lastActive: string
+    repositoryCount: number
+    totalCreditsUsed: number
+    currentCredits: number
+    recentTransactions: number
   }
   preferences: {
     theme: 'light' | 'dark' | 'system'
     language: string
-    timezone: string
-    notifications: {
-      email: boolean
-      push: boolean
-      meetings: boolean
-      qa: boolean
-      system: boolean
-    }
+    dateFormat: string
+    timeFormat: string
+    notifications: boolean
+    autoSave: boolean
+    compactMode: boolean
   }
   security: {
     twoFactorEnabled: boolean
-    lastPasswordChange: string
-    lastLogin?: string
-    activeSessions: number
+    sessionTimeout: number
+    loginNotifications: boolean
+    deviceTracking: boolean
+    lastLogin?: string | Date
+  }
+  notifications: {
+    email: {
+      repositoryProcessing: boolean
+      creditUpdates: boolean
+      securityAlerts: boolean
+      weeklyDigest: boolean
+    }
+    push: {
+      repositoryProcessing: boolean
+      creditLow: boolean
+      mentions: boolean
+    }
   }
 }
 

@@ -174,6 +174,29 @@ export default function BillingPage() {
     }
   }
 
+  const downloadFullHistory = async () => {
+    try {
+      const response = await fetch('/api/billing/download-history')
+      if (!response.ok) throw new Error('Failed to download history')
+      
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.style.display = 'none'
+      a.href = url
+      a.download = `billing-history-${new Date().toISOString().split('T')[0]}.csv`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+      
+      toast.success('Billing history downloaded successfully')
+    } catch (error) {
+      console.error('Error downloading history:', error)
+      toast.error('Failed to download billing history')
+    }
+  }
+
   const downloadInvoice = async (transactionId: string) => {
     try {
       const response = await fetch(`/api/billing/invoice/${transactionId}`)
@@ -594,7 +617,10 @@ export default function BillingPage() {
                   ))}
                 </div>
                 
-                <button className="w-full mt-6 py-2 px-4 text-sm bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center justify-center gap-2">
+                <button 
+                  onClick={downloadFullHistory}
+                  className="w-full mt-6 py-2 px-4 text-sm bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center justify-center gap-2"
+                >
                   <ArrowDownTrayIcon className="w-4 h-4" />
                   Download Full History
                 </button>

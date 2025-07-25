@@ -1,17 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { PrismaClient } from '@prisma/client'
+import { getUserFromRequest } from '@/lib/auth'
 
 const prisma = new PrismaClient()
 
 // GET /api/settings - Get user settings
 export async function GET(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id') // You'll need to add proper auth
+    // Get authenticated user
+    const authUser = await getUserFromRequest(request)
     
-    // For demo, get the first user if no user ID provided
-    const user = userId 
-      ? await prisma.user.findUnique({ where: { id: userId } })
-      : await prisma.user.findFirst()
+    if (!authUser) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+
+    // Get full user data from database
+    const user = await prisma.user.findUnique({ where: { id: authUser.id } })
+
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
@@ -109,12 +117,16 @@ export async function GET(request: NextRequest) {
 // PUT /api/settings - Update user settings
 export async function PUT(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id') // You'll need to add proper auth
+    // Get authenticated user
+    const authUser = await getUserFromRequest(request)
     const body = await request.json()
     
-    const user = userId 
-      ? await prisma.user.findUnique({ where: { id: userId } })
-      : await prisma.user.findFirst()
+    if (!authUser) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+
+    // Get full user data from database
+    const user = await prisma.user.findUnique({ where: { id: authUser.id } })
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })

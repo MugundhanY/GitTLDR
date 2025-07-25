@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { getUserFromRequest } from '@/lib/auth';
 
 const prisma = new PrismaClient();
 
@@ -8,12 +9,16 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const timeRange = searchParams.get('timeRange') || '30d'
-    const userId = request.headers.get('x-user-id') // You'll need to add user authentication
+    
+    // Get authenticated user
+    const authUser = await getUserFromRequest(request)
+    
+    if (!authUser) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
 
-    // For demo purposes, we'll use the first user if no user ID is provided
-    const user = userId 
-      ? await prisma.user.findUnique({ where: { id: userId } })
-      : await prisma.user.findFirst()
+    // Get full user data from database
+    const user = await prisma.user.findUnique({ where: { id: authUser.id } })
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
