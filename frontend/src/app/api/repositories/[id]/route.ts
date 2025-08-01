@@ -1,103 +1,93 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-import { getUserFromRequest } from '@/lib/auth';
+import { NextRequest, NextResponse } from 'next/server'
+import { PrismaClient } from '@prisma/client'
+import { getUserFromRequest } from '@/lib/auth'
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient()
 
-export async function GET(
+export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await getUserFromRequest(request);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const authUser = await getUserFromRequest(request)
+    
+    if (!authUser) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
 
-    const { id: repositoryId } = await params;
+    const { id: repositoryId } = await params
 
-    // First check if user owns the repository
-    let repository = await prisma.repository.findFirst({
+    // Find the repository and verify ownership
+    const repository = await prisma.repository.findFirst({
       where: {
         id: repositoryId,
-        userId: user.id
-      },
-      include: {
-        files: true,
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            avatarUrl: true
-          }
-        }
+        userId: authUser.id
       }
-    });
-
-    let permission = 'OWNER';
-    
-    // If not owned, check if it's shared with the user (team member access)
-    if (!repository) {
-      const shareSettings = await prisma.repositoryShareSetting.findFirst({
-        where: {
-          repositoryId: repositoryId,
-          userId: user.id
-        },
-        include: {
-          repository: {
-            include: {
-              files: true,
-              user: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true,
-                  avatarUrl: true
-                }
-              }
-            }
-          }
-        }
-      });
-
-      if (shareSettings) {
-        repository = shareSettings.repository;
-      }
-    }
+    })
 
     if (!repository) {
-      return NextResponse.json({ error: 'Repository not found or access denied' }, { status: 404 });
+      return NextResponse.json({ error: 'Repository not found' }, { status: 404 })
     }
 
-    // Transform the repository data
-    const transformedRepository = {
-      id: repository.id,
-      name: repository.name,
-      fullName: repository.fullName,
-      owner: repository.owner,
-      url: repository.url,
-      description: repository.description,
-      language: repository.language,
-      stars: repository.stars,
-      forks: repository.forks,
-      isPrivate: repository.isPrivate,
-      processed: repository.processed,
-      status: repository.embeddingStatus,
-      summary: repository.summary,
-      fileCount: repository.files.length,
-      avatarUrl: repository.avatarUrl,
-      createdAt: repository.createdAt,
-      updatedAt: repository.updatedAt,
-      files: repository.files,
-      user: repository.user,
-      permission: permission,
-      isShared: permission !== 'OWNER'
-    };
+    // Delete the repository and all related data
+    await prisma.repository.delete({
+      where: { id: repositoryId }
+    })
 
-    return NextResponse.json({ repository: transformedRepository });
+    return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error fetching repository:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('Error deleting repository:', error)
+    return NextResponse.json(
+      { error: 'Failed to delete repository' },
+      { status: 500 }
+    )
+  } finally {
+    await prisma.$disconnect()
+  }
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const authUser = await getUserFromRequest(request)
+    
+    if (!authUser) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+
+    const { id: repositoryId } = await params
+    const { archived } = await request.json()
+
+    // Find the repository and verify ownership
+    const repository = await prisma.repository.findFirst({
+      where: {
+        id: repositoryId,
+        userId: authUser.id
+      }
+    })
+
+    if (!repository) {
+      return NextResponse.json({ error: 'Repository not found' }, { status: 404 })
+    }
+
+    // Update the repository archived status using embeddingStatus
+    const updatedRepository = await prisma.repository.update({
+      where: { id: repositoryId },
+      data: { 
+        embeddingStatus: archived ? 'FAILED' : 'COMPLETED'
+      }
+    })
+
+    return NextResponse.json({ repository: updatedRepository })
+  } catch (error) {
+    console.error('Error updating repository:', error)
+    return NextResponse.json(
+      { error: 'Failed to update repository' },
+      { status: 500 }
+    )
+  } finally {
+    await prisma.$disconnect()
   }
 }

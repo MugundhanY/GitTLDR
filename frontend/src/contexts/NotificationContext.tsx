@@ -51,31 +51,50 @@ interface NotificationProviderProps {
 export function NotificationProvider({ children }: NotificationProviderProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  // Load notifications from localStorage on mount
+  // Fetch notifications from backend API on mount
   useEffect(() => {
-    const savedNotifications = localStorage.getItem('gittldr_notifications');
-    if (savedNotifications) {
+    async function fetchNotifications() {
       try {
-        const parsed = JSON.parse(savedNotifications);
-        const notificationsWithDates = parsed.map((n: any) => ({
-          ...n,
-          timestamp: new Date(n.timestamp)
+        const response = await fetch('/api/notifications');
+        if (!response.ok) throw new Error('Failed to fetch notifications');
+        const data = await response.json();
+        // Map backend notification format to frontend Notification type
+        const notificationsWithDates = (data.notifications || []).map((n: any) => ({
+          id: n.id,
+          type: n.type || 'info',
+          title: n.title,
+          message: n.message,
+          timestamp: n.createdAt ? new Date(n.createdAt) : new Date(),
+          read: n.isRead,
+          action: n.actionLabel ? { label: n.actionLabel, href: n.actionUrl } : undefined,
+          metadata: n.metadata || {}
         }));
         setNotifications(notificationsWithDates);
       } catch (error) {
-        console.error('Failed to parse saved notifications:', error);
+        console.error('Failed to fetch notifications:', error);
       }
     }
+    fetchNotifications();
   }, []);
-
-  // Save notifications to localStorage whenever they change
-  useEffect(() => {
-    localStorage.setItem('gittldr_notifications', JSON.stringify(notifications));
-  }, [notifications]);
 
   // Demo notifications for development
   useEffect(() => {
-    if (notifications.length === 0) {
+    // Only load demo notifications in development, and only if there are no real notifications in localStorage
+    const savedNotifications = localStorage.getItem('gittldr_notifications');
+    let hasRealNotifications = false;
+    try {
+      if (savedNotifications) {
+        const parsed = JSON.parse(savedNotifications);
+        hasRealNotifications = Array.isArray(parsed) && parsed.some((n: any) => n && n.id && !String(n.id).startsWith('demo-'));
+      }
+    } catch (e) {
+      hasRealNotifications = false;
+    }
+    if (
+      process.env.NODE_ENV === 'development' &&
+      notifications.length === 0 &&
+      !hasRealNotifications
+    ) {
       const demoNotifications: Notification[] = [
         {
           id: 'demo-1',
@@ -153,7 +172,17 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
     }
   }, [notifications.length]);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  // Only count unread notifications that are not demo notifications
+  // If there are any real notifications, only count unread real notifications. Otherwise, count all unread notifications (including demo).
+  // Always only count unread notifications that are not demo notifications
+  // If there are any real notifications, only count unread real notifications. Otherwise, count all unread notifications (including demo)
+  // Always only count unread notifications that are not demo notifications
+  // If there are any real notifications, only count unread real notifications. Otherwise, count all unread notifications (including demo)
+  // Always only count unread notifications that are not demo notifications
+  const hasRealNotifications = notifications.some(n => n.id && !String(n.id).startsWith('demo-'));
+  const unreadCount = hasRealNotifications
+    ? notifications.filter(n => !n.read && n.id && !String(n.id).startsWith('demo-')).length
+    : notifications.filter(n => !n.read).length;
 
   const addNotification = (notificationData: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
     const newNotification: Notification = {

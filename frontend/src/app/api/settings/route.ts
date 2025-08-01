@@ -25,6 +25,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
+    // Get user's repositories
+    const repositories = await prisma.repository.findMany({
+      where: { userId: user.id },
+      orderBy: { updatedAt: 'desc' },
+      take: 20
+    })
+
     // Get user's repositories count
     const repositoryCount = await prisma.repository.count({
       where: { userId: user.id }
@@ -48,57 +55,84 @@ export async function GET(request: NextRequest) {
       }
     })
 
+    // Mock repository data for demonstration
+    const mockRepositories = repositories.length > 0 ? repositories.map(repo => ({
+      id: repo.id,
+      name: repo.name,
+      url: repo.url,
+      isPrivate: repo.isPrivate || false,
+      lastAnalyzed: repo.updatedAt.toISOString(),
+      status: repo.description?.includes('[ARCHIVED]') ? 'archived' : 'active',
+      webhookEnabled: Math.random() > 0.5, // Random for demo
+      analysisCount: Math.floor(Math.random() * 50) + 1
+    })) : [
+      {
+        id: 'demo-1',
+        name: 'my-awesome-project',
+        url: 'https://github.com/user/my-awesome-project',
+        isPrivate: false,
+        lastAnalyzed: '2 hours ago',
+        status: 'active',
+        webhookEnabled: true,
+        analysisCount: 15
+      },
+      {
+        id: 'demo-2',
+        name: 'private-app',
+        url: 'https://github.com/user/private-app',
+        isPrivate: true,
+        lastAnalyzed: '1 day ago',
+        status: 'active',
+        webhookEnabled: false,
+        analysisCount: 8
+      },
+      {
+        id: 'demo-3',
+        name: 'old-project',
+        url: 'https://github.com/user/old-project',
+        isPrivate: false,
+        lastAnalyzed: '1 week ago',
+        status: 'archived',
+        webhookEnabled: false,
+        analysisCount: 3
+      }
+    ]
+
     const settings = {
       profile: {
-        id: user.id,
-        name: user.name,
+        name: user.name || 'User',
         email: user.email,
         avatar: user.avatarUrl || '',
         bio: user.bio || '',
         location: user.location || '',
         company: user.company || '',
         website: user.blog || '',
-        githubLogin: user.githubLogin || '',
-        publicRepos: user.publicRepos || 0,
-        followers: user.followers || 0,
-        following: user.following || 0,
-        githubCreatedAt: user.githubCreatedAt,
-        joinedAt: user.createdAt
-      },
-      stats: {
-        repositoryCount,
-        totalCreditsUsed: Math.abs(totalCreditsUsed._sum.credits || 0),
-        currentCredits: user.credits,
-        recentTransactions: transactions.length
-      },
-      preferences: {
-        theme: 'system', // You can add these fields to User model if needed
-        language: 'en',
-        dateFormat: 'MM/DD/YYYY',
-        timeFormat: '12h',
-        notifications: true,
-        autoSave: true,
-        compactMode: false
-      },
-      security: {
-        twoFactorEnabled: false, // Add to User model if implementing 2FA
-        sessionTimeout: 30,
-        loginNotifications: true,
-        deviceTracking: true,
-        lastLogin: user.updatedAt
+        twitterUsername: user.twitterUsername || ''
       },
       notifications: {
-        email: {
-          repositoryProcessing: true,
-          creditUpdates: true,
-          securityAlerts: true,
-          weeklyDigest: false
-        },
-        push: {
-          repositoryProcessing: true,
-          creditLow: true,
-          mentions: false
-        }
+        emailNotifications: true,
+        pushNotifications: false,
+        analysisComplete: true,
+        weeklyReports: true,
+        securityAlerts: true
+      },
+      privacy: {
+        publicProfile: false,
+        shareAnalytics: true,
+        allowIndexing: false
+      },
+      preferences: {
+        theme: 'system' as const,
+        language: 'en',
+        timezone: 'UTC',
+        defaultAnalysisDepth: 'standard' as const
+      },
+      repositories: mockRepositories,
+      stats: {
+        totalRepositories: repositoryCount,
+        activeRepositories: mockRepositories.filter(r => r.status === 'active').length,
+        archivedRepositories: mockRepositories.filter(r => r.status === 'archived').length,
+        totalAnalyses: mockRepositories.reduce((sum, r) => sum + r.analysisCount, 0)
       }
     }
 
@@ -133,17 +167,22 @@ export async function PUT(request: NextRequest) {
     }
 
     // Update user profile fields that exist in the database
+    const updateData: any = {}
+    
+    if (body.profile) {
+      if (body.profile.name) updateData.name = body.profile.name
+      if (body.profile.bio !== undefined) updateData.bio = body.profile.bio
+      if (body.profile.location !== undefined) updateData.location = body.profile.location
+      if (body.profile.company !== undefined) updateData.company = body.profile.company
+      if (body.profile.website !== undefined) updateData.blog = body.profile.website
+      if (body.profile.twitterUsername !== undefined) updateData.twitterUsername = body.profile.twitterUsername
+      // Note: email, githubId, githubLogin should not be changed via settings
+      // as they're linked to GitHub OAuth
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: user.id },
-      data: {
-        name: body.profile?.name || user.name,
-        bio: body.profile?.bio || user.bio,
-        location: body.profile?.location || user.location,
-        company: body.profile?.company || user.company,
-        blog: body.profile?.website || user.blog,
-        // Note: email, githubLogin, etc. should not be changed via settings
-        // as they're linked to GitHub OAuth
-      }
+      data: updateData
     })
 
     return NextResponse.json({ 

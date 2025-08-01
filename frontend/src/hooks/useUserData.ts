@@ -245,6 +245,7 @@ export function useUserData() {
     billingData,
     isLoading,
     error,
-    refetch
+    refetch,
+    refetchUserData: refetch
   };
 }

@@ -166,40 +166,48 @@ export async function GET(request: NextRequest) {
       );
     }
     
+
     // Fetch owned repositories from database using Prisma
     const ownedRepositories = await prisma.repository.findMany({
       where: {
         userId: user.id
       },
       include: {
-        files: {
-          select: {
-            id: true
-          }
-        }
+        files: { select: { id: true } },
+        commits: { select: { id: true } }
       },
-      orderBy: {
-        createdAt: 'desc'
-      }
+      orderBy: { createdAt: 'desc' }
     });
 
     // Fetch shared repositories
     const sharedRepositories = await prisma.repositoryShareSetting.findMany({
-      where: {
-        userId: user.id
-      },
+      where: { userId: user.id },
       include: {
         repository: {
           include: {
-            files: {
-              select: {
-                id: true
-              }
-            }
+            files: { select: { id: true } },
+            commits: { select: { id: true } }
           }
         }
       }
     });
+
+    // Fetch all USAGE transactions for this user
+    const usageTransactions = await prisma.transaction.findMany({
+      where: {
+        userId: user.id,
+        type: 'USAGE'
+      }
+    });
+
+
+// Helper to get credits used for a repo by matching description
+const getCreditsUsedForRepo = (repo: { fullName: string }, usageTransactions: any[]) => {
+  // Match transaction description: 'Repository analysis: <fullName>'
+  return usageTransactions
+    .filter(t => t.description && t.description.includes(repo.fullName))
+    .reduce((sum, t) => sum + Math.abs(t.credits), 0);
+};
 
     // Transform owned repositories
     const transformedOwnedRepos = ownedRepositories.map(repo => ({
@@ -217,11 +225,13 @@ export async function GET(request: NextRequest) {
       status: repo.embeddingStatus,
       summary: repo.summary,
       fileCount: repo.files.length,
+      commitCount: repo.commits.length,
       avatarUrl: repo.avatarUrl,
       createdAt: repo.createdAt,
       updatedAt: repo.updatedAt,
       isShared: false,
-      permission: 'OWNER' as const
+      permission: 'OWNER' as const,
+      creditsUsed: getCreditsUsedForRepo(repo, usageTransactions)
     }));
 
     // Transform shared repositories
@@ -240,10 +250,12 @@ export async function GET(request: NextRequest) {
       status: share.repository.embeddingStatus,
       summary: share.repository.summary,
       fileCount: share.repository.files.length,
+      commitCount: share.repository.commits.length,
       avatarUrl: share.repository.avatarUrl,
       createdAt: share.repository.createdAt,
       updatedAt: share.repository.updatedAt,
-      isShared: true
+      isShared: true,
+      creditsUsed: getCreditsUsedForRepo(share.repository, usageTransactions)
     }));
 
     // Combine and deduplicate repositories

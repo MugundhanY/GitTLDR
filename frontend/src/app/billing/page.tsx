@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'next/navigation'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import { useUserData } from '@/hooks/useUserData'
 import { toast } from 'sonner'
 import {
   CreditCardIcon,
@@ -91,6 +93,8 @@ export default function BillingPage() {
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [timeRange, setTimeRange] = useState('30d')
+  const searchParams = useSearchParams()
+  const { refetchUserData } = useUserData()
 
   const { data: billingData, isLoading, refetch } = useQuery<BillingData>({
     queryKey: ['billing', timeRange],
@@ -100,6 +104,47 @@ export default function BillingPage() {
       return response.json()
     }
   })
+
+  // Handle successful payment redirect
+  useEffect(() => {
+    if (!searchParams) return
+    
+    const success = searchParams.get('success')
+    const sessionId = searchParams.get('session_id')
+    
+    if (success === 'true' && sessionId) {
+      // Payment was successful - refresh data immediately
+      setTimeout(() => {
+        refetch()
+        refetchUserData(true) // Force refresh with cache clearing
+        toast.success('Payment successful! Your credits have been added.')
+      }, 500) // Small delay to ensure webhook has processed
+      
+      // Clear URL parameters
+      const url = new URL(window.location.href)
+      url.searchParams.delete('success')
+      url.searchParams.delete('session_id')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }, [searchParams, refetchUserData, refetch])
+
+  // Also refresh when window gains focus (user returns from Stripe)
+  useEffect(() => {
+    const handleFocus = () => {
+      // Check if we recently had a purchase redirect
+      const url = new URL(window.location.href)
+      if (url.searchParams.get('success') || url.searchParams.get('session_id')) {
+        return // Will be handled by other effect
+      }
+      
+      // If user returns to billing page, refresh data
+      refetch()
+      refetchUserData(true)
+    }
+
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [refetch, refetchUserData])
 
   const creditPackages: CreditPackage[] = [
     {
@@ -331,14 +376,30 @@ export default function BillingPage() {
         {/* Header */}
         <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-700/50 sticky top-0 z-40">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-gradient-to-r from-green-500 to-blue-500 rounded-xl flex items-center justify-center">
-                <CreditCardIcon className="w-6 h-6 text-white" />
+            <div className="flex items-center gap-4 justify-between w-full">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-gradient-to-r from-green-500 to-blue-500 rounded-xl flex items-center justify-center">
+                  <CreditCardIcon className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Billing & Credits</h1>
+                  <p className="text-slate-600 dark:text-slate-400">Manage your credits and purchase history</p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Billing & Credits</h1>
-                <p className="text-slate-600 dark:text-slate-400">Manage your credits and purchase history</p>
-              </div>
+              
+              {/* Refresh Button */}
+              <button
+                onClick={() => {
+                  refetch()
+                  refetchUserData(true)
+                  toast.success('Data refreshed!')
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                disabled={isLoading}
+              >
+                <ArrowTrendingUpIcon className="w-4 h-4" />
+                {isLoading ? 'Refreshing...' : 'Refresh'}
+              </button>
             </div>
           </div>
         </div>

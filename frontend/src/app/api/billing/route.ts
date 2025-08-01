@@ -89,7 +89,8 @@ export async function GET(request: NextRequest) {
 
     // Generate chart data based on time range
     const generateChartData = () => {
-      const chartTransactions = transactions.filter(t => t.createdAt >= startDate)
+      // Use all transactions for chart data, not just filtered ones
+      const chartTransactions = allTransactions
       let labels: string[] = []
       let purchased: number[] = []
       let used: number[] = []
@@ -98,7 +99,7 @@ export async function GET(request: NextRequest) {
       switch (timeRange) {
         case '7d':
           labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-          // Group by day of week
+          // Group by day of week for the last 7 days
           for (let i = 0; i < 7; i++) {
             const dayStart = new Date(startDate)
             dayStart.setDate(startDate.getDate() + i)
@@ -122,38 +123,148 @@ export async function GET(request: NextRequest) {
               .reduce((sum, t) => sum + (t.amount || 0), 0))
           }
           break
-        default: // 30d, 90d, 1y - group by weeks/months
-          const intervals = timeRange === '1y' ? 12 : (timeRange === '90d' ? 12 : 4)
-          const intervalDays = timeRange === '1y' ? 30 : (timeRange === '90d' ? 7 : 7)
-          
-          for (let i = 0; i < intervals; i++) {
-            const intervalStart = new Date(startDate)
-            intervalStart.setDate(startDate.getDate() + (i * intervalDays))
-            const intervalEnd = new Date(intervalStart)
-            intervalEnd.setDate(intervalStart.getDate() + intervalDays)
+        case '30d':
+          // Group by weeks for the last 30 days - start from 30 days ago to today
+          labels = ['Week 1 (Latest)', 'Week 2', 'Week 3', 'Week 4 (Oldest)']
+          for (let i = 0; i < 4; i++) {
+            // Start from most recent week (i=0) and go backwards
+            const weekEnd = new Date(now)
+            weekEnd.setDate(now.getDate() - (i * 7))
+            const weekStart = new Date(weekEnd)
+            weekStart.setDate(weekEnd.getDate() - 7)
             
-            if (timeRange === '1y') {
-              labels.push(intervalStart.toLocaleDateString('en-US', { month: 'short' }))
-            } else {
-              labels.push(`Week ${i + 1}`)
+            // Ensure we don't go before our startDate
+            if (weekStart < startDate) {
+              weekStart.setTime(startDate.getTime())
             }
             
-            const intervalTransactions = chartTransactions.filter(t => 
-              t.createdAt >= intervalStart && t.createdAt < intervalEnd
-            )
+            console.log(`30d Week ${i + 1}: ${weekStart.toISOString()} to ${weekEnd.toISOString()}`)
             
-            purchased.push(intervalTransactions
+            const weekTransactions = chartTransactions.filter(t => {
+              const transactionDate = new Date(t.createdAt)
+              return transactionDate >= weekStart && transactionDate <= weekEnd
+            })
+            
+            console.log(`30d Week ${i + 1} transactions:`, weekTransactions.length, weekTransactions.map(t => ({
+              id: t.id,
+              date: t.createdAt,
+              type: t.type,
+              credits: t.credits
+            })))
+            
+            purchased.push(weekTransactions
               .filter(t => t.type === 'PURCHASE')
               .reduce((sum, t) => sum + t.credits, 0))
             
-            used.push(Math.abs(intervalTransactions
+            used.push(Math.abs(weekTransactions
               .filter(t => t.type === 'USAGE')
               .reduce((sum, t) => sum + t.credits, 0)))
             
-            amounts.push(intervalTransactions
+            amounts.push(weekTransactions
               .filter(t => t.type === 'PURCHASE')
               .reduce((sum, t) => sum + (t.amount || 0), 0))
           }
+          // Reverse arrays to show oldest to newest
+          labels.reverse()
+          purchased.reverse()
+          used.reverse()
+          amounts.reverse()
+          break
+        case '90d':
+          // Group by months for the last 90 days (3 months)
+          for (let i = 0; i < 3; i++) {
+            const monthStart = new Date(startDate)
+            monthStart.setMonth(startDate.getMonth() + i)
+            const monthEnd = new Date(monthStart)
+            monthEnd.setMonth(monthStart.getMonth() + 1)
+            
+            labels.push(monthStart.toLocaleDateString('en-US', { month: 'short' }))
+            
+            const monthTransactions = chartTransactions.filter(t => 
+              t.createdAt >= monthStart && t.createdAt < monthEnd
+            )
+            
+            purchased.push(monthTransactions
+              .filter(t => t.type === 'PURCHASE')
+              .reduce((sum, t) => sum + t.credits, 0))
+            
+            used.push(Math.abs(monthTransactions
+              .filter(t => t.type === 'USAGE')
+              .reduce((sum, t) => sum + t.credits, 0)))
+            
+            amounts.push(monthTransactions
+              .filter(t => t.type === 'PURCHASE')
+              .reduce((sum, t) => sum + (t.amount || 0), 0))
+          }
+          break
+        case '1y':
+          // Group by months for the last year
+          for (let i = 0; i < 12; i++) {
+            const monthStart = new Date(startDate)
+            monthStart.setMonth(startDate.getMonth() + i)
+            const monthEnd = new Date(monthStart)
+            monthEnd.setMonth(monthStart.getMonth() + 1)
+            
+            labels.push(monthStart.toLocaleDateString('en-US', { month: 'short' }))
+            
+            const monthTransactions = chartTransactions.filter(t => 
+              t.createdAt >= monthStart && t.createdAt < monthEnd
+            )
+            
+            purchased.push(monthTransactions
+              .filter(t => t.type === 'PURCHASE')
+              .reduce((sum, t) => sum + t.credits, 0))
+            
+            used.push(Math.abs(monthTransactions
+              .filter(t => t.type === 'USAGE')
+              .reduce((sum, t) => sum + t.credits, 0)))
+            
+            amounts.push(monthTransactions
+              .filter(t => t.type === 'PURCHASE')
+              .reduce((sum, t) => sum + (t.amount || 0), 0))
+          }
+          break
+        default:
+          // Fallback: show summary data across all time ranges
+          const timeRanges = ['This Week', 'Last Week', 'This Month', 'Last Month']
+          labels = timeRanges
+          
+          // Calculate for each time period
+          const thisWeekStart = new Date(now)
+          thisWeekStart.setDate(now.getDate() - now.getDay())
+          
+          const lastWeekStart = new Date(thisWeekStart)
+          lastWeekStart.setDate(thisWeekStart.getDate() - 7)
+          
+          const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+          const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+          const lastMonthEnd = new Date(thisMonthStart)
+          lastMonthEnd.setDate(lastMonthEnd.getDate() - 1)
+          
+          const periods = [
+            { start: thisWeekStart, end: now },
+            { start: lastWeekStart, end: thisWeekStart },
+            { start: thisMonthStart, end: now },
+            { start: lastMonthStart, end: lastMonthEnd }
+          ]
+          
+          periods.forEach(period => {
+            const periodTransactions = chartTransactions.filter(t => 
+              t.createdAt >= period.start && t.createdAt <= period.end
+            )
+            
+            purchased.push(periodTransactions
+              .filter(t => t.type === 'PURCHASE')
+              .reduce((sum, t) => sum + t.credits, 0))
+            
+            used.push(Math.abs(periodTransactions
+              .filter(t => t.type === 'USAGE')
+              .reduce((sum, t) => sum + t.credits, 0)))
+            
+            amounts.push(periodTransactions
+              .filter(t => t.type === 'PURCHASE')
+              .reduce((sum, t) => sum + (t.amount || 0), 0))
+          })
       }
 
       return { labels, purchased, used, amounts }
