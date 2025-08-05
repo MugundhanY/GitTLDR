@@ -1,11 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTheme } from '@/contexts/ThemeContext';
+import { SunIcon, MoonIcon, ComputerDesktopIcon } from '@heroicons/react/24/outline';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 
 export default function AuthPage() {
+  const { theme, setTheme, actualTheme } = useTheme();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
@@ -39,26 +42,63 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-md w-full space-y-8 p-10 bg-white rounded-xl shadow-lg">
-        <div className="text-center">
-          <h2 className="mt-6 text-3xl font-bold text-gray-900">Welcome to GitTLDR</h2>
-          <p className="mt-2 text-sm text-gray-600">
-            AI-powered repository summarization and insights
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-purple-50 to-emerald-100 dark:from-slate-900 dark:via-slate-800 dark:to-emerald-950 relative overflow-hidden">
+      {/* Theme Toggle Button */}
+      <div className="absolute top-6 right-6 z-20">
+        <div className="flex items-center gap-2 bg-white/70 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 rounded-full px-3 py-1 shadow-md">
+          <button
+            aria-label="Light theme"
+            className={`p-1 rounded-full transition-colors ${theme === 'light' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-400 dark:text-slate-500 hover:text-blue-600 dark:hover:text-blue-300'}`}
+            onClick={() => theme !== 'light' && setTheme('light')}
+          >
+            <SunIcon className="w-5 h-5" />
+          </button>
+          <button
+            aria-label="Dark theme"
+            className={`p-1 rounded-full transition-colors ${theme === 'dark' ? 'bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300' : 'text-slate-400 dark:text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-300'}`}
+            onClick={() => theme !== 'dark' && setTheme('dark')}
+          >
+            <MoonIcon className="w-5 h-5" />
+          </button>
+          <button
+            aria-label="System theme"
+            className={`p-1 rounded-full transition-colors ${theme === 'system' ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300' : 'text-slate-400 dark:text-slate-500 hover:text-purple-600 dark:hover:text-purple-300'}`}
+            onClick={() => theme !== 'system' && setTheme('system')}
+          >
+            <ComputerDesktopIcon className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+      {/* Animated background blobs */}
+      <div className="absolute -top-32 -left-32 w-96 h-96 bg-gradient-to-br from-blue-400/30 via-purple-400/20 to-emerald-400/20 rounded-full blur-3xl animate-pulse-slow z-0" />
+      <div className="absolute bottom-0 right-0 w-80 h-80 bg-gradient-to-tr from-emerald-400/20 via-blue-400/10 to-purple-400/10 rounded-full blur-2xl animate-pulse-slower z-0" />
+      <div className="max-w-md w-full space-y-8 p-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 dark:border-slate-700/40 relative z-10">
+        <div className="flex flex-col items-center text-center">
+          <img
+            src="/GitTLDR_logo.png"
+            alt="GitTLDR Logo"
+            className="w-15 h-16 mb-4 drop-shadow-xl animate-fade-in"
+            draggable="false"
+          />
+          <h2 className="text-4xl font-extrabold bg-gradient-to-r from-blue-700 via-purple-700 to-emerald-600 bg-clip-text text-transparent mb-2 animate-fade-in">
+            Welcome to GitTLDR
+          </h2>
+          <p className="text-base text-slate-600 dark:text-slate-300 font-medium animate-fade-in delay-100">
+            AI-powered repository summarization, code insights, and team collaboration
           </p>
         </div>
-        
+
         {error && (
-          <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4">
+          <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4 animate-fade-in">
             <p className="text-red-700">{error}</p>
           </div>
         )}
-        
+
         <div className="mt-8 space-y-6">
           <button
             onClick={handleGitHubLogin}
             disabled={isLoading}
-            className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+            className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-base font-semibold rounded-xl text-white bg-gradient-to-r from-black via-gray-900 to-gray-800 hover:from-gray-900 hover:to-black focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 shadow-lg transition-all duration-200 animate-fade-in delay-200"
           >
             {isLoading ? (
               <span className="flex items-center">
@@ -78,20 +118,58 @@ export default function AuthPage() {
             )}
           </button>
         </div>
-        
-        <div className="mt-6">
+
+        <div className="mt-6 animate-fade-in delay-300">
           <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300"></div>
+            <div className="absolute inset-15 flex items-center">
+              <div className="w-full border-t border-slate-200 dark:border-slate-700"></div>
             </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-gray-500">
-                By continuing, you agree to our Terms of Service
-              </span>
+            <div className="relative flex justify-center">
+              <div className="flex items-center gap-3 px-3 py-2 rounded-full bg-gradient-to-r from-blue-100/60 via-purple-100/40 to-emerald-100/60 dark:from-blue-900/30 dark:via-purple-900/20 dark:to-emerald-900/30 shadow border border-slate-200 dark:border-slate-800">
+                <svg className="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 3l7 4v5c0 5.25-3.5 9.25-7 10-3.5-.75-7-4.75-7-10V7l7-4z"/><path strokeLinecap="round" strokeLinejoin="round" d="M9.5 12.5l2 2 3-3"/></svg>
+                <span className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 whitespace-nowrap">By continuing, you agree to our</span>
+                <span className="flex items-center gap-1">
+                  <Link href="/terms" className="font-semibold text-xs sm:text-sm text-blue-700 dark:text-blue-300 hover:text-emerald-600 underline underline-offset-2 transition-colors">Terms</Link>
+                  <span className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
+                  <Link href="/privacy" className="font-semibold text-xs sm:text-sm text-blue-700 dark:text-blue-300 hover:text-emerald-600 underline underline-offset-2 transition-colors">Privacy</Link>
+                </span>
+              </div>
             </div>
           </div>
         </div>
+
+        <div className="mt-8 text-center animate-fade-in delay-500">
+          <p className="text-xs text-slate-400 dark:text-slate-500">&copy; {new Date().getFullYear()} GitTLDR. All rights reserved.</p>
+        </div>
       </div>
+      {/* Custom CSS for subtle fade-in and pulse animations */}
+      <style jsx global>{`
+        @keyframes fade-in {
+          from { opacity: 0; transform: translateY(16px); }
+          to { opacity: 1; transform: none; }
+        }
+        .animate-fade-in {
+          animation: fade-in 0.7s cubic-bezier(0.4,0,0.2,1) both;
+        }
+        .animate-fade-in.delay-100 { animation-delay: 0.1s; }
+        .animate-fade-in.delay-200 { animation-delay: 0.2s; }
+        .animate-fade-in.delay-300 { animation-delay: 0.3s; }
+        .animate-fade-in.delay-500 { animation-delay: 0.5s; }
+        @keyframes pulse-slow {
+          0%, 100% { opacity: 0.7; }
+          50% { opacity: 1; }
+        }
+        .animate-pulse-slow {
+          animation: pulse-slow 6s ease-in-out infinite;
+        }
+        @keyframes pulse-slower {
+          0%, 100% { opacity: 0.5; }
+          50% { opacity: 0.8; }
+        }
+        .animate-pulse-slower {
+          animation: pulse-slower 12s ease-in-out infinite;
+        }
+      `}</style>
     </div>
   );
 }

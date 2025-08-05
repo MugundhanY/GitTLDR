@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     
     if (!code) {
       console.error('No GitHub authorization code provided');
-      return NextResponse.redirect(`${process.env.FRONTEND_URL}/auth?error=No authorization code`);
+      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/auth?error=No authorization code`);
     }
     
     // Exchange code for access token
@@ -32,12 +32,12 @@ export async function GET(request: NextRequest) {
     
     if (tokenData.error) {
       console.error('GitHub token error:', tokenData.error);
-      return NextResponse.redirect(`${process.env.FRONTEND_URL}/auth?error=${tokenData.error}`);
+      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/auth?error=${tokenData.error}`);
     }
     
     if (!tokenData.access_token) {
       console.error('No access token received from GitHub');
-      return NextResponse.redirect(`${process.env.FRONTEND_URL}/auth?error=No access token received`);
+      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/auth?error=No access token received`);
     }
     
     // Get user info from GitHub
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
     
     if (!userResponse.ok) {
       console.error('Failed to fetch GitHub user data:', await userResponse.text());
-      return NextResponse.redirect(`${process.env.FRONTEND_URL}/auth?error=Failed to fetch user data`);
+      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/auth?error=Failed to fetch user data`);
     }    const userData = await userResponse.json();
     console.log('📊 Complete GitHub user data received:', {
       id: userData.id,
@@ -182,16 +182,16 @@ export async function GET(request: NextRequest) {
       
       // Redirect to dashboard with welcome message for new users
       const redirectUrl = isNewUser 
-        ? `${process.env.FRONTEND_URL}/dashboard?welcome=true` 
-        : `${process.env.FRONTEND_URL}/dashboard`;
+        ? `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?welcome=true` 
+        : `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`;
       
       console.log('Authentication successful, redirecting to:', redirectUrl);
       return NextResponse.redirect(redirectUrl);
     } catch (dbError) {
       console.error('Database error during user upsert:', dbError);
-      return NextResponse.redirect(`${process.env.FRONTEND_URL}/auth?error=Database error`);
+      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/auth?error=Database error`);
     }  } catch (error) {
     console.error('GitHub OAuth callback error:', error);
-    return NextResponse.redirect(`${process.env.FRONTEND_URL}/auth?error=Authentication failed`);
+    return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/auth?error=Authentication failed`);
   }
 }

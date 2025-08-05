@@ -191,14 +191,6 @@ export default function DashboardPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [availableCards, setAvailableCards] = useState<string[]>([]);
-  // Always include 'team' and 'shared' in availableCards for consistent UI
-  const normalizedAvailableCards = useMemo(() => {
-    const cards = new Set(availableCards);
-    cards.add('team');
-    cards.add('shared');
-    cards.add('notifications'); // Always show notifications card
-    return Array.from(cards);
-  }, [availableCards]);
   const [dragOverlayPosition, setDragOverlayPosition] = useState<{x: number, y: number} | null>(null);
   const dragRef = useRef<HTMLDivElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
@@ -233,6 +225,16 @@ export default function DashboardPage() {
     }
   });
 
+  // Fetch team members
+  const { data: teamData } = useQuery({
+    queryKey: ['team-members'],
+    queryFn: async () => {
+      const response = await fetch('/api/team');
+      if (!response.ok) throw new Error('Failed to fetch team members');
+      return response.json();
+    }
+  });
+
   // Real data from APIs
   const stats: DashboardStats = dashboardData?.stats || {
     repositories: 0,
@@ -248,21 +250,20 @@ export default function DashboardPage() {
   const recentActivities: RecentActivity[] = dashboardData?.activities || [];
   const sharedRepositories: SharedRepository[] = sharedData?.sharedRepositories || [];
   const allRepositories: RepositoryWithCreditsUsed[] = repositoriesData?.repositories || [];
+  const realTeamMembers: TeamMember[] = teamData?.teamMembers || [];
 
-  // Team members data based on shared repositories (memoized to prevent infinite re-renders)
-  const teamMembers: TeamMember[] = useMemo(() => 
-    sharedRepositories.map((repo, index) => ({
-      id: repo.owner.id,
-      name: repo.owner.name,
-      email: repo.owner.email,
-      avatarUrl: repo.owner.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(repo.owner.name)}&size=40&background=6366f1&color=fff`,
-      role: 'Developer',
-      repositories: 1,
-      commits: 50 + (index * 23) % 100, // Stable calculation based on index
-      lastActivity: repo.sharedAt,
-      status: index % 3 === 0 ? 'online' : index % 3 === 1 ? 'away' : 'offline'
-    })), [sharedRepositories]
-  );
+  // Team members data from the real API (no longer based on shared repositories)
+  const teamMembers: TeamMember[] = realTeamMembers;
+
+  // Only add team and shared if there's actual data
+  const normalizedAvailableCards = useMemo(() => {
+    const cards = new Set(availableCards);
+    // Only add team and shared if there's actual data
+    if (teamMembers.length > 0) cards.add('team');
+    if (sharedRepositories.length > 0) cards.add('shared');
+    cards.add('notifications'); // Always show notifications card
+    return Array.from(cards);
+  }, [availableCards, teamMembers, sharedRepositories]);
 
   // Determine which cards should be available based on data
   useEffect(() => {
@@ -271,12 +272,12 @@ export default function DashboardPage() {
     // Always show if there's data
     if (allRepositories.length > 0) cards.push('repositories');
     if (stats.creditsRemaining > 0 || stats.creditsUsed > 0) cards.push('credits');
-    if (teamMembers.length > 0) cards.push('team');
+    // Remove automatic team and shared - they'll be added by normalizedAvailableCards if there's data
     if (stats.totalCommits > 0) cards.push('commits');
-    if (recentActivities.length > 0) cards.push('activities');
-    if (sharedRepositories.length > 0) cards.push('shared');
+    if (recentActivities.length > 0) cards.push('activities'); // Only show if there are activities
     if (stats.repositories > 0 || stats.meetings > 0 || stats.questions > 0) cards.push('analytics');
-    if (stats.aiAnalyses > 0) cards.push('insights');
+    // Removed Project Metrics card as per user request
+    if (stats.repositories > 0) cards.push('performance'); // Repository performance insights
     
     // Additional useful cards with real data
     if (stats.repositories > 0) cards.push('performance');
@@ -349,10 +350,10 @@ export default function DashboardPage() {
         }
         case 'analytics':
           return { width: 4, height: 2 };
-        case 'insights':
-          return { width: 6, height: 1 };
+        case 'metrics':
+          return { width: 6, height: 2 };
         case 'performance':
-          return { width: 6, height: 1 };
+          return { width: 8, height: 2 }; // Larger for better readability
         case 'notifications':
           return { width: 3, height: 1 };
         default:
@@ -662,6 +663,12 @@ export default function DashboardPage() {
   }, [allRepositories]);
 
   // Activity chart with realistic data distribution (memoized)
+  // Debug: Print allRepositories to console
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log('DEBUG allRepositories:', allRepositories);
+  }, [allRepositories]);
+
   const activityChartData = useMemo(() => ({
     labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
     datasets: [
@@ -827,7 +834,7 @@ export default function DashboardPage() {
     );
   }
 
-  // Get card position for a specific card with smooth transitions
+  // Get card position for a specific card with responsive design
   const getCardPosition = (cardId: string) => {
     const position = cardPositions.find(p => p.id === cardId);
     if (!position) return { 
@@ -875,16 +882,60 @@ const normalizedTeamMembers = getNormalizedTeamMembers(owner, teamMembers);
   // Only show the credit usage analytics card if there is any usage
   const hasAnyCreditsUsage = allRepositories.some(repo => (repo.creditsUsed ?? 0) > 0);
 
-  // Patch: Use activity.timestamp for commit activities if available, fallback to activity.createdAt
-const recentActivitiesWithCorrectDate = recentActivities.map(activity => {
-  if (activity.type === 'commit' && activity.timestamp) {
-    return {
-      ...activity,
-      time: formatTimeAgo(activity.timestamp)
-    };
+// Only show activities for repos the user has access to (owned + shared)
+// Use repo names for activity filtering since activity.repository is a name
+const accessibleRepoNames = new Set([
+  ...((allRepositories && allRepositories.length > 0) ? allRepositories : sharedRepositories || []).map(r => r.name?.toLowerCase?.() ?? ''),
+  ...(sharedRepositories ? sharedRepositories.map(r => r.name?.toLowerCase?.() ?? '') : [])
+]);
+if (typeof window !== 'undefined') {
+  console.log('[DEBUG] accessibleRepoNames:', Array.from(accessibleRepoNames));
+  console.log('[DEBUG] recentActivities:', recentActivities);
+}
+const recentActivitiesWithCorrectDate = recentActivities
+  .filter(activity => {
+    if (!activity.repository) return true;
+    const isIncluded = accessibleRepoNames.has(activity.repository.toLowerCase());
+    if (typeof window !== 'undefined' && !isIncluded) {
+      console.log('[DEBUG] Activity filtered out:', activity.repository, activity);
+    }
+    return isIncluded;
+  })
+  .map(activity => {
+    if (activity.type === 'commit' && activity.timestamp) {
+      return {
+        ...activity,
+        time: formatTimeAgo(activity.timestamp)
+      };
+    }
+    return activity;
+  });
+
+  // Calculate project health score: percent of processed repos (fallback 0.7)
+  const processedCount = allRepositories?.filter(r => r.processed).length ?? 0;
+  const totalCount = allRepositories?.length ?? 0;
+  const projectHealthScore = totalCount > 0 ? processedCount / totalCount : 0.7;
+
+  // Calculate project insight: most active commit day or fallback
+  let projectInsight = undefined;
+  if (allRepositories && allRepositories.length > 0) {
+    // Aggregate commits by day of week
+    const dayCounts = [0,0,0,0,0,0,0]; // Sun-Sat
+    allRepositories.forEach(repo => {
+      const commitsByDay = (repo as any).commitsByDay;
+      if (Array.isArray(commitsByDay) && commitsByDay.length === 7) {
+        commitsByDay.forEach((count: number, i: number) => { dayCounts[i] += count; });
+      }
+    });
+    const maxDay = dayCounts.indexOf(Math.max(...dayCounts));
+    const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    if (dayCounts[maxDay] > 0) {
+      projectInsight = `Your team is most active on ${dayNames[maxDay]}s!`;
+    }
   }
-  return activity;
-});
+  if (!projectInsight) {
+    projectInsight = "Your team is most active on Fridays!";
+  }
 
   return (
     <DashboardLayout>
@@ -897,7 +948,7 @@ const recentActivitiesWithCorrectDate = recentActivities.map(activity => {
             <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-teal-500/5 dark:from-blue-500/10 dark:via-purple-500/10 dark:to-teal-500/10"></div>
             <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-bl from-blue-400/10 to-transparent rounded-full blur-3xl"></div>
             <div className="absolute bottom-0 left-0 w-72 h-72 bg-gradient-to-tr from-purple-400/10 to-transparent rounded-full blur-3xl"></div>
-            
+            {/* Header content only, no flex-row for cards */}
             <div className="relative flex flex-col gap-4 sm:gap-0 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <div className="flex items-center gap-4 mb-4">
@@ -906,19 +957,23 @@ const recentActivitiesWithCorrectDate = recentActivities.map(activity => {
                   </div>
                   <div>
                     <h1 className="text-3xl font-black bg-gradient-to-r from-slate-900 via-blue-700 to-purple-700 dark:from-white dark:via-blue-300 dark:to-purple-300 bg-clip-text text-transparent mb-1">
-                      GitTLDR
+                      Dashboard
                     </h1>
                     <p className="text-sm text-slate-600 dark:text-slate-300 font-medium">
-                      All your code, team, and insights—at a glance
+                      All your code, team, and insights at a glance
                     </p>
                   </div>
                 </div>
               </div>
               <div className="mt-4 sm:mt-6 lg:mt-0 flex flex-wrap items-center gap-2 sm:gap-4">
-                <div className="flex items-center gap-3 px-4 py-3 bg-emerald-50/80 dark:bg-emerald-950/50 backdrop-blur-sm border border-emerald-200/50 dark:border-emerald-800/50 rounded-2xl shadow-lg">
-                  <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse shadow-lg shadow-emerald-500/50"></div>
-                  <span className="text-emerald-700 dark:text-emerald-300 text-sm font-semibold">System Online</span>
-                </div>
+                <Link 
+                  href="/webhooks/setup" 
+                  className="group px-4 py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-semibold rounded-2xl transition-all duration-300 shadow-xl shadow-amber-500/25 hover:shadow-amber-500/40 hover:scale-105 flex items-center gap-2"
+                >
+                  <LinkIcon className="w-4 h-4 group-hover:rotate-12 transition-transform duration-300" />
+                  <span className="hidden sm:inline">Setup Webhooks</span>
+                  <span className="sm:hidden">Webhooks</span>
+                </Link>
                 <button
                   onClick={() => setEditMode(!editMode)}
                   className={`px-4 py-3 rounded-2xl font-semibold transition-all duration-300 shadow-lg flex items-center gap-2 ${
@@ -942,16 +997,18 @@ const recentActivitiesWithCorrectDate = recentActivities.map(activity => {
           </div>
         </div>
 
+        {/* Move the cards grid below the header, always full width */}
+
         {/* Dynamic Bento Grid with Advanced Drag & Drop */}
         <div 
           ref={dropZoneRef}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
-          className={`flex flex-col sm:grid sm:grid-cols-2 md:grid-cols-6 lg:grid-cols-12 gap-3 sm:gap-4 md:gap-6 auto-rows-[220px] sm:auto-rows-[280px] transition-all duration-500 ${
+          className={`grid gap-3 sm:gap-4 md:gap-6 auto-rows-[220px] sm:auto-rows-[280px] transition-all duration-500 ${
             isDragging && editMode 
               ? 'bg-gradient-to-br from-blue-50/50 to-purple-50/50 dark:from-blue-950/20 dark:to-purple-950/20 border-2 border-dashed border-blue-400/50 dark:border-blue-600/50 rounded-2xl sm:rounded-3xl p-2 sm:p-4' 
               : ''
-          }`}
+          } custom-grid-responsive`}
           style={{ minHeight: '900px', position: 'relative' }}
         >
           {/* Drop indicator overlay */}
@@ -1156,11 +1213,10 @@ const recentActivitiesWithCorrectDate = recentActivities.map(activity => {
               onDragStart={(e) => handleDragStart('team', 'medium', e)}
               onDragEnd={handleDragEnd}
             >
-              <div className="relative h-full overflow-hidden bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl border border-white/20 dark:border-slate-700/50 rounded-3xl shadow-2xl shadow-purple-500/10 hover:shadow-purple-500/20 transition-all duration-500">
+              <div className="relative h-full min-h-0 flex flex-col overflow-hidden bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl border border-white/20 dark:border-slate-700/50 rounded-3xl shadow-2xl shadow-purple-500/10 hover:shadow-purple-500/20 transition-all duration-500">
                 <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 via-transparent to-pink-500/5"></div>
                 <div className="absolute top-0 right-0 w-28 h-28 bg-gradient-to-bl from-purple-400/20 to-transparent rounded-full blur-2xl"></div>
-                
-                <div className="relative p-6 h-full">
+                <div className="relative p-6 flex flex-col h-full min-h-0">
                   <div className="flex items-start justify-between mb-6">
                     <div className="flex items-center gap-3">
                       <div className="p-3 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl shadow-lg">
@@ -1177,31 +1233,32 @@ const recentActivitiesWithCorrectDate = recentActivities.map(activity => {
                       </div>
                     )}
                   </div>
-                  
-                  <div className="space-y-4">
+                  <div className="flex flex-col h-full min-h-0 space-y-4">
                     <div className="text-4xl font-black text-slate-900 dark:text-white">{normalizedTeamMembers.length > 0 ? normalizedTeamMembers.length : (owner ? 1 : 0)}</div>
-                    <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
-                      {normalizedTeamMembers.length === 1 && normalizedTeamMembers[0].role === 'Owner' ? (
-                        <div className="text-center py-6 text-slate-500 dark:text-slate-400 font-medium">
-                          No other team members yet
-                        </div>
-                      ) : (
-                        normalizedTeamMembers.slice(0, 4).map((member: TeamMember) => (
-                          <div key={member.id} className="flex items-center gap-3 p-3 bg-white/60 dark:bg-slate-700/60 backdrop-blur-sm rounded-xl border border-white/30 dark:border-slate-600/30 hover:bg-white/80 dark:hover:bg-slate-700/80 transition-all duration-300">
-                            <div className="relative">
-                              <img src={member.avatarUrl} alt={member.name} className="w-10 h-10 rounded-full border-2 border-white/50 dark:border-slate-600/50" />
-                              <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white dark:border-slate-800 ${
-                                member.status === 'online' ? 'bg-emerald-500' : 
-                                member.status === 'away' ? 'bg-amber-500' : 'bg-slate-400'
-                              }`}></div>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{member.name}</p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">{member.role} • {member.commits} commits</p>
-                            </div>
+                    <div className="flex-1 min-h-0 flex flex-col">
+                      <div className="flex-1 min-h-0 space-y-2 overflow-y-auto custom-scrollbar pr-2">
+                        {normalizedTeamMembers.length === 0 ? (
+                          <div className="text-center py-6 text-slate-500 dark:text-slate-400 font-medium">
+                            No team members yet
                           </div>
-                        ))
-                      )}
+                        ) : (
+                          normalizedTeamMembers.map((member: TeamMember) => (
+                            <div key={member.id} className="flex items-center gap-3 p-3 bg-white/60 dark:bg-slate-700/60 backdrop-blur-sm rounded-xl border border-white/30 dark:border-slate-600/30 hover:bg-white/80 dark:hover:bg-slate-700/80 transition-all duration-300">
+                              <div className="relative">
+                                <img src={member.avatarUrl} alt={member.name} className="w-10 h-10 rounded-full border-2 border-white/50 dark:border-slate-600/50" />
+                                <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white dark:border-slate-800 ${
+                                  member.status === 'online' ? 'bg-emerald-500' : 
+                                  member.status === 'away' ? 'bg-amber-500' : 'bg-slate-400'
+                                }`}></div>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{member.name}</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">{member.role} • {member.commits} commits</p>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1247,15 +1304,26 @@ const recentActivitiesWithCorrectDate = recentActivities.map(activity => {
                       <span className="text-sm font-semibold">Across all repositories</span>
                     </div>
                     <div className="space-y-3">
-                      {/* Most Active Repository - improved UI */}
+                      {/* Most Active Repository - improved UI, show owner if shared */}
                       {allRepositories && allRepositories.length > 0 ? (
                         (() => {
                           const mostActiveRepo = allRepositories.reduce((max, repo) => (repo.commitCount > (max.commitCount ?? 0) ? repo : max), allRepositories[0]);
+                          // Try to find if this repo is in sharedRepositories
+                          let ownerName = '';
+                          if (sharedRepositories && sharedRepositories.length > 0) {
+                            const sharedRepo = sharedRepositories.find(r => r.name?.toLowerCase() === mostActiveRepo.name?.toLowerCase());
+                            if (sharedRepo && sharedRepo.owner && sharedRepo.owner.name) {
+                              ownerName = sharedRepo.owner.name;
+                            }
+                          }
                           return (
                             <div className="flex items-center gap-2 py-1">
                               <span className="text-sm text-slate-600 dark:text-slate-400">Most active repo:</span>
                               <span className="px-2 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300 font-semibold text-xs shadow-sm">
                                 {mostActiveRepo.name}
+                                {ownerName && (
+                                  <span className="ml-2 text-xs text-slate-500 dark:text-slate-400 font-normal">by {ownerName}</span>
+                                )}
                               </span>
                               <span className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 font-medium">
                                 <CodeBracketIcon className="w-3 h-3" />
@@ -1309,6 +1377,31 @@ const recentActivitiesWithCorrectDate = recentActivities.map(activity => {
                     <div className="space-y-3 max-h-full overflow-y-auto custom-scrollbar pr-2">
                       {recentActivitiesWithCorrectDate.map((activity) => {
                         const Icon = getActivityIcon(activity.type);
+                        let repoName = activity.repository;
+                        let authorName = activity.author;
+                        if (activity.type === 'meeting') {
+                          // Try to extract repo name and author from description if missing
+                          if (!repoName && activity.description) {
+                            const repoMatch = activity.description.match(/repo ([^\s,.]+)/i);
+                            if (repoMatch) repoName = repoMatch[1];
+                          }
+                          if (!authorName && activity.description) {
+                            const authorMatch = activity.description.match(/by ([^\s,.]+)/i);
+                            if (authorMatch) authorName = authorMatch[1];
+                          }
+                          // Fallback: try to find repo from allRepositories/sharedRepositories by name if still missing
+                          if (!repoName && allRepositories) {
+                            // Try to match by activity.repository (if present in repo list)
+                            const repo = allRepositories.find(r => r.name?.toLowerCase() === activity.repository?.toLowerCase())
+                              || (sharedRepositories && sharedRepositories.find(r => r.name?.toLowerCase() === activity.repository?.toLowerCase()));
+                            if (repo) repoName = repo.name;
+                          }
+                          // Fallback: try to find author from teamMembers by name if still missing
+                          if (!authorName && teamMembers) {
+                            const member = teamMembers.find(m => m.name?.toLowerCase() === activity.author?.toLowerCase());
+                            if (member) authorName = member.name;
+                          }
+                        }
                         return (
                           <div key={activity.id} className="group/item flex items-start gap-3 p-4 bg-white/60 dark:bg-slate-700/60 backdrop-blur-sm rounded-xl border border-white/30 dark:border-slate-600/30 hover:bg-white/80 dark:hover:bg-slate-700/80 transition-all duration-300">
                             <div className="p-2.5 bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-600 dark:to-slate-700 rounded-xl border border-white/50 dark:border-slate-500/50">
@@ -1324,13 +1417,16 @@ const recentActivitiesWithCorrectDate = recentActivities.map(activity => {
                               <p className="text-sm text-slate-600 dark:text-slate-400 mb-2">{activity.description}</p>
                               <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-500">
                                 <span className="font-medium">{activity.time}</span>
-                                {activity.repository && (
+                                {/* Always show repo name and author for meetings and commits, fallback if missing */}
+                                {repoName && (
                                   <span className="flex items-center gap-1 bg-slate-100/60 dark:bg-slate-600/60 px-2 py-1 rounded-full">
                                     <FolderOpenIcon className="w-3 h-3" />
-                                    {activity.repository}
+                                    {repoName}
                                   </span>
                                 )}
-                                {activity.author && <span className="text-slate-600 dark:text-slate-400">by {activity.author}</span>}
+                                {authorName && (
+                                  <span className="text-slate-600 dark:text-slate-400">by {authorName}</span>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1343,9 +1439,9 @@ const recentActivitiesWithCorrectDate = recentActivities.map(activity => {
             </div>
           )}
 
-          {/* Shared Repositories Card */}
+          {/* Shared Repositories Card - FIXED: show shared repos with commits, fallback for stats, show commit count, and empty state */}
           {normalizedAvailableCards.includes('shared') && (
-            <div 
+            <div
               className={`group transition-all duration-300 ${editMode ? 'cursor-grab hover:cursor-grabbing hover:scale-[1.02] hover:shadow-2xl hover:z-10' : ''}`}
               style={getCardStyle('shared')}
               draggable={editMode}
@@ -1355,7 +1451,6 @@ const recentActivitiesWithCorrectDate = recentActivities.map(activity => {
               <div className="relative h-full overflow-hidden bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl border border-white/20 dark:border-slate-700/50 rounded-3xl shadow-2xl shadow-rose-500/10 hover:shadow-rose-500/20 transition-all duration-500">
                 <div className="absolute inset-0 bg-gradient-to-br from-rose-500/5 via-transparent to-orange-500/5"></div>
                 <div className="absolute top-0 right-0 w-28 h-28 bg-gradient-to-bl from-rose-400/20 to-transparent rounded-full blur-2xl"></div>
-                
                 <div className="relative p-6 h-full">
                   <div className="flex items-start justify-between mb-6">
                     <div className="flex items-center gap-3">
@@ -1373,28 +1468,47 @@ const recentActivitiesWithCorrectDate = recentActivities.map(activity => {
                       </div>
                     )}
                   </div>
-                  
+                  {/* Only show shared repos that are not owned by the user and have at least 1 commit */}
                   <div className="space-y-3">
-                    {sharedRepositories.slice(0, 4).map((repo) => (
-                      <div key={repo.id} className="p-3 bg-white/60 dark:bg-slate-700/60 backdrop-blur-sm rounded-xl border border-white/30 dark:border-slate-600/30 hover:bg-white/80 dark:hover:bg-slate-700/80 transition-all duration-300">
-                        <div className="flex items-start gap-3">
-                          <img 
-                            src={repo.owner.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(repo.owner.name)}&size=32&background=6366f1&color=fff`} 
-                            alt={repo.owner.name} 
-                            className="w-8 h-8 rounded-full border-2 border-white/50 dark:border-slate-600/50" 
-                          />
-                          <div className="flex-1 min-w-0">
-                            <h4 className="text-sm font-semibold text-slate-900 dark:text-white truncate">{repo.name}</h4>
-                            <p className="text-xs text-slate-600 dark:text-slate-400 mb-2">by {repo.owner.name}</p>
-                            <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-500">
-                              <span className="bg-slate-100/60 dark:bg-slate-600/60 px-2 py-1 rounded-full">{repo.stats.files} files</span>
-                              <span className="bg-slate-100/60 dark:bg-slate-600/60 px-2 py-1 rounded-full">{repo.stats.meetings} meetings</span>
-                              <span className="bg-slate-100/60 dark:bg-slate-600/60 px-2 py-1 rounded-full">{repo.stats.questions} Q&As</span>
+                    {(() => {
+                      // Only show shared repos not owned by the user and with at least 1 commit
+                      // Only show shared repos with at least 1 file (non-empty)
+                      const filteredShared = (sharedRepositories || []).filter(repo => (repo.stats?.files ?? 0) > 0);
+                      if (filteredShared.length === 0) {
+                        return (
+                          <div className="text-center py-8 text-slate-500 dark:text-slate-400 font-medium">
+                            No shared repositories with commits yet
+                          </div>
+                        );
+                      }
+                      return filteredShared.slice(0, 4).map((repo) => (
+                        <div key={repo.id} className="p-3 bg-white/60 dark:bg-slate-700/60 backdrop-blur-sm rounded-xl border border-white/30 dark:border-slate-600/30 hover:bg-white/80 dark:hover:bg-slate-700/80 transition-all duration-300">
+                          <div className="flex items-start gap-3">
+                            <img
+                              src={repo.owner?.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(repo.owner?.name || 'Owner')}&size=32&background=6366f1&color=fff`}
+                              alt={repo.owner?.name || 'Owner'}
+                              className="w-8 h-8 rounded-full border-2 border-white/50 dark:border-slate-600/50"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <h4 className="text-sm font-semibold text-slate-900 dark:text-white truncate">{repo.name}</h4>
+                              <p className="text-xs text-slate-600 dark:text-slate-400 mb-2">by {repo.owner?.name || 'Owner'}</p>
+                              <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-500">
+                                <span className="bg-slate-100/60 dark:bg-slate-600/60 px-2 py-1 rounded-full">
+                                  {(repo.stats?.files ?? 0)} files
+                                </span>
+                                {/* No commit count for shared repos, only show files, meetings, Q&As */}
+                                <span className="bg-slate-100/60 dark:bg-slate-600/60 px-2 py-1 rounded-full">
+                                  {(repo.stats?.meetings ?? 0)} meetings
+                                </span>
+                                <span className="bg-slate-100/60 dark:bg-slate-600/60 px-2 py-1 rounded-full">
+                                  {(repo.stats?.questions ?? 0)} Q&As
+                                </span>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      ));
+                    })()}
                   </div>
                 </div>
               </div>
@@ -1458,28 +1572,30 @@ const recentActivitiesWithCorrectDate = recentActivities.map(activity => {
 
 
 
-          {/* AI Insights Card */}
-          {normalizedAvailableCards.includes('insights') && (
+          {/* Project Metrics card removed as per user request */}
+
+          {/* Repository Performance Card */}
+          {normalizedAvailableCards.includes('performance') && (
             <div 
               className={`group transition-all duration-300 ${editMode ? 'cursor-grab hover:cursor-grabbing hover:scale-[1.02] hover:shadow-2xl hover:z-10' : ''}`}
-              style={getCardStyle('insights')}
+              style={getCardStyle('performance')}
               draggable={editMode}
-              onDragStart={(e) => handleDragStart('insights', 'wide', e)}
+              onDragStart={(e) => handleDragStart('performance', 'large', e)}
               onDragEnd={handleDragEnd}
             >
-              <div className="relative h-full overflow-hidden bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl border border-white/20 dark:border-slate-700/50 rounded-3xl shadow-2xl shadow-violet-500/10 hover:shadow-violet-500/20 transition-all duration-500">
-                <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 via-transparent to-purple-500/5"></div>
-                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-violet-400/20 to-transparent rounded-full blur-2xl"></div>
+              <div className="relative h-full overflow-hidden bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl border border-white/20 dark:border-slate-700/50 rounded-3xl shadow-2xl shadow-emerald-500/10 hover:shadow-emerald-500/20 transition-all duration-500">
+                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-teal-500/5"></div>
+                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-emerald-400/20 to-transparent rounded-full blur-2xl"></div>
                 
                 <div className="relative p-6 h-full">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
-                      <div className="p-3 bg-gradient-to-br from-violet-500 to-purple-500 rounded-2xl shadow-lg">
-                        <SparklesIcon className="w-6 h-6 text-white" />
+                      <div className="p-3 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-2xl shadow-lg">
+                        <RocketLaunchIcon className="w-6 h-6 text-white" />
                       </div>
                       <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">AI Insights</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">Intelligent recommendations</p>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Repository Performance</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">Health & activity insights</p>
                       </div>
                     </div>
                     {editMode && (
@@ -1489,13 +1605,58 @@ const recentActivitiesWithCorrectDate = recentActivities.map(activity => {
                     )}
                   </div>
                   
-                  <div className="flex items-center justify-between">
+                  <div className="space-y-4">
+                    {/* Top performers */}
                     <div>
-                      <div className="text-4xl font-black text-slate-900 dark:text-white">{stats.aiAnalyses}</div>
-                      <div className="text-sm text-slate-600 dark:text-slate-400 mt-2">AI analyses generated</div>
+                      <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Top Performing Repositories</h4>
+                      <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-2">
+                        {allRepositories
+                          .sort((a, b) => (b.commitCount || 0) - (a.commitCount || 0))
+                          .slice(0, 5)
+                          .map((repo, index) => (
+                            <div key={repo.id} className="flex items-center justify-between p-3 bg-white/60 dark:bg-slate-700/60 backdrop-blur-sm rounded-lg border border-white/30 dark:border-slate-600/30">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white ${
+                                  index === 0 ? 'bg-yellow-500' : 
+                                  index === 1 ? 'bg-gray-400' : 
+                                  index === 2 ? 'bg-amber-600' : 'bg-slate-400'
+                                }`}>
+                                  {index + 1}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900 dark:text-white truncate max-w-[120px]">{repo.name}</p>
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">{repo.language || 'Mixed'}</p>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{repo.commitCount || 0}</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">commits</p>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
                     </div>
-                    <div className="h-20 w-48">
-                      <Line data={activityChartData} options={{...chartOptions, plugins: {...chartOptions.plugins, legend: {display: false}}}} />
+                    
+                    {/* Repository health metrics */}
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200/50 dark:border-slate-600/50">
+                      <div className="text-center">
+                        <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                          {Math.round((allRepositories.filter(r => r.processed).length / Math.max(allRepositories.length, 1)) * 100)}%
+                        </div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400">Processed</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                          {allRepositories.filter(r => !r.isPrivate).length}
+                        </div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400">Public</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-lg font-bold text-purple-600 dark:text-purple-400">
+                          {new Set(allRepositories.map(r => r.language).filter(Boolean)).size}
+                        </div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400">Languages</div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1568,6 +1729,25 @@ const recentActivitiesWithCorrectDate = recentActivities.map(activity => {
       </div>
 
       <style jsx>{`
+        .custom-grid-responsive {
+          display: grid !important;
+          grid-template-columns: 1fr !important;
+        }
+        @media (min-width: 450px) {
+          .custom-grid-responsive {
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)) !important;
+          }
+        }
+        @media (min-width: 1024px) {
+          .custom-grid-responsive {
+            grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+          }
+        }
+        @media (min-width: 1280px) {
+          .custom-grid-responsive {
+            grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+          }
+        }
         .custom-scrollbar::-webkit-scrollbar {
           width: 4px;
         }

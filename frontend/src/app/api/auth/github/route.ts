@@ -4,7 +4,7 @@ export async function GET(request: NextRequest) {
   try {
     // Get GitHub OAuth credentials from environment variables
     const githubClientId = process.env.GITHUB_CLIENT_ID
-    const redirectUri = encodeURIComponent(`${process.env.FRONTEND_URL}/api/auth/github/callback`)
+    const redirectUri = encodeURIComponent(`${process.env.NEXT_PUBLIC_APP_URL}/api/auth/github/callback`)
     
     if (!githubClientId) {
       console.error('Missing GitHub client ID in environment variables');

@@ -44,8 +44,8 @@ export async function POST(request: NextRequest) {
         userId: '1', // TODO: Get actual user ID from auth
         plan,
       },
-      success_url: `${process.env.FRONTEND_URL}/billing?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.FRONTEND_URL}/billing`,
+      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/billing?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/billing`,
       allow_promotion_codes: true,
     })
 

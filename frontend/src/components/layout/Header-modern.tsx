@@ -291,9 +291,12 @@ export function Header() {
               </button>
               {/* Logo */}
               <Link href="/dashboard" className="flex items-center">
-                <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center">
-                  <CodeBracketIcon className="w-5 h-5 text-white" />
-                </div>
+                <img
+                  src="/GitTLDR_logo.png"
+                  alt="GitTLDR Logo"
+                  className="w-8 h-8 rounded-lg object-contain bg-transparent"
+                  style={{ background: 'none' }}
+                />
                 <span className="ml-2 text-xl font-bold text-slate-900 dark:text-white hidden sm:block">GitTLDR</span>
               </Link>
             </div>

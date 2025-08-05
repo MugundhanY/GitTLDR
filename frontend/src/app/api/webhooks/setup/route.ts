@@ -12,10 +12,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
-    const { repositoryId } = await request.json();
+    const { repositoryId, githubToken } = await request.json();
 
-    if (!repositoryId) {
-      return NextResponse.json({ error: 'Repository ID is required' }, { status: 400 });
+    if (!repositoryId || !githubToken) {
+      return NextResponse.json({ error: 'Repository ID and GitHub token are required' }, { status: 400 });
     }
 
     // Verify repository belongs to user
@@ -30,32 +30,93 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Repository not found' }, { status: 404 });
     }
 
-    // Generate webhook URL
-    const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/github/${repositoryId}`;
-    
-    // In a real implementation, you would:
-    // 1. Create webhook on GitHub using their API
-    // 2. Store webhook configuration in database
-    // 3. Return webhook setup instructions
+    // Prepare webhook configuration
+    const webhookUrl = `${process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/github`;
+    const webhookSecret = process.env.WEBHOOK_SECRET || generateWebhookSecret();
 
-    const webhookSetup = {
-      repositoryId,
-      webhookUrl,
-      secret: generateWebhookSecret(),
-      events: ['push', 'pull_request', 'issues'],
-      instructions: {
-        step1: 'Go to your repository settings on GitHub',
-        step2: 'Navigate to Webhooks section',
-        step3: `Add new webhook with URL: ${webhookUrl}`,
-        step4: 'Select these events: push, pull_request, issues',
-        step5: 'Set content type to application/json',
-        step6: `Add secret: ${generateWebhookSecret()}`
+    const webhookConfig = {
+      name: 'web',
+      active: true,
+      events: ['push', 'repository'],
+      config: {
+        url: webhookUrl,
+        content_type: 'json',
+        secret: webhookSecret,
+        insecure_ssl: '0'
       }
     };
 
+    // Extract owner and repo name from repository URL or full name
+    const [owner, repoName] = repository.fullName.split('/');
+
+    // Create webhook on GitHub
+    const githubResponse = await fetch(
+      `https://api.github.com/repos/${owner}/${repoName}/hooks`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `token ${githubToken}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(webhookConfig)
+      }
+    );
+
+    if (!githubResponse.ok) {
+      const errorData = await githubResponse.json();
+      console.error('GitHub webhook creation failed:', errorData);
+      
+      // Handle specific GitHub API errors
+      if (githubResponse.status === 422 && errorData.errors?.some((e: any) => e.message?.includes('Hook already exists'))) {
+        return NextResponse.json(
+          { error: 'Webhook already exists for this repository' },
+          { status: 400 }
+        );
+      }
+      
+      if (githubResponse.status === 401) {
+        return NextResponse.json(
+          { error: 'Invalid GitHub token or insufficient permissions' },
+          { status: 401 }
+        );
+      }
+      
+      if (githubResponse.status === 404) {
+        return NextResponse.json(
+          { error: 'Repository not found or token lacks access' },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json(
+        { error: `GitHub API error: ${errorData.message || 'Unknown error'}` },
+        { status: githubResponse.status }
+      );
+    }
+
+    const webhookData = await githubResponse.json();
+
+    // Update repository record with webhook information
+    await prisma.repository.update({
+      where: { id: repositoryId },
+      data: {
+        hasWebhook: true,
+        webhookId: webhookData.id.toString(),
+        webhookUrl: webhookData.url,
+        updatedAt: new Date()
+      }
+    });
+
     return NextResponse.json({
-      message: 'Webhook setup configuration generated',
-      webhook: webhookSetup
+      success: true,
+      message: 'Webhook configured successfully',
+      webhook: {
+        id: webhookData.id,
+        url: webhookData.url,
+        events: webhookData.events,
+        active: webhookData.active
+      }
     });
 
   } catch (error) {
@@ -85,22 +146,26 @@ export async function GET(request: NextRequest) {
         name: true,
         fullName: true,
         isPrivate: true,
+        url: true,
         createdAt: true
-      }
+      },
+      orderBy: { name: 'asc' }
     });
 
-    // Mock webhook status - in real app, store this in database
-    const webhookStatuses = repositories.map(repo => ({
+    const repositoriesWithWebhookStatus = repositories.map(repo => ({
       id: repo.id,
-      repository: repo.name,
+      name: repo.name,
       fullName: repo.fullName,
-      url: `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/github/${repo.id}`,
-      status: Math.random() > 0.3 ? 'active' : 'inactive', // Mock status
-      lastTriggered: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
-      eventsCount: Math.floor(Math.random() * 50)
+      url: repo.url,
+      isPrivate: repo.isPrivate,
+      hasWebhook: false, // Will be updated after migration
+      webhookUrl: null
     }));
 
-    return NextResponse.json({ webhooks: webhookStatuses });
+    return NextResponse.json({ 
+      success: true,
+      repositories: repositoriesWithWebhookStatus 
+    });
 
   } catch (error) {
     console.error('Error fetching webhooks:', error);
