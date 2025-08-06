@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { 
   ChatBubbleLeftIcon, 
   XMarkIcon, 
@@ -192,10 +193,12 @@ export default function MeetingComments({
                 <div className="flex items-start gap-3 p-4 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-800/60 rounded-xl hover:shadow-md transition-all">
                   <div className="w-9 h-9 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center flex-shrink-0 ring-2 ring-white dark:ring-slate-700">
                     {comment.user.avatarUrl ? (
-                      <img 
+                      <Image 
                         src={comment.user.avatarUrl} 
                         alt={comment.user.name}
-                        className="w-9 h-9 rounded-full"
+                        width={36}
+                        height={36}
+                        className="rounded-full"
                       />
                     ) : (
                       <UserIcon className="w-4 h-4 text-white" />

@@ -1,6 +1,7 @@
 'use client'
 
 import { Fragment } from 'react'
+import Image from 'next/image'
 import { Dialog, Transition } from '@headlessui/react'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 
@@ -30,9 +31,11 @@ const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({
 
     if (fileType.startsWith('image/')) {
       return (
-        <img
+        <Image
           src={downloadUrl}
           alt={originalFileName}
+          width={800}
+          height={600}
           className="max-w-full max-h-[80vh] object-contain mx-auto"
         />
       )

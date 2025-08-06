@@ -35,7 +35,6 @@ export default function AuthPage() {
         throw new Error('Failed to get GitHub authentication URL');
       }
     } catch (error) {
-      console.error('GitHub auth error:', error);
       setError('Failed to start GitHub authentication process');
       setIsLoading(false);
     }
@@ -74,11 +73,13 @@ export default function AuthPage() {
       <div className="absolute bottom-0 right-0 w-80 h-80 bg-gradient-to-tr from-emerald-400/20 via-blue-400/10 to-purple-400/10 rounded-full blur-2xl animate-pulse-slower z-0" />
       <div className="max-w-md w-full space-y-8 p-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 dark:border-slate-700/40 relative z-10">
         <div className="flex flex-col items-center text-center">
-          <img
+          <Image
             src="/GitTLDR_logo.png"
             alt="GitTLDR Logo"
-            className="w-15 h-16 mb-4 drop-shadow-xl animate-fade-in"
-            draggable="false"
+            width={60}
+            height={64}
+            className="mb-4 drop-shadow-xl animate-fade-in"
+            draggable={false}
           />
           <h2 className="text-4xl font-extrabold bg-gradient-to-r from-blue-700 via-purple-700 to-emerald-600 bg-clip-text text-transparent mb-2 animate-fade-in">
             Welcome to GitTLDR

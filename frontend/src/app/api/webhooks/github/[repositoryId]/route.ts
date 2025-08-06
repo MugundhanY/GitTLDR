@@ -6,10 +6,10 @@ const prisma = new PrismaClient();
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { repositoryId: string } }
+  { params }: { params: Promise<{ repositoryId: string }> }
 ) {
   try {
-    const { repositoryId } = params;
+    const { repositoryId } = await params;
     const body = await request.text();
     
     // Verify webhook signature (in production)
@@ -45,13 +45,12 @@ export async function POST(
         await handleIssueEvent(payload, repository);
         break;
       default:
-        console.log(`Unhandled event: ${event}`);
+        break;
     }
 
     return NextResponse.json({ message: 'Webhook processed successfully' });
 
   } catch (error) {
-    console.error('Error processing webhook:', error);
     return NextResponse.json(
       { error: 'Failed to process webhook' },
       { status: 500 }
@@ -88,7 +87,7 @@ async function handlePushEvent(payload: any, repository: any) {
       await queueCommitAnalysis(commit, repository);
       
     } catch (error) {
-      console.error('Error storing commit:', error);
+      // Silently continue with other commits if one fails
     }
   }
 }
@@ -115,13 +114,6 @@ async function handleIssueEvent(payload: any, repository: any) {
 
 async function queueCommitAnalysis(commit: any, repository: any) {
   // In production, this would queue a background job
-  // For now, just log the action
-  console.log(`Queued analysis for commit ${commit.id} in ${repository.name}`);
-  
-  // You could integrate with:
-  // - Redis for job queuing
-  // - Background worker processes
-  // - Webhook to python-worker for AI analysis
   
   try {
     // Example: Send to python worker for analysis
@@ -137,17 +129,15 @@ async function queueCommitAnalysis(commit: any, repository: any) {
       })
     });
     
-    if (response.ok) {
-      console.log(`Successfully triggered analysis for commit ${commit.id}`);
+    if (!response.ok) {
+      throw new Error('Failed to trigger analysis');
     }
   } catch (error) {
-    console.error('Failed to trigger commit analysis:', error);
+    // Silently handle analysis failure
   }
 }
 
 async function queuePRAnalysis(pullRequest: any, repository: any) {
-  console.log(`Queued PR analysis for #${pullRequest.number} in ${repository.name}`);
-  
   try {
     // Send to python worker for PR analysis
     const response = await fetch(`${process.env.PYTHON_WORKER_URL}/analyze-pr`, {
@@ -163,17 +153,15 @@ async function queuePRAnalysis(pullRequest: any, repository: any) {
       })
     });
     
-    if (response.ok) {
-      console.log(`Successfully triggered PR analysis for #${pullRequest.number}`);
+    if (!response.ok) {
+      throw new Error('Failed to trigger PR analysis');
     }
   } catch (error) {
-    console.error('Failed to trigger PR analysis:', error);
+    // Silently handle PR analysis failure
   }
 }
 
 async function queueIssueAnalysis(issue: any, repository: any) {
-  console.log(`Queued issue analysis for #${issue.number} in ${repository.name}`);
-  
   try {
     // Send to python worker for issue analysis
     const response = await fetch(`${process.env.PYTHON_WORKER_URL}/analyze-issue`, {
@@ -189,10 +177,10 @@ async function queueIssueAnalysis(issue: any, repository: any) {
       })
     });
     
-    if (response.ok) {
-      console.log(`Successfully triggered issue analysis for #${issue.number}`);
+    if (!response.ok) {
+      throw new Error('Failed to trigger issue analysis');
     }
   } catch (error) {
-    console.error('Failed to trigger issue analysis:', error);
+    // Silently handle issue analysis failure
   }
 }

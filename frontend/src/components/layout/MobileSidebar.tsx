@@ -1,4 +1,5 @@
 import React from 'react';
+import Image from 'next/image';
 import { useSidebar } from '@/contexts/SidebarContext';
 import Link from 'next/link';
 import { CodeBracketIcon, UserCircleIcon, Cog6ToothIcon, CreditCardIcon, QuestionMarkCircleIcon, HomeIcon, FolderIcon, VideoCameraIcon, ChatBubbleLeftRightIcon, ChartBarIcon, UsersIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline';
@@ -55,7 +56,7 @@ export default function MobileSidebar({ navigation, secondaryItems, selectedRepo
         {/* Profile Section */}
         <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center space-x-3">
           {userData?.avatarUrl ? (
-            <img src={userData.avatarUrl} alt={userData.name || 'User'} className="w-10 h-10 rounded-full object-cover" />
+            <Image src={userData.avatarUrl} alt={userData.name || 'User'} width={40} height={40} className="rounded-full object-cover" />
           ) : (
             <UserCircleIcon className="w-10 h-10 text-slate-400 dark:text-slate-500" />
           )}

@@ -36,7 +36,7 @@ export default function TermsPage() {
           <p>We reserve the right to suspend or terminate your access to GitTLDR at any time, for any reason, without notice.</p>
 
           <h2>6. Disclaimer</h2>
-          <p>GitTLDR is provided "as is" and without warranties of any kind. We do not guarantee the accuracy, reliability, or availability of the service.</p>
+          <p>GitTLDR is provided &quot;as is&quot; and without warranties of any kind. We do not guarantee the accuracy, reliability, or availability of the service.</p>
 
           <h2>7. Limitation of Liability</h2>
           <p>To the fullest extent permitted by law, GitTLDR shall not be liable for any damages arising from your use of the service.</p>

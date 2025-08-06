@@ -238,18 +238,17 @@ export default function TeamsPage() {
     
     try {
       // API call would go here
-      console.log('Inviting member:', { email: inviteEmail, role: inviteRole });
       setInviteEmail('');
       setShowInviteModal(false);
       // Refresh team data
     } catch (error) {
-      console.error('Failed to invite member:', error);
+      // Handle error appropriately
     }
   };
 
   const toggleMemberStar = (memberId: string) => {
     // API call would go here
-    console.log('Toggle star for member:', memberId);
+    // Toggle star status for member
   };
 
   if (!selectedRepository) {

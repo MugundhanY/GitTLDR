@@ -18,8 +18,6 @@ export class ResultProcessor {
   private isProcessing = false;
 
   async start() {
-    console.log('📊 Starting result processor...');
-    
     // Process results continuously
     setInterval(() => {
       if (!this.isProcessing) {

@@ -75,7 +75,6 @@ class B2AttachmentStorage {
         downloadUrl: result.downloadUrl
       };
     } catch (error) {
-      console.error('Upload failed:', error);
       throw error;
     }
   }
@@ -117,7 +116,6 @@ class B2AttachmentStorage {
         headers: result.headers || {}
       };
     } catch (error) {
-      console.error('Failed to get pre-signed URL:', error);
       throw error;
     }
   }
@@ -145,7 +143,6 @@ class B2AttachmentStorage {
       const result = await response.json();
       return Buffer.from(result.content, 'base64');
     } catch (error) {
-      console.error('Download failed:', error);
       throw error;
     }
   }
@@ -179,7 +176,6 @@ class B2AttachmentStorage {
         throw new Error(error.detail || 'Delete failed');
       }
     } catch (error) {
-      console.error('Delete failed:', error);
       throw error;
     }
   }

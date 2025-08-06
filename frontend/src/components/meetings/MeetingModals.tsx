@@ -1,4 +1,5 @@
 import React from 'react';
+import Image from 'next/image';
 import { 
   XMarkIcon,
   ShareIcon,
@@ -118,10 +119,12 @@ export function ShareModal({
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
                         {user.avatarUrl ? (
-                          <img 
+                          <Image 
                             src={user.avatarUrl} 
                             alt={user.name}
-                            className="w-8 h-8 rounded-full"
+                            width={32}
+                            height={32}
+                            className="rounded-full"
                           />
                         ) : (
                           <UserIcon className="w-4 h-4 text-white" />

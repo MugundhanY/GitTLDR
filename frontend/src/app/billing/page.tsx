@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'next/navigation'
 import DashboardLayout from '@/components/layout/DashboardLayout'
@@ -89,7 +89,7 @@ interface BillingData {
   }
 }
 
-export default function BillingPage() {
+function BillingPageContent() {
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [timeRange, setTimeRange] = useState('30d')
@@ -211,7 +211,6 @@ export default function BillingPage() {
         throw new Error('Failed to create checkout session')
       }
     } catch (error) {
-      console.error('Error creating checkout session:', error)
       toast.error('Failed to process purchase. Please try again.')
     } finally {
       setIsProcessing(false)
@@ -237,7 +236,6 @@ export default function BillingPage() {
       
       toast.success('Billing history downloaded successfully')
     } catch (error) {
-      console.error('Error downloading history:', error)
       toast.error('Failed to download billing history')
     }
   }
@@ -260,7 +258,6 @@ export default function BillingPage() {
       
       toast.success('Invoice downloaded successfully')
     } catch (error) {
-      console.error('Error downloading invoice:', error)
       toast.error('Failed to download invoice')
     }
   }
@@ -692,4 +689,21 @@ export default function BillingPage() {
       </div>
     </DashboardLayout>
   )
+}
+
+export default function BillingPage() {
+  return (
+    <Suspense fallback={
+      <DashboardLayout>
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-slate-600 dark:text-slate-400">Loading billing...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    }>
+      <BillingPageContent />
+    </Suspense>
+  );
 }

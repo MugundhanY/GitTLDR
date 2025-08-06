@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useRepository } from '@/contexts/RepositoryContext';
 import { MagnifyingGlassIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
@@ -14,7 +14,7 @@ interface SearchResult {
   path?: string;
 }
 
-export default function SearchPage() {
+function SearchPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { selectedRepository } = useRepository();
@@ -89,7 +89,6 @@ export default function SearchPage() {
 
       setResults(searchResults);
     } catch (error) {
-      console.error('Search error:', error);
       setResults([]);
     } finally {
       setIsSearching(false);
@@ -233,5 +232,20 @@ export default function SearchPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-600 dark:text-slate-400">Loading search...</p>
+        </div>
+      </div>
+    }>
+      <SearchPageContent />
+    </Suspense>
   );
 }

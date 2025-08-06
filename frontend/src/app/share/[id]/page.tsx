@@ -58,7 +58,6 @@ export default function ShareRepositoryPage() {
       const data = await response.json();
       setRepository(data.repository);
     } catch (error) {
-      console.error('Error fetching repository:', error);
       setError('Failed to load repository information');
     } finally {
       setLoading(false);
@@ -87,7 +86,6 @@ export default function ShareRepositoryPage() {
       setHasRequested(true);
       toast.success('Access request sent! The repository owner will review your request.');
     } catch (error: any) {
-      console.error('Error requesting access:', error);
       toast.error(error.message || 'Failed to request access');
     } finally {
       setRequesting(false);
@@ -198,7 +196,7 @@ export default function ShareRepositoryPage() {
                   </Badge>
                   <p className="text-sm text-gray-600 mb-4">
                     Your access request has been sent to the repository owner. 
-                    You'll be notified when they review your request.
+                    You&apos;ll be notified when they review your request.
                   </p>
                   <Button 
                     variant="outline"

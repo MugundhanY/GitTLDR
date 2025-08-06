@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useUserData } from '@/hooks/useUserData';
 import { useRepository } from '@/contexts/RepositoryContext';
@@ -291,10 +292,12 @@ export function Header() {
               </button>
               {/* Logo */}
               <Link href="/dashboard" className="flex items-center">
-                <img
+                <Image
                   src="/GitTLDR_logo.png"
                   alt="GitTLDR Logo"
-                  className="w-8 h-8 rounded-lg object-contain bg-transparent"
+                  width={32}
+                  height={32}
+                  className="rounded-lg object-contain bg-transparent"
                   style={{ background: 'none' }}
                 />
                 <span className="ml-2 text-xl font-bold text-slate-900 dark:text-white hidden sm:block">GitTLDR</span>
@@ -484,10 +487,12 @@ export function Header() {
                   className="flex items-center space-x-2 p-1 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 rounded-lg transition-colors"
                 >
                   {userData?.avatarUrl ? (
-                    <img 
+                    <Image 
                       src={userData.avatarUrl} 
                       alt={userData.name || 'User'} 
-                      className="w-8 h-8 rounded-full object-cover"
+                      width={32}
+                      height={32}
+                      className="rounded-full object-cover"
                       onError={(e) => {
                         // If avatar fails to load, hide it and show fallback
                         (e.target as HTMLImageElement).style.display = 'none';

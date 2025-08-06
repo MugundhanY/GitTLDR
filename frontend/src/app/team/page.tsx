@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
+import Image from 'next/image'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { useRepository } from '@/contexts/RepositoryContext'
 import {
@@ -420,10 +421,12 @@ export default function TeamPage() {
                           {repo.description || 'No description available'}
                         </p>
                         <div className="flex items-center gap-2">
-                          <img
+                          <Image
                             src={repo.owner.avatarUrl || '/default-avatar.png'}
                             alt={repo.owner.name}
-                            className="w-6 h-6 rounded-full"
+                            width={24}
+                            height={24}
+                            className="rounded-full"
                           />
                           <span className="text-sm text-gray-600 dark:text-gray-400">
                             by {repo.owner.name}
@@ -512,10 +515,12 @@ export default function TeamPage() {
                             className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
                           >
                             <div className="flex items-center gap-3">
-                              <img
+                              <Image
                                 src={member.avatarUrl || '/default-avatar.png'}
                                 alt={member.name}
-                                className="w-10 h-10 rounded-full"
+                                width={40}
+                                height={40}
+                                className="rounded-full"
                               />
                               <div>
                                 <div className="font-medium text-gray-900 dark:text-white">
@@ -612,10 +617,12 @@ export default function TeamPage() {
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center">
                                 {request.user.avatarUrl ? (
-                                  <img
+                                  <Image
                                     src={request.user.avatarUrl}
                                     alt={request.user.name}
-                                    className="w-full h-full rounded-full object-cover"
+                                    width={40}
+                                    height={40}
+                                    className="rounded-full object-cover"
                                   />
                                 ) : (
                                   <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
@@ -782,10 +789,12 @@ export default function TeamPage() {
                             className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
                           >
                             <div className="flex items-center gap-3">
-                              <img
+                              <Image
                                 src={setting.user.avatarUrl || '/default-avatar.png'}
                                 alt={setting.user.name}
-                                className="w-10 h-10 rounded-full"
+                                width={40}
+                                height={40}
+                                className="rounded-full"
                               />
                               <div>
                                 <div className="font-medium text-gray-900 dark:text-white">

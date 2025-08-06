@@ -125,7 +125,7 @@ export default function SupportPage() {
           >
             <HeartIcon className="h-5 w-5 text-emerald-600 dark:text-emerald-400 mr-2" />
             <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
-              We're here to help
+              We&apos;re here to help
             </span>
           </motion.div>
 

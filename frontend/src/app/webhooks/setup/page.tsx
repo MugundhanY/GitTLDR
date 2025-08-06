@@ -194,12 +194,12 @@ export default function WebhookSetupPage() {
                   <ol className="text-sm text-amber-700 dark:text-amber-300 space-y-1 list-decimal list-inside">
                     <li>Go to your GitHub repository settings</li>
                     <li>Navigate to Webhooks section</li>
-                    <li>Click "Add webhook"</li>
+                    <li>Click &quot;Add webhook&quot;</li>
                     <li>Paste the webhook URL above</li>
-                    <li>Set Content type to "application/json"</li>
+                    <li>Set Content type to &quot;application/json&quot;</li>
                     <li>Add the webhook secret</li>
-                    <li>Select "Push events" and "Repository events"</li>
-                    <li>Click "Add webhook"</li>
+                    <li>Select &quot;Push events&quot; and &quot;Repository events&quot;</li>
+                    <li>Click &quot;Add webhook&quot;</li>
                   </ol>
                 </div>
               </div>
@@ -241,7 +241,7 @@ export default function WebhookSetupPage() {
                     required
                   />
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                    Token needs 'admin:repo_hook' and 'repo' permissions. 
+                    Token needs &apos;admin:repo_hook&apos; and &apos;repo&apos; permissions. 
                     <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline ml-1">
                       Create token →
                     </a>

@@ -51,8 +51,16 @@ interface NotificationProviderProps {
 export function NotificationProvider({ children }: NotificationProviderProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  // Fetch notifications from backend API on mount
+  // Fetch notifications from backend API on mount, only if session cookie exists
   useEffect(() => {
+    function hasSessionCookie() {
+      if (typeof document === 'undefined') return false;
+      return document.cookie.split(';').some(cookie => cookie.trim().startsWith('gittldr_session='));
+    }
+    if (!hasSessionCookie()) {
+      setNotifications([]);
+      return;
+    }
     async function fetchNotifications() {
       try {
         const response = await fetch('/api/notifications');
@@ -71,7 +79,7 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
         }));
         setNotifications(notificationsWithDates);
       } catch (error) {
-        console.error('Failed to fetch notifications:', error);
+        // Silently handle fetch error
       }
     }
     fetchNotifications();
@@ -172,17 +180,11 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
     }
   }, [notifications.length]);
 
-  // Only count unread notifications that are not demo notifications
-  // If there are any real notifications, only count unread real notifications. Otherwise, count all unread notifications (including demo).
-  // Always only count unread notifications that are not demo notifications
-  // If there are any real notifications, only count unread real notifications. Otherwise, count all unread notifications (including demo)
-  // Always only count unread notifications that are not demo notifications
-  // If there are any real notifications, only count unread real notifications. Otherwise, count all unread notifications (including demo)
-  // Always only count unread notifications that are not demo notifications
+  // Count only real (non-demo) unread notifications
   const hasRealNotifications = notifications.some(n => n.id && !String(n.id).startsWith('demo-'));
-  const unreadCount = hasRealNotifications
-    ? notifications.filter(n => !n.read && n.id && !String(n.id).startsWith('demo-')).length
-    : notifications.filter(n => !n.read).length;
+  const unreadCount = notifications.filter(n => 
+    !n.read && n.id && !String(n.id).startsWith('demo-')
+  ).length;
 
   const addNotification = (notificationData: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
     const newNotification: Notification = {
