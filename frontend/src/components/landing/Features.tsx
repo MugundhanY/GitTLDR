@@ -125,8 +125,19 @@ export default function Features() {
                             boxShadow: 'inset 0 .5px 2px -1px #fff9, inset 0 10px 10px -1px #ffffff14, 0 10px 50px -10px #ffffff80',
                         }}>
                         <svg viewBox="0 0 24 24" className="w-6 h-6">
-                            <path d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3ZM19 19H5V5H19V19Z" fill="transparent" strokeWidth="1.5" stroke="white" />
-                            <path d="M7 7H17V9H7V7ZM7 11H17V13H7V11ZM7 15H13V17H7V15Z" fill="#3399FF" />
+                            <path d="M 21.5 5.5 C 21.5 7.157 20.157 8.5 18.5 8.5 C 16.843 8.5 15.5 7.157 15.5 5.5 C 15.5 3.843 16.843 2.5 18.5 2.5 C 20.157 2.5 21.5 3.843 21.5 5.5 Z" fill="transparent" strokeWidth="1.5" stroke="rgb(255, 255, 255)" strokeMiterlimit="10" strokeDasharray=""></path>
+      <path d="M 21.495 11 C 21.495 11 21.5 11.34 21.5 12 C 21.5 16.478 21.5 18.718 20.109 20.109 C 18.717 21.5 16.479 21.5 12 21.5 C 7.522 21.5 5.282 21.5 3.891 20.109 C 2.5 18.717 2.5 16.479 2.5 12 C 2.5 7.522 2.5 5.283 3.891 3.891 C 5.282 2.5 7.521 2.5 12 2.5 L 13 2.5" fill="transparent" strokeWidth="1.5" stroke="rgb(255, 255, 255)" strokeLinecap="round" strokeLinejoin="round" strokeDasharray=""></path>
+                            <path
+  d="M 6.5 17.5 L 6.5 14.5 M 11.5 17.5 L 11.5 8.5 M 16.5 17.5 L 16.5 13.5"
+  fill="transparent"
+  strokeWidth="1.5"
+  stroke="#3399FF"
+  strokeLinecap="round"
+  strokeMiterlimit="10"
+  strokeDasharray=""
+  transform="rotate(90 12 12)"
+/>
+
                         </svg>
                     </div>
                     <h4 className="text-base pt-2 text-white font-inter font-normal">Meeting Intelligence</h4>
@@ -157,8 +168,23 @@ export default function Features() {
                             boxShadow: 'inset 0 .5px 2px -1px #fff9, inset 0 10px 10px -1px #ffffff14, 0 10px 50px -10px #ffffff80',
                         }}>
                         <svg viewBox="0 0 24 24" className="w-6 h-6">
-                            <path d="M12 2L14.5 7H20L16 10.5L17.5 16L12 13L6.5 16L8 10.5L4 7H9.5L12 2Z" fill="transparent" strokeWidth="1.5" stroke="white" />
-                            <path d="M12 8V13L15 11L12 8Z" fill="#3399FF" />
+                            <path
+        d="M 2 12 C 2 8.31 2 6.466 2.814 5.159 C 3.108 4.684 3.481 4.263 3.919 3.916 C 5.08 3 6.72 3 10 3 L 14 3 C 17.28 3 18.919 3 20.081 3.916 C 20.511 4.254 20.885 4.675 21.186 5.159 C 22 6.466 22 8.31 22 12 C 22 15.69 22 17.534 21.186 18.841 C 20.892 19.316 20.519 19.737 20.081 20.084 C 18.92 21 17.28 21 14 21 L 10 21 C 6.72 21 5.081 21 3.919 20.084 C 3.481 19.737 3.108 19.316 2.814 18.841 C 2 17.534 2 15.69 2 12 Z"
+        fill="transparent"
+        strokeWidth="1.5"
+        stroke="rgb(255, 255, 255)"
+        strokeMiterlimit="10"
+        strokeDasharray=""
+      />
+                            <path
+        d="M 7.5 15 L 9.342 9.474 C 9.437 9.191 9.702 9.001 10 9.001 C 10.298 9.001 10.563 9.191 10.658 9.474 L 12.5 15 M 15.5 9 L 15.5 15 M 8.5 13 L 11.5 13"
+        fill="transparent"
+        strokeWidth="1.5"
+        stroke="#3399FF"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeDasharray=""
+      />
                         </svg>
                     </div>
                     <h4 className="text-base pt-2 text-white font-inter font-normal">AI Repository Intelligence</h4>

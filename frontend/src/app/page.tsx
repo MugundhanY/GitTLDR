@@ -4,6 +4,9 @@ import Navbar from '@/components/landing/Navbar'
 import SmoothScrollProvider from './SmoothScrollProvider'
 import Link from 'next/link'
 import Benefits from '@/components/landing/Benefits'
+import Testimonials from '@/components/landing/Testimonials'
+import Pricing from '@/components/landing/Pricing'
+import FAQ from '@/components/landing/FAQ'
 
 export default function Home() {
   return (
@@ -13,6 +16,9 @@ export default function Home() {
         <Hero />
         <Features />
         <Benefits />
+        <Testimonials />
+        <Pricing />
+        <FAQ />
       </div>
     </SmoothScrollProvider>
   )

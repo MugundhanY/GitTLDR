@@ -230,6 +230,10 @@ body {
     transition-duration: 900ms;
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   }
+  
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease;
+  }
 }
 
 /* Custom animations for enhanced dashboard */
