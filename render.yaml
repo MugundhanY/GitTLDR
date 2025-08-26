@@ -1,0 +1,43 @@
+services:
+  # Node.js Worker (Web Service)
+  - type: web
+    name: gittldr-node-worker
+    runtime: node
+    buildCommand: cd node-worker && npm ci
+    startCommand: cd node-worker && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: neon-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: upstash-redis
+          property: connectionString
+    healthCheckPath: /health
+
+  # Python Worker (Background Worker)  
+  - type: worker
+    name: gittldr-python-worker
+    runtime: python
+    buildCommand: cd python-worker && pip install -r requirements.txt
+    startCommand: cd python-worker && python worker.py
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: neon-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: upstash-redis
+          property: connectionString
+      - key: QDRANT_URL
+        value: YOUR_QDRANT_CLOUD_URL
+      - key: QDRANT_API_KEY
+        value: YOUR_QDRANT_API_KEY
+
+databases: []  # Using external Neon DB

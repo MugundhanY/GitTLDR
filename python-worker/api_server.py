@@ -54,8 +54,13 @@ async def lifespan(app: FastAPI):
         logger.info("Shutting down python-worker API server")
         try:
             await redis_client.disconnect()
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Redis disconnect error: {str(e)}")
+        try:
+            await qdrant_client.disconnect()
+        except Exception as e:
+            logger.warning(f"Qdrant disconnect error: {str(e)}")
+        logger.info("🛑 API server shutdown complete")
 
 # Create FastAPI app
 app = FastAPI(

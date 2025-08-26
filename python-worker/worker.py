@@ -78,22 +78,35 @@ class GitTLDRWorker:
         logger.info("All services connected")
         
     async def _process_loop(self) -> None:
-        """Main processing loop."""
+        """Main processing loop with exponential backoff."""
         logger.info("Starting task processing loop")
+        
+        idle_count = 0
+        max_timeout = 300  # Maximum 5 minutes
+        base_timeout = 10  # Start with 10 seconds
         
         while self.running:
             try:
+                # Calculate timeout with exponential backoff
+                timeout = min(base_timeout * (2 ** min(idle_count, 4)), max_timeout)
+                
                 # Pop task from queue
-                task_data = await redis_client.pop_task(timeout=30)
+                task_data = await redis_client.pop_task(timeout=timeout)
                 
                 if not task_data:
-                    continue  # Timeout, continue loop
+                    idle_count += 1
+                    logger.debug(f"No tasks found, sleeping for {timeout}s (idle_count: {idle_count})")
+                    continue  # Timeout, continue loop with longer timeout
+                
+                # Reset idle count when task is found
+                idle_count = 0
                     
                 # Process task
                 await self._process_task(task_data)
                 
             except Exception as e:
                 logger.error("Error in processing loop", error=str(e))
+                idle_count += 1
                 await asyncio.sleep(5)  # Brief pause before retrying
                 
     async def _process_task(self, task_data: Dict[str, Any]) -> None:
