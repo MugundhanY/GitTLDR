@@ -115,7 +115,7 @@ export default function Hero() {
                     width: calc(200% + 0); /* Double width plus gap compensation */
                 }
             `}</style>
-            <section className="w-full flex flex-col items-center justify-center md:pt-44 pt-32 pb-16 px-4" style={{ position: 'relative' }}>
+            <section className="w-full flex flex-col items-center justify-center md:pt-44 pt-32 pb-16 px-4" style={{ position: 'relative' }} id="hero">
 
                 {/* Content Wrapper */}
                 <div className="relative z-10 w-full flex flex-col items-center" style={getAnimationStyle(0)}>
@@ -231,7 +231,7 @@ export default function Hero() {
                         </Link>
                         <Link
                             href="/"
-                            className="px-4 flex items-center justify-center py-3 rounded-xl font-medium text-right bg-[#14161A] text-stone-400 hover:text-white shadow-lg font-inter"
+                            className="px-4 flex items-center justify-center py-3 rounded-xl font-medium text-right bg-[#14161a]  text-stone-400 hover:text-white shadow-lg font-inter"
                             style={{
                                 boxShadow: "rgba(255,255,255,0.235) 0px 0.6px 3px -1.6px inset, rgba(255,255,255,0.192) 0px 2.2px 11.4px -3.3px inset",
                                 lineHeight: '1em',
@@ -458,7 +458,7 @@ export default function Hero() {
                     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
                         <iframe
                             title="Youtube Video"
-                            src="https://www.youtube.com/embed/6xJWQRVl9nw?iv_load_policy=3&rel=0&modestbranding=1&playsinline=1&autoplay=0"
+                            src="https://www.youtube.com/embed/LzxLO-JsHg8?iv_load_policy=3&rel=0&modestbranding=1&playsinline=1&autoplay=0"
                             frameBorder="0"
                             allow="presentation; fullscreen; accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
                             style={{

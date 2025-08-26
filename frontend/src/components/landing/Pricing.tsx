@@ -5,7 +5,7 @@ import { useState } from "react";
 export default function Pricing() {
     const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annually'>('annually');
     return (
-        <section className="w-full flex flex-col items-center justify-center md:pt-20 pt-20 pb-16 px-4" style={{ position: 'relative' }}>
+        <section className="w-full flex flex-col items-center justify-center md:pt-20 pt-20 pb-16 px-4" style={{ position: 'relative' }} id="pricing">
             {/* Pricing Badge */}
             <div className="flex justify-center mb-6">
                 <div 
@@ -53,7 +53,7 @@ export default function Pricing() {
 
             {/* Subheadline */}
             <p className="text-center text-white/60 font-inter font-normal text-base mx-auto mb-12 max-w-lg lg:max-w-2xl md:max-w-xl">
-                Whether you're just starting or scaling up, Aurix has a plan that fits your needs.
+                From solo developers to enterprise teams, GitTLDR scales with your repository intelligence needs.
             </p>
             {/* Billing Period Toggle */}
             <div className="flex justify-center mb-12">
@@ -166,7 +166,7 @@ export default function Pricing() {
   <h3 className="text-white text-4xl md:text-5xl font-medium">$0</h3>
   <h3 className="text-white text-xs md:text-sm font-medium pb-1">Forever</h3>
 </div>
-                        <p className="text-white/60 text-[0.95rem] mb-7">Perfect for small teams and startups</p>
+                        <p className="text-white/60 text-[0.95rem] mb-7">Perfect for individual developers and small projects</p>
                         <a
   href="/auth"
   className="block bg-white text-[#07090E] font-bold text-center py-2 rounded-xl mb-2 shadow transition transform hover:shadow-[0_0_20px_rgba(255,255,255,0.4)] text-sm md:text-base"
@@ -178,11 +178,11 @@ export default function Pricing() {
 </p>        <div className="w-full h-[0.1rem] bg-white/10 rounded my-3 mb-5" />
                         <p className="text-white text-base font-medium mb-4">Free Plan includes</p>
                         <ul className="mb-4">
-                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Collaborate with up to 3 teammates</li>
-                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Core task management features</li>
-                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Unlimited projects and tasks</li>
-                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Board and list views</li>
-                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Basic integrations</li>
+                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Up to 3 repositories</li>
+                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Basic AI-powered commit summaries</li>
+                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Repository activity dashboard</li>
+                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Basic GitHub integration</li>
+                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Community support</li>
                         </ul>
                     </div>
                 </div>
@@ -214,10 +214,10 @@ export default function Pricing() {
                         <p className="text-white/60 text-lg font-medium mb-6">Pro</p>
                         <div className="flex items-end space-x-2 mb-4">
   <h3 className="text-white text-4xl md:text-5xl font-medium">
-  {billingPeriod === 'monthly' ? '$19' : '$16'}</h3>
+  {billingPeriod === 'monthly' ? '$29' : '$25'}</h3>
   <h3 className="text-white text-xs md:text-sm font-medium pb-1">per month</h3>
 </div>
-                        <p className="text-white/60 text-[0.95rem] mb-7">Advanced tools for growing teams.</p>
+                        <p className="text-white/60 text-[0.95rem] mb-7">AI-powered repository intelligence for growing teams</p>
                         <a
   href="/auth"
   className="block bg-white text-[#07090E] font-bold text-center py-2 rounded-xl mb-2 shadow transition transform hover:shadow-[0_0_20px_rgba(255,255,255,0.4)] text-sm md:text-base"
@@ -227,10 +227,10 @@ export default function Pricing() {
 </p>        <div className="w-full h-[0.1rem] bg-white/50 rounded my-3 mb-5" />
                         <p className="text-white text-base font-medium mb-4">All Free plan features, plus</p>
                         <ul className="mb-4">
-                            <li className="flex items-center gap-2 text-white text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Collaborate with up to 10 teammates</li>
-                            <li className="flex items-center gap-2 text-white text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Custom workflows and templates</li>
-                            <li className="flex items-center gap-2 text-white text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Advanced tracking & reports</li>
-                            <li className="flex items-center gap-2 text-white text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Priority integrations</li>
+                            <li className="flex items-center gap-2 text-white text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Up to 15 repositories</li>
+                            <li className="flex items-center gap-2 text-white text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Advanced AI summaries & insights</li>
+                            <li className="flex items-center gap-2 text-white text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Meeting transcription & linking</li>
+                            <li className="flex items-center gap-2 text-white text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Real-time team coordination</li>
                             <li className="flex items-center gap-2 text-white text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Email support</li>
                         </ul>
                     </div>
@@ -248,12 +248,12 @@ export default function Pricing() {
                     {/* Dots pattern */}
                     <div className="absolute inset-0 pointer-events-none rounded-2xl -z-10" style={{backgroundImage: 'url(/landing/background.png?scale-down-to=1024)', backgroundRepeat: 'repeat', backgroundSize: '267.5px', mask: 'linear-gradient(0deg, rgba(0,0,0,0) 0%, #000 100%)'}} />
                     <div className="relative z-10">
-                        <p className="text-white/60 text-lg font-medium mb-6">Team</p>
+                        <p className="text-white/60 text-lg font-medium mb-6">Enterprise</p>
                         <div className="flex items-end space-x-2 mb-5">
-  <h3 className="text-white text-4xl md:text-5xl font-medium">{billingPeriod === 'monthly' ? '$49' : '$42'}</h3>
+  <h3 className="text-white text-4xl md:text-5xl font-medium">{billingPeriod === 'monthly' ? '$79' : '$67'}</h3>
   <h3 className="text-white text-xs md:text-sm font-medium pb-1">per month</h3>
 </div>
-                        <p className="text-white/60 text-[0.95rem] mb-7">Complete collaboration for larger teams.</p>
+                        <p className="text-white/60 text-[0.95rem] mb-7">Enterprise-grade repository intelligence at scale</p>
                         <a
   href="/auth"
   className="block bg-white text-[#07090E] font-bold text-center py-2 rounded-xl mb-2 shadow transition transform hover:shadow-[0_0_20px_rgba(255,255,255,0.4)] text-sm md:text-base"
@@ -263,11 +263,11 @@ export default function Pricing() {
 </p>        <div className="w-full h-[0.1rem] bg-white/10 rounded my-3 mb-4" />
                         <p className="text-white text-base font-medium mb-4">All Pro plan features, plus</p>
                         <ul className="mb-4">
-                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Up to 25 teammates</li>
-                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Unlimited workflows & automations</li>
-                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Real-time analytics</li>
-                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Premium integrations</li>
-                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Priority support</li>
+                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Unlimited repositories</li>
+                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Advanced semantic search & embeddings</li>
+                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Custom analytics & reporting</li>
+                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>API access & webhooks</li>
+                            <li className="flex items-center gap-2 text-white/60 text-sm md:text-base font-normal mb-2"><svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>Priority support & onboarding</li>
                         </ul>
                     </div>
                 </div>

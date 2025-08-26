@@ -35,7 +35,7 @@ export default function TeamCollaborationHub({ hoveredCard, setHoveredCard }: Te
                         </h3>
                         <p className="text-white/50 text-base lg:text-sm font-inter mb-10">
                             Real-time notifications, repository sharing, and team coordination. 
-                            Know who's working on what with instant updates and context.
+                            Know who&apos;s working on what with instant updates and context.
                         </p>
                     </div>
                 

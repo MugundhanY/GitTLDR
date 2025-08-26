@@ -3,29 +3,29 @@ import React, { useState } from "react";
 
 const faqs = [
   {
-    question: "What is Aurix and how does it work?",
+    question: "What is GitTLDR and how does it work?",
     answer:
-      "Aurix is a collaborative platform designed to streamline teamwork and productivity. It offers tools for project management, integrations, and real-time collaboration to help teams work efficiently.",
+      "GitTLDR is an AI-powered repository intelligence platform that transforms how development teams understand and collaborate on code. It analyzes your repositories, generates intelligent summaries, transcribes meetings, and provides real-time team coordination to make repository management actually efficient.",
   },
   {
-    question: "Can I use Aurix for free?",
+    question: "Can I use GitTLDR for free?",
     answer:
-      "Yes! Aurix offers a free plan with essential features for small teams and startups. You can upgrade anytime as your needs grow.",
+      "Yes! GitTLDR offers a free plan that includes up to 3 repositories, basic AI-powered commit summaries, repository activity dashboard, and GitHub integration. Perfect for individual developers and small projects.",
   },
   {
-    question: "What integrations does Aurix support?",
+    question: "What makes GitTLDR's AI different?",
     answer:
-      "Aurix supports a wide range of integrations including GitHub, Slack, Google Drive, and more to fit seamlessly into your workflow.",
+      "GitTLDR uses advanced AI models (Gemini and DeepSeek) combined with vector embeddings to provide context-aware repository analysis. Instead of keyword search, you get semantic understanding of code relationships, intelligent summaries, and answers that actually understand your codebase.",
   },
   {
-    question: "How secure is Aurix?",
+    question: "How does the meeting transcription feature work?",
     answer:
-      "Aurix uses industry-standard security practices, including data encryption and regular audits, to keep your information safe.",
+      "GitTLDR automatically transcribes your development meetings and intelligently links decisions and discussions back to specific code changes or repository events. This ensures team knowledge doesn't get lost and provides context for future code reviews.",
   },
   {
-    question: "Can I upgrade or change my plan later?",
+    question: "Is my code and repository data secure?",
     answer:
-      "Absolutely! You can upgrade, downgrade, or change your plan at any time from your account settings.",
+      "Absolutely. GitTLDR uses industry-standard security practices including data encryption, secure API connections, and follows GitHub's security protocols. Your code is processed securely and we never store sensitive repository content longer than necessary for analysis.",
   },
 ];
 
@@ -84,7 +84,7 @@ export default function FAQ() {
           </h1>
           {/* Subheadline */}
           <p className="text-white/60 font-inter font-normal text-base mb-12 max-w-xl lg:max-w-xl md:max-w-lg sm:mb-6">
-            Find answers to common questions about Aurix and its capabilities.
+            Find answers to common questions about GitTLDR&apos;s AI-powered repository intelligence platform.
           </p>
         </div>
         {/* Right: FAQ List */}

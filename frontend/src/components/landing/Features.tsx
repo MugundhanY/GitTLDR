@@ -20,7 +20,7 @@ export default function Features() {
     }, []);
 
     return (
-        <section className="w-full flex flex-col items-center justify-center md:pt-20 pt-20 pb-16 px-4" style={{ position: 'relative' }}>
+        <section className="w-full flex flex-col items-center justify-center md:pt-20 pt-20 pb-16 px-4" style={{ position: 'relative' }} id="features">
             {/* Features Badge */}
             <div className="flex justify-center mb-6">
                 <div 
