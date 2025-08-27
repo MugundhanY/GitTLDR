@@ -1,17 +1,30 @@
 # Use Node.js 18 Alpine for smaller image size
 FROM node:18-alpine
 
+# Install curl for health checks
+RUN apk add --no-cache curl
+
 # Set working directory
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
+COPY tsconfig.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install ALL dependencies (including devDependencies for building)
+RUN npm ci
 
-# Copy source code
+# Copy source code (excluding sensitive files via .dockerignore)
 COPY . .
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Build TypeScript to JavaScript
+RUN npm run build
+
+# Remove devDependencies to reduce image size
+RUN npm ci --only=production && npm cache clean --force
 
 # Expose port
 EXPOSE 3001

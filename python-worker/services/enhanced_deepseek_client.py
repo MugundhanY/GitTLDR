@@ -126,7 +126,9 @@ Write naturally as if explaining your thought process to a colleague. Use comple
                     if update.choices and update.choices[0].delta:
                         content_chunk = update.choices[0].delta.content or ""
                         if content_chunk:
-                            logger.info(f"[DeepSeek STREAM] Reasoning step: {content_chunk[:120].replace('\n',' ')} ...")
+                            # Fix f-string backslash issue
+                            clean_content = content_chunk[:120].replace('\n', ' ')
+                            logger.info(f"[DeepSeek STREAM] Reasoning step: {clean_content} ...")
                             full_content += content_chunk
                             paragraph_buffer += content_chunk
                             

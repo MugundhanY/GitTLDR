@@ -947,11 +947,15 @@ if __name__ == "__main__":
     logger.info(f"Health check: http://localhost:8001/health")
     
     # Run the server
+    # Disable reload in production (based on environment)
+    import os
+    is_development = os.getenv("NODE_ENV", "production") == "development"
+    
     uvicorn.run(
         "api_server:app",
         host="0.0.0.0",
         port=8001,
-        reload=True,  # Enable auto-reload for development
+        reload=is_development,  # Only enable auto-reload in development
         log_level="info",
         access_log=True
     )

@@ -15,6 +15,11 @@ aiohttp
 azure-ai-inference
 structlog
 rich
+pydub
+
+# Audio processing dependencies
+faster-whisper
+openai-whisper
 
 # Optional dependencies for better performance
 torch

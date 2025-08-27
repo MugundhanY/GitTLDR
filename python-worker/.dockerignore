@@ -1,0 +1,71 @@
+# Ignore sensitive files
+.env*
+*.env
+.env.local
+.env.production
+.env.development
+
+# Ignore Git files
+.git
+.gitignore
+.gitattributes
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Ignore temporary files
+tmp/
+temp/
+.tmp/
+
+# Ignore build artifacts
+dist/
+build/
+.next/
+
+# Ignore documentation
+README.md
+DEPLOYMENT.md
+RAILWAY_DEPLOYMENT.md
+DEPLOYMENT_CHECKLIST.md
+*.md
+
+# Ignore deployment scripts
+build-and-push.*
+deploy.*
+
+# Ignore test files
+test/
+tests/
+__tests__/
+*.test.*
+*.spec.*
+
+# Ignore cache directories
+node_modules/
+.npm/
+.yarn/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Ignore coverage reports
+coverage/
+.coverage
+.nyc_output/
