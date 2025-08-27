@@ -1,0 +1,18 @@
+User-agent: *
+Allow: /
+
+# Important pages for SEO
+Allow: /$
+Allow: /login
+Allow: /signup
+Allow: /pricing
+Allow: /features
+
+# Block sensitive paths
+Disallow: /api/
+Disallow: /admin/
+Disallow: /_next/
+Disallow: /private/
+
+# Sitemap location
+Sitemap: https://gittldr.vercel.app/sitemap.xml
