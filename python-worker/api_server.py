@@ -115,6 +115,29 @@ async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "service": "python-worker"}
 
+@app.get("/debug/gemini-status")
+async def debug_gemini_status():
+    """Debug endpoint to check Gemini client status."""
+    try:
+        from services.gemini_client import gemini_client
+        status = gemini_client.get_rate_limit_status()
+        return status
+    except Exception as e:
+        return {"error": str(e), "configured": False}
+
+@app.post("/debug/reset-circuit-breakers")
+async def debug_reset_circuit_breakers():
+    """Debug endpoint to reset all circuit breakers."""
+    try:
+        from services.gemini_client import gemini_client
+        gemini_client.reset_circuit_breakers()
+        return {
+            "message": "Circuit breakers reset successfully",
+            "status": gemini_client.get_rate_limit_status()
+        }
+    except Exception as e:
+        return {"error": str(e), "message": "Failed to reset circuit breakers"}
+
 @app.post("/get-thinking-context", response_model=ThinkingContextResponse)
 async def get_thinking_context_endpoint(request: ThinkingContextRequest):
     """

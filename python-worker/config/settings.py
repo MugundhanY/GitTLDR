@@ -17,9 +17,14 @@ class Settings(BaseSettings):
     
     # API Keys (optional for development)
     gemini_api_key: str = "your-gemini-api-key"
+    # Multiple Gemini API keys for rotation (comma-separated)
+    gemini_api_keys: Optional[str] = None  # Format: "key1,key2,key3"
     deepseek_api_key: Optional[str] = None
     github_token: Optional[str] = None
     qdrant_api_key: Optional[str] = None
+    
+    # Embedding Configuration
+    use_gemini_embeddings: bool = False  # Set to True to use Gemini, False for local model
       # Service URLs
     redis_url: str = "redis://localhost:6379"
     qdrant_url: str = "http://localhost:6333"
