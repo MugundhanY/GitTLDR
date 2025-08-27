@@ -165,52 +165,19 @@ export default function MeetingQA({ meetingId, segments, onSeekTo, className = '
     } catch (error) {
       console.error('Failed to ask question:', error);
       
-      // Update optimistic question with error message or fallback to mock
-      const mockAnswer = generateMockAnswer(currentQuestion);
+      // Update optimistic question with error state
       setQAHistory(prev => prev.map(qa => 
         qa.id === optimisticId ? 
         {
           ...qa,
-          answer: mockAnswer.answer,
-          timestamp: mockAnswer.timestamp,
-          relatedSegments: mockAnswer.segments,
-          confidence: mockAnswer.confidence
+          answer: 'Unable to answer this question at the moment. Please try again later.',
+          timestamp: 0,
+          relatedSegments: [],
+          confidence: 0
         } : qa
       ));
     } finally {
       setIsAsking(false);
-    }
-  };
-
-  const generateMockAnswer = (currentQuestion: string) => {
-    if (currentQuestion.toLowerCase().includes('summary') || currentQuestion.toLowerCase().includes('overview')) {
-      return {
-        answer: 'This meeting covered three main topics: project status updates, upcoming deadlines, and resource allocation. The team discussed the current sprint progress, identified potential blockers, and made decisions about feature prioritization for the next release.',
-        timestamp: 60,
-        segments: ['segment-1', 'segment-2'],
-        confidence: 0.9
-      };
-    } else if (currentQuestion.toLowerCase().includes('timeline') || currentQuestion.toLowerCase().includes('deadline')) {
-      return {
-        answer: 'The key timelines mentioned were: Feature freeze by Friday, Code review completion by Monday, QA testing phase from Tuesday to Thursday, and production deployment scheduled for next Friday. The team emphasized the importance of meeting these deadlines to stay on track.',
-        timestamp: 180,
-        segments: ['segment-2', 'segment-3'],
-        confidence: 0.87
-      };
-    } else if (currentQuestion.toLowerCase().includes('decision') || currentQuestion.toLowerCase().includes('conclude')) {
-      return {
-        answer: 'The main decisions made during this meeting were: 1) Proceed with the React component library upgrade, 2) Implement automated testing for all new features, 3) Schedule weekly code review sessions, and 4) Allocate additional resources to the performance optimization team.',
-        timestamp: 300,
-        segments: ['segment-4', 'segment-5'],
-        confidence: 0.85
-      };
-    } else {
-      return {
-        answer: `I found relevant information about "${currentQuestion}" in the meeting transcript. The discussion touched on this topic around the middle of the meeting, with specific details about implementation approaches and team responsibilities. The conversation included various perspectives from team members and resulted in actionable next steps.`,
-        timestamp: Math.floor(Math.random() * 600) + 60,
-        segments: [`segment-${Math.floor(Math.random() * 6) + 1}`],
-        confidence: 0.75 + Math.random() * 0.2
-      };
     }
   };
 

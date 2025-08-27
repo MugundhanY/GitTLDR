@@ -6,7 +6,16 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    """Application settings."""    # API Keys (optional for development)
+    """Application settings."""
+    
+    # Environment Configuration
+    node_env: str = "production"
+    
+    # Service URLs for CORS configuration
+    frontend_url: str = "https://gittldr.vercel.app"
+    node_worker_url: str = ""
+    
+    # API Keys (optional for development)
     gemini_api_key: str = "your-gemini-api-key"
     deepseek_api_key: Optional[str] = None
     github_token: Optional[str] = None

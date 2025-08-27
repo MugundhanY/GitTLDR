@@ -4,7 +4,8 @@ export async function GET(request: NextRequest) {
   try {
     // Get GitHub OAuth credentials from environment variables
     const githubClientId = process.env.GITHUB_CLIENT_ID
-    const redirectUri = encodeURIComponent(`${process.env.NEXT_PUBLIC_APP_URL}/api/auth/github/callback`)
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'https://gittldr.vercel.app'
+    const redirectUri = encodeURIComponent(`${baseUrl}/api/auth/github/callback`)
     
     if (!githubClientId) {
       console.error('Missing GitHub client ID in environment variables');

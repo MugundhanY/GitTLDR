@@ -71,9 +71,38 @@ app = FastAPI(
 )
 
 # Add CORS middleware
+from config.settings import get_settings
+
+# Get settings instance
+settings = get_settings()
+
+# Get service URLs from settings
+frontend_url = settings.frontend_url
+node_worker_url = settings.node_worker_url
+
+allowed_origins = [
+    frontend_url,  # Production frontend
+    "http://localhost:3000",      # Local development frontend
+    "http://localhost:3001",      # Local node worker
+]
+
+# Add production node worker URL if provided
+if node_worker_url:
+    allowed_origins.append(node_worker_url)
+    # Also add without trailing slash if it has one
+    if node_worker_url.endswith('/'):
+        allowed_origins.append(node_worker_url.rstrip('/'))
+
+# Add development origins if in development mode
+if settings.node_env == "development":
+    allowed_origins.extend([
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+    ])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],  # Frontend URLs
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -948,8 +977,7 @@ if __name__ == "__main__":
     
     # Run the server
     # Disable reload in production (based on environment)
-    import os
-    is_development = os.getenv("NODE_ENV", "production") == "development"
+    is_development = settings.node_env == "development"
     
     uvicorn.run(
         "api_server:app",

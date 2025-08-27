@@ -43,16 +43,16 @@ export function EnhancedMeetings({ analytics }: EnhancedMeetingsProps) {
   // Enhanced metrics calculations
   const productivityScore = Math.round((completionRate + (averageDuration / 60) * 10) / 2)
   const efficiencyRating = averageDuration > 45 ? 'Needs Improvement' : averageDuration > 30 ? 'Good' : 'Excellent'
-  const participationRate = 78 // Simulated
-  const actionItemsGenerated = Math.round(totalMeetings * 2.3)
-  const followUpRate = 85 // Simulated
+  const participationRate = analytics?.participationRate || 0
+  const actionItemsGenerated = analytics?.actionItemsGenerated || 0
+  const followUpRate = analytics?.followUpRate || 0
 
   const meetingTypes = [
     { name: 'Code Review', count: Math.round(totalMeetings * 0.35), duration: 25, trend: 'up' },
     { name: 'Planning', count: Math.round(totalMeetings * 0.25), duration: 45, trend: 'up' },
     { name: 'Standup', count: Math.round(totalMeetings * 0.20), duration: 15, trend: 'stable' },
     { name: 'Retrospective', count: Math.round(totalMeetings * 0.12), duration: 60, trend: 'down' },
-    { name: 'Demo', count: Math.round(totalMeetings * 0.08), duration: 30, trend: 'up' }
+    { name: 'Presentation', count: Math.round(totalMeetings * 0.08), duration: 30, trend: 'up' }
   ]
 
   const meetingInsights = [

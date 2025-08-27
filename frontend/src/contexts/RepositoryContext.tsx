@@ -110,57 +110,9 @@ export const RepositoryProvider: React.FC<RepositoryProviderProps> = ({ children
       
       setRepositories(repositories);
     } catch (err) {
-      // For now, use mock data if API fails
-      console.warn('Failed to fetch repositories, using mock data:', err);
-      const mockRepositories: Repository[] = [
-        {
-          id: '1',
-          name: 'my-awesome-project',
-          full_name: 'user/my-awesome-project',
-          private: false,
-          language: 'TypeScript',
-          description: 'A really awesome project built with Next.js and TypeScript',
-          stargazers_count: 42,
-          open_issues_count: 3,
-          default_branch: 'main',
-          owner: {
-            login: 'user',
-            avatar_url: 'https://github.com/github.png'
-          }
-        },
-        {
-          id: '2',
-          name: 'data-processing-pipeline',
-          full_name: 'company/data-processing-pipeline',
-          private: true,
-          language: 'Python',
-          description: 'ETL pipeline for processing large datasets',
-          stargazers_count: 15,
-          open_issues_count: 8,
-          default_branch: 'main',
-          owner: {
-            login: 'company',
-            avatar_url: 'https://github.com/github.png'
-          }
-        },
-        {
-          id: '3',
-          name: 'mobile-app',
-          full_name: 'team/mobile-app',
-          private: true,
-          language: 'Swift',
-          description: 'iOS mobile application with React Native',
-          stargazers_count: 28,
-          open_issues_count: 12,
-          default_branch: 'develop',
-          owner: {
-            login: 'team',
-            avatar_url: 'https://github.com/github.png'
-          }
-        }
-      ];
-      setRepositories(mockRepositories);
-      setError(null);
+      console.error('Failed to fetch repositories:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch repositories');
+      setRepositories([]);
     } finally {
       setIsLoading(false);
     }

@@ -79,112 +79,15 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
         }));
         setNotifications(notificationsWithDates);
       } catch (error) {
-        // Silently handle fetch error
+        console.error('Failed to fetch notifications:', error);
+        setNotifications([]);
       }
     }
     fetchNotifications();
   }, []);
 
-  // Demo notifications for development
-  useEffect(() => {
-    // Only load demo notifications in development, and only if there are no real notifications in localStorage
-    const savedNotifications = localStorage.getItem('gittldr_notifications');
-    let hasRealNotifications = false;
-    try {
-      if (savedNotifications) {
-        const parsed = JSON.parse(savedNotifications);
-        hasRealNotifications = Array.isArray(parsed) && parsed.some((n: any) => n && n.id && !String(n.id).startsWith('demo-'));
-      }
-    } catch (e) {
-      hasRealNotifications = false;
-    }
-    if (
-      process.env.NODE_ENV === 'development' &&
-      notifications.length === 0 &&
-      !hasRealNotifications
-    ) {
-      const demoNotifications: Notification[] = [
-        {
-          id: 'demo-1',
-          type: 'success',
-          title: 'Repository Processing Complete',
-          message: 'Your repository "awesome-project" has been successfully processed and is ready for AI analysis.',
-          timestamp: new Date(Date.now() - 30 * 60 * 1000),
-          read: false,
-          action: {
-            label: 'View Repository',
-            href: '/dashboard'
-          },
-          metadata: {
-            repositoryName: 'awesome-project',
-            category: 'repository'
-          }
-        },
-        {
-          id: 'demo-2',
-          type: 'info',
-          title: 'New Team Member Joined',
-          message: 'Sarah Johnson has joined your GitTLDR team and now has access to your repositories.',
-          timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-          read: false,
-          metadata: {
-            category: 'team'
-          }
-        },
-        {
-          id: 'demo-3',
-          type: 'warning',
-          title: 'Credit Balance Low',
-          message: 'You have 150 credits remaining. Consider upgrading your plan to avoid service interruption.',
-          timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000),
-          read: true,
-          action: {
-            label: 'Upgrade Plan',
-            href: '/billing'
-          },
-          metadata: {
-            category: 'billing'
-          }
-        },
-        {
-          id: 'demo-4',
-          type: 'processing',
-          title: 'Repository Analysis in Progress',
-          message: 'Analyzing your repository "ml-toolkit" - 75% complete. This may take a few more minutes.',
-          timestamp: new Date(Date.now() - 10 * 60 * 1000),
-          read: false,
-          metadata: {
-            repositoryName: 'ml-toolkit',
-            processingProgress: 75,
-            category: 'repository'
-          }
-        },
-        {
-          id: 'demo-5',
-          type: 'error',
-          title: 'Repository Processing Failed',
-          message: 'Failed to process repository "broken-repo" due to unsupported file types. Please check the repository structure.',
-          timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000),
-          read: false,
-          action: {
-            label: 'Retry Processing',
-            href: '/repositories'
-          },
-          metadata: {
-            repositoryName: 'broken-repo',
-            category: 'repository'
-          }
-        }
-      ];
-      setNotifications(demoNotifications);
-    }
-  }, [notifications.length]);
-
-  // Count only real (non-demo) unread notifications
-  const hasRealNotifications = notifications.some(n => n.id && !String(n.id).startsWith('demo-'));
-  const unreadCount = notifications.filter(n => 
-    !n.read && n.id && !String(n.id).startsWith('demo-')
-  ).length;
+  // Count unread notifications
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   const addNotification = (notificationData: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
     const newNotification: Notification = {

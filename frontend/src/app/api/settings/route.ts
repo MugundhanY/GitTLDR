@@ -55,48 +55,17 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // Mock repository data for demonstration
-    const mockRepositories = repositories.length > 0 ? repositories.map(repo => ({
+    // Transform repository data
+    const repositoryData = repositories.map(repo => ({
       id: repo.id,
       name: repo.name,
       url: repo.url,
       isPrivate: repo.isPrivate || false,
       lastAnalyzed: repo.updatedAt.toISOString(),
       status: repo.description?.includes('[ARCHIVED]') ? 'archived' : 'active',
-      webhookEnabled: Math.random() > 0.5, // Random for demo
-      analysisCount: Math.floor(Math.random() * 50) + 1
-    })) : [
-      {
-        id: 'demo-1',
-        name: 'my-awesome-project',
-        url: 'https://github.com/user/my-awesome-project',
-        isPrivate: false,
-        lastAnalyzed: '2 hours ago',
-        status: 'active',
-        webhookEnabled: true,
-        analysisCount: 15
-      },
-      {
-        id: 'demo-2',
-        name: 'private-app',
-        url: 'https://github.com/user/private-app',
-        isPrivate: true,
-        lastAnalyzed: '1 day ago',
-        status: 'active',
-        webhookEnabled: false,
-        analysisCount: 8
-      },
-      {
-        id: 'demo-3',
-        name: 'old-project',
-        url: 'https://github.com/user/old-project',
-        isPrivate: false,
-        lastAnalyzed: '1 week ago',
-        status: 'archived',
-        webhookEnabled: false,
-        analysisCount: 3
-      }
-    ]
+      webhookEnabled: false, // TODO: Implement webhook status tracking
+      analysisCount: 0 // TODO: Implement analysis count tracking
+    }))
 
     const settings = {
       profile: {
@@ -127,12 +96,12 @@ export async function GET(request: NextRequest) {
         timezone: 'UTC',
         defaultAnalysisDepth: 'standard' as const
       },
-      repositories: mockRepositories,
+      repositories: repositoryData,
       stats: {
         totalRepositories: repositoryCount,
-        activeRepositories: mockRepositories.filter(r => r.status === 'active').length,
-        archivedRepositories: mockRepositories.filter(r => r.status === 'archived').length,
-        totalAnalyses: mockRepositories.reduce((sum, r) => sum + r.analysisCount, 0)
+        activeRepositories: repositoryData.filter(r => r.status === 'active').length,
+        archivedRepositories: repositoryData.filter(r => r.status === 'archived').length,
+        totalAnalyses: repositoryData.reduce((sum, r) => sum + r.analysisCount, 0)
       }
     }
 

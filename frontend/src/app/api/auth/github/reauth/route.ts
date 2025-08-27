@@ -5,7 +5,8 @@ export async function GET(request: NextRequest) {
   const scope = searchParams.get('scope') || 'user:email';
   
   const clientId = process.env.GITHUB_CLIENT_ID;
-  const redirectUri = `${process.env.NEXTAUTH_URL}/api/auth/github/callback`;
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'https://gittldr.vercel.app'
+  const redirectUri = `${baseUrl}/api/auth/github/callback`;
   
   if (!clientId) {
     return NextResponse.json({ error: 'GitHub client ID not configured' }, { status: 500 });

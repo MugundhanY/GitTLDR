@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Prepare webhook configuration
-    const webhookUrl = `${process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/github`;
+    const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/github`;
     const webhookSecret = process.env.WEBHOOK_SECRET || generateWebhookSecret();
 
     const webhookConfig = {

@@ -16,6 +16,7 @@ azure-ai-inference
 structlog
 rich
 pydub
+hf_xet
 
 # Audio processing dependencies
 faster-whisper
