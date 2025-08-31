@@ -3,6 +3,7 @@ Summarization processor for GitTLDR Python Worker.
 Handles text summarization tasks.
 """
 from typing import Dict, Any, List
+from config.settings import get_settings
 from services.gemini_client import gemini_client
 from utils.logger import get_logger
 
@@ -13,7 +14,7 @@ class SummarizationProcessor:
     """Handles summarization processing tasks."""
     
     def __init__(self):
-        pass
+        self.settings = get_settings()
     
     async def summarize_repository(self, task_data: Dict[str, Any], logger) -> Dict[str, Any]:
         """Summarize repository content."""

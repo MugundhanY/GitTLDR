@@ -110,8 +110,43 @@ app.add_middleware(
 
 app.include_router(attachments_router, prefix="/attachments", tags=["attachments"])
 
+# Health check cache to reduce Redis pings
+health_cache = {"data": None, "timestamp": 0}
+HEALTH_CACHE_TTL = 30  # Cache for 30 seconds
+
 @app.get("/health")
 async def health_check():
+    """Health check endpoint with caching to reduce Redis operations."""
+    try:
+        current_time = time.time()
+        
+        # Return cached result if still valid
+        if (health_cache["data"] and 
+            (current_time - health_cache["timestamp"]) < HEALTH_CACHE_TTL):
+            logger.debug("Returning cached health check result")
+            return health_cache["data"]
+        
+        # Perform actual health check
+        health_status = await perform_health_check()
+        
+        # Update cache
+        health_cache["data"] = health_status
+        health_cache["timestamp"] = current_time
+        
+        logger.debug("Performed fresh health check and cached result")
+        return health_status
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return {
+            "service": "python-worker-api",
+            "status": "error",
+            "error": str(e),
+            "timestamp": time.time()
+        }
+
+async def perform_health_check():
+    """Perform the actual health check operations."""
     """Health check endpoint."""
     return {"status": "healthy", "service": "python-worker"}
 
@@ -596,6 +631,8 @@ async def get_repository_files(repository_id: str, limit: int = 100):
 @app.get("/health/detailed")
 async def detailed_health_check():
     """Detailed health check with service status."""
+async def perform_health_check():
+    """Perform the actual health check operations."""
     health_status = {
         "service": "python-worker-api",
         "status": "healthy",

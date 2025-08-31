@@ -16,41 +16,35 @@ interface FileSummaryUpdate {
  * Process file summary updates from Python worker
  */
 export class FileSummaryProcessor {
-  private isProcessing = false;
 
   async start() {
     console.log('📄 Starting file summary processor...');
     
-    // Process file summaries continuously
-    setInterval(() => {
-      if (!this.isProcessing) {
-        this.processFileSummaries();
-      }
-    }, 2000); // Check every 2 seconds
+    // Use blocking Redis pop instead of polling
+    this.processFileSummariesContinuously();
   }
 
-  private async processFileSummaries() {
-    this.isProcessing = true;
-    
-    try {
-      // Get file summary update from Redis queue
-      const updateJson = await redis.rpop('file_summary_queue');
-      
-      if (!updateJson) {
-        this.isProcessing = false;
-        return;
+  private async processFileSummariesContinuously() {
+    while (true) {
+      try {
+        // Use BRPOP for blocking pop with 30 second timeout
+        const result = await redis.brpop('file_summary_queue', 30);
+        
+        if (result) {
+          const [, summaryJson] = result;
+          const summary: FileSummaryUpdate = JSON.parse(summaryJson);
+          console.log(`📄 Processing file summary for: ${summary.file_path}`);
+          
+          // Process the file summary
+          await this.updateFileSummary(summary);
+        }
+        // If no result after 30 seconds, loop continues (no Redis writes)
+        
+      } catch (error) {
+        console.error('Error in file summary processor:', error);
+        // Wait 5 seconds before retrying to avoid tight error loops
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
-
-      const update: FileSummaryUpdate = JSON.parse(updateJson);
-      console.log(`📝 Processing file summary for: ${update.file_path}`);
-
-      // Update file summary in database
-      await this.updateFileSummary(update);
-      
-    } catch (error) {
-      console.error('Error processing file summary:', error);
-    } finally {
-      this.isProcessing = false;
     }
   }
 

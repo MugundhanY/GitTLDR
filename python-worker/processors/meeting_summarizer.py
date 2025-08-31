@@ -42,6 +42,12 @@ class MeetingProcessor:
     async def update_meeting_status(self, meeting_id: str, status: str, data: Optional[dict] = None) -> None:
         """Update meeting status via Redis to notify node-worker, with optional extra data."""
         try:
+            # Skip intermediate status updates if configured
+            if (self.settings.skip_intermediate_task_status and 
+                status in ["processing", "generating_summary", "generating_qa", "uploading"]):
+                logger.debug(f"Skipping intermediate status update for meeting {meeting_id}: {status}")
+                return
+                
             status_update = {
                 "meeting_id": meeting_id,
                 "status": status,

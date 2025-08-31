@@ -116,20 +116,21 @@ class GitTLDRWorker:
         
         with TaskLogger(task_id, task_type) as task_logger:
             try:
-                # Update status to processing
-                await redis_client.update_task_status(task_id, "processing")
+                # Update status to processing (if enabled)
+                if not self.settings.skip_intermediate_task_status:
+                    await redis_client.update_task_status(task_id, "processing")
                 
                 # Route to appropriate processor
                 result = await self._route_task(task_data, task_logger)
                 
-                # Update status to completed
+                # Always update final status to completed
                 await redis_client.update_task_status(
                     task_id, "completed", result                )
                 
                 task_logger.info("Task processed successfully")
                 
             except Exception as e:
-                # Update status to failed
+                # Always update final status to failed
                 await redis_client.update_task_status(
                     task_id, "failed", {"error": str(e)}
                 )

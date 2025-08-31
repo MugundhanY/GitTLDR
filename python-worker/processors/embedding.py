@@ -5,6 +5,7 @@ Handles embedding generation and Q&A functionality with database-based file retr
 import json
 import re
 from typing import Dict, Any, List
+from config.settings import get_settings
 from services.gemini_client import gemini_client
 from services.qdrant_client import qdrant_client
 from services.redis_client import redis_client
@@ -19,7 +20,7 @@ class EmbeddingProcessor:
     """Handles embedding processing tasks with database-based file retrieval."""
     
     def __init__(self):
-        pass
+        self.settings = get_settings()
     
     async def process_repository(self, task_data: Dict[str, Any], logger) -> Dict[str, Any]:
         """Process repository embeddings."""
@@ -581,24 +582,27 @@ class EmbeddingProcessor:
             logger.info(f"Question categorized as: {categorization_result.get('category')} "
                       f"with tags: {categorization_result.get('tags')}")
             
-            # Store result in Redis for Node.js worker to process
-            result_data = {
-                "question_id": question_id,
-                "question": question,
-                "answer": answer_result["answer"],
-                "confidence": answer_result["confidence"],
-                "relevant_files": relevant_file_paths,
-                "user_id": user_id,
-                "repository_id": repository_id,
-                "context_files_used": len(files_content),
-                # Add AI-generated categorization
-                "category": categorization_result.get("category", "general"),
-                "tags": categorization_result.get("tags", ["question"]),
-                "categorization_confidence": categorization_result.get("confidence", 0.5)
-            }
-            
-            await redis_client.lpush("qna_results", json.dumps(result_data))
-            logger.info(f"Q&A result queued for storage: {question_id}")
+            # Store result in Redis for Node.js worker to process (if enabled)
+            if self.settings.store_qna_results:
+                result_data = {
+                    "question_id": question_id,
+                    "question": question,
+                    "answer": answer_result["answer"],
+                    "confidence": answer_result["confidence"],
+                    "relevant_files": relevant_file_paths,
+                    "user_id": user_id,
+                    "repository_id": repository_id,
+                    "context_files_used": len(files_content),
+                    # Add AI-generated categorization
+                    "category": categorization_result.get("category", "general"),
+                    "tags": categorization_result.get("tags", ["question"]),
+                    "categorization_confidence": categorization_result.get("confidence", 0.5)
+                }
+                
+                await redis_client.lpush("qna_results", json.dumps(result_data))
+                logger.info(f"Q&A result queued for storage: {question_id}")
+            else:
+                logger.debug(f"Q&A result storage disabled, skipping Redis write for: {question_id}")
             
             return {
                 "status": "completed",

@@ -15,33 +15,65 @@ interface CommitSummaryResult {
  * Process commit summaries and other results from Python worker
  */
 export class ResultProcessor {
-  private isProcessing = false;
 
   async start() {
-    // Process results continuously
-    setInterval(() => {
-      if (!this.isProcessing) {
-        this.processResults();
-      }
-    }, 3000); // Check every 3 seconds
-  }
-  private async processResults() {
-    this.isProcessing = true;
+    console.log('📊 Starting result processor...');
     
-    try {
-      // Process generic result queue first
-      await this.processGenericResults();
-      
-      // Process commit summary results
-      await this.processCommitSummaryResults();
-      
-      // Process QnA results
-      await this.processQnAResults();
-      
-    } catch (error) {
-      console.error('Error processing results:', error);
-    } finally {
-      this.isProcessing = false;
+    // Use blocking Redis pop instead of polling
+    this.processResultsContinuously();
+  }
+
+  private async processResultsContinuously() {
+    while (true) {
+      try {
+        // Process multiple queues with blocking operations
+        await Promise.race([
+          this.processGenericResultsBlocking(),
+          this.processCommitSummaryResultsBlocking(),
+          this.processQnAResultsBlocking()
+        ]);
+        
+      } catch (error) {
+        console.error('Error in result processor:', error);
+        // Wait 5 seconds before retrying to avoid tight error loops
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
+    }
+  }
+
+  private async processGenericResultsBlocking() {
+    const result = await redis.brpop('result_queue', 10);
+    if (result) {
+      const [, resultJson] = result;
+      const resultData = JSON.parse(resultJson);
+      console.log(`🔄 Processing generic result of type: ${resultData.type}`);
+
+      // Route to appropriate handler based on type
+      if (resultData.type === 'commit_summary') {
+        await this.handleCommitSummaryResult(resultData);
+      } else {
+        console.log(`⚠️ Unknown result type: ${resultData.type}`);
+      }
+    }
+  }
+
+  private async processCommitSummaryResultsBlocking() {
+    const result = await redis.brpop('commit_summary_results', 10);
+    if (result) {
+      const [, resultJson] = result;
+      const resultData: CommitSummaryResult = JSON.parse(resultJson);
+      console.log(`📝 Processing commit summary for: ${resultData.commit_sha}`);
+      await this.handleCommitSummaryResult(resultData);
+    }
+  }
+
+  private async processQnAResultsBlocking() {
+    const result = await redis.brpop('qna_results', 10);
+    if (result) {
+      const [, resultJson] = result;
+      const qnaResult = JSON.parse(resultJson);
+      console.log(`❓ Processing Q&A result for question: ${qnaResult.question_id}`);
+      await this.handleQnAResult(qnaResult);
     }
   }
 

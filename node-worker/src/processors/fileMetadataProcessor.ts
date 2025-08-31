@@ -23,41 +23,35 @@ interface FileMetadata {
  * Process file metadata from Redis queue and store in PostgreSQL
  */
 export class FileMetadataProcessor {
-  private isProcessing = false;
 
   async start() {
     console.log('🗃️ Starting file metadata processor...');
     
-    // Process files continuously
-    setInterval(() => {
-      if (!this.isProcessing) {
-        this.processFileMetadata();
-      }
-    }, 2000); // Check every 2 seconds
+    // Use blocking Redis pop instead of polling
+    this.processFileMetadataContinuously();
   }
 
-  private async processFileMetadata() {
-    this.isProcessing = true;
-    
-    try {
-      // Get file metadata from Redis queue
-      const metadataJson = await redis.rpop('file_metadata_queue');
-      
-      if (!metadataJson) {
-        this.isProcessing = false;
-        return;
+  private async processFileMetadataContinuously() {
+    while (true) {
+      try {
+        // Use BRPOP for blocking pop with 30 second timeout
+        const result = await redis.brpop('file_metadata_queue', 30);
+        
+        if (result) {
+          const [, metadataJson] = result;
+          const metadata: FileMetadata = JSON.parse(metadataJson);
+          console.log(`📁 Processing file metadata for: ${metadata.path}`);
+          
+          // Store file in database
+          await this.storeFileInDatabase(metadata);
+        }
+        // If no result after 30 seconds, loop continues (no Redis writes)
+        
+      } catch (error) {
+        console.error('Error in file metadata processor:', error);
+        // Wait 5 seconds before retrying to avoid tight error loops
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
-
-      const metadata: FileMetadata = JSON.parse(metadataJson);
-      console.log(`📁 Processing file metadata for: ${metadata.path}`);
-
-      // Store file in database
-      await this.storeFileInDatabase(metadata);
-      
-    } catch (error) {
-      console.error('Error processing file metadata:', error);
-    } finally {
-      this.isProcessing = false;
     }
   }  private async storeFileInDatabase(metadata: FileMetadata) {
     try {

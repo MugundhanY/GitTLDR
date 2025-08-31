@@ -1215,14 +1215,18 @@ Provide a comprehensive, technical answer that demonstrates deep understanding o
                 HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
             }
-              # Initialize sentence-transformers embedding model with error handling
-            try:
-                logger.info("Loading paraphrase-mpnet-base-v2 embedding model...")
-                self.embedding_model = SentenceTransformer('sentence-transformers/paraphrase-mpnet-base-v2')
-                logger.info("Embedding model loaded successfully")
-            except Exception as e:
-                logger.warning(f"Failed to load sentence-transformers model: {str(e)}")
-                logger.info("Using fallback embedding approach")
+              # Initialize sentence-transformers embedding model ONLY if not using Gemini embeddings
+            if not self.settings.use_gemini_embeddings:
+                try:
+                    logger.info("Loading paraphrase-mpnet-base-v2 embedding model for local embeddings...")
+                    self.embedding_model = SentenceTransformer('sentence-transformers/paraphrase-mpnet-base-v2')
+                    logger.info("Local embedding model loaded successfully")
+                except Exception as e:
+                    logger.warning(f"Failed to load sentence-transformers model: {str(e)}")
+                    logger.info("Using fallback embedding approach")
+                    self.embedding_model = None
+            else:
+                logger.info("Skipping local embedding model load - using Gemini embeddings")
                 self.embedding_model = None
             
             self._initialized = True

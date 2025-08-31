@@ -895,6 +895,9 @@ class FileProcessor:
             commits_summarized = 0
             commits_queued = 0
             
+            # Collect all commit results for batch writing to Redis
+            commit_results_batch = []
+            
             # Process recent commits with immediate summarization
             for i, commit in enumerate(commits_to_summarize):
                 try:
@@ -954,8 +957,8 @@ class FileProcessor:
                             "status": "PENDING"
                         }
                     
-                    # Queue the commit result for node-worker processing
-                    await redis_client.lpush("result_queue", json.dumps(commit_result))
+                    # Add to batch instead of immediate Redis write
+                    commit_results_batch.append(commit_result)
                     
                     task_logger.debug(f"Processed commit with summary: {commit['sha'][:8]}")
                     
@@ -973,7 +976,8 @@ class FileProcessor:
                         "timestamp": commit['author']['date'],
                         "status": "PENDING"
                     }
-                    await redis_client.lpush("result_queue", json.dumps(commit_result))
+                    # Add to batch instead of immediate Redis write
+                    commit_results_batch.append(commit_result)
                     continue
             
             # Queue remaining commits as pending (for lazy loading)
@@ -991,8 +995,8 @@ class FileProcessor:
                         "status": "PENDING"
                     }
                     
-                    # Queue the commit for processing by node-worker
-                    await redis_client.lpush("result_queue", json.dumps(commit_result))
+                    # Add to batch instead of immediate Redis write
+                    commit_results_batch.append(commit_result)
                     commits_queued += 1
                     
                     task_logger.debug(f"Queued commit for lazy loading: {commit['sha'][:8]}")
@@ -1000,6 +1004,13 @@ class FileProcessor:
                 except Exception as e:
                     task_logger.warning(f"Failed to queue commit {commit.get('sha', 'unknown')}: {str(e)}")
                     continue
+            
+            # Batch write all commit results to Redis at once
+            if commit_results_batch:
+                batch_data = [json.dumps(result) for result in commit_results_batch]
+                await redis_client.lpush("result_queue", *batch_data)
+                task_logger.info(f"Batched {len(commit_results_batch)} commit results to Redis queue")
+            
             task_logger.info(f"Batch commit processing complete: {commits_summarized} summarized immediately, {commits_queued} queued for lazy loading")
             
         except subprocess.TimeoutExpired:

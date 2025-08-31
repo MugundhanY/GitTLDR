@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     
     # Embedding Configuration
     use_gemini_embeddings: bool = False  # Set to True to use Gemini, False for local model
+    
+    # Redis Optimization Settings
+    store_qna_results: bool = True  # Set to False to reduce Redis writes
+    skip_intermediate_task_status: bool = False  # Set to True to reduce Redis writes
       # Service URLs
     redis_url: str = "redis://localhost:6379"
     qdrant_url: str = "http://localhost:6333"
