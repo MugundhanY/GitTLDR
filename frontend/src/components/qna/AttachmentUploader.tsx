@@ -21,7 +21,7 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
   attachments,
   onAttachmentsChange,
   disabled = false,
-  maxFiles = 5,
+  maxFiles = 10,
   maxFileSize = 10 * 1024 * 1024, // 10MB default
   acceptedFileTypes = [
     'image/*',
@@ -56,11 +56,20 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
     };
   })();  
 
+  // Reset file input only when component mounts or when explicitly needed
+  // Don't reset on every attachment change to allow multiple file uploads
   useEffect(() => {
-    if (typeof onUploadingChange === 'function') {
-      onUploadingChange(uploading.length > 0);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
     }
-  }, [uploading, onUploadingChange]);
+  }, []) // Empty dependency array - only on mount
+
+  // Notify parent when uploading state changes to empty
+  useEffect(() => {
+    if (uploading.length === 0 && onUploadingChange) {
+      onUploadingChange(false);
+    }
+  }, [uploading.length, onUploadingChange]);
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
@@ -168,87 +177,33 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
       console.log('Upload URL data:', uploadUrlData);      let uploadSuccess = false;
       let uploadResult: any = null;
 
-      // Step 2a: Try direct upload to B2 first
+      // Use server-side upload (fallback method)
       try {
-        console.log('Attempting direct upload to B2:', uploadUrlData.uploadUrl);
-        
-        // Calculate SHA1 hash for the file
-        const fileBuffer = await file.arrayBuffer();
-        const hashBuffer = await crypto.subtle.digest('SHA-1', fileBuffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const sha1Hash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        
-        console.log('Upload headers:', {
-          'Authorization': uploadUrlData.authorizationToken ? 'Present' : 'Missing',
-          'Content-Type': file.type,
-          'X-Bz-File-Name': encodeURIComponent(uploadUrlData.fileName),
-          'X-Bz-Content-Sha1': sha1Hash
-        });
-        
-        const uploadResponse = await fetch(uploadUrlData.uploadUrl, {
+        const fallbackFormData = new FormData();
+        fallbackFormData.append('file', file);
+        fallbackFormData.append('repositoryId', repositoryId || '');
+
+        const fallbackResponse = await fetch('/api/attachments/upload-fallback', {
           method: 'POST',
-          headers: {
-            'Authorization': uploadUrlData.authorizationToken,
-            'Content-Type': file.type,
-            'X-Bz-File-Name': encodeURIComponent(uploadUrlData.fileName),
-            'X-Bz-Content-Sha1': sha1Hash
-          },
-          body: file,
+          body: fallbackFormData,
         });
 
-        if (uploadResponse.ok) {
-          console.log('Direct B2 upload successful');
-          uploadSuccess = true;        uploadResult = {
-          fileName: uploadUrlData.fileName,
-          originalFileName: file.name,
-          fileSize: file.size,
-          fileType: file.type,
-          downloadUrl: uploadUrlData.downloadUrl,
-          fileKey: uploadUrlData.fileName,
-          repositoryId: repositoryId,
-          attachmentId: uploadUrlData.attachmentId
-        };
-
+        if (fallbackResponse.ok) {
+          console.log('Server-side upload successful');
+          uploadResult = await fallbackResponse.json();
+          uploadSuccess = true;
         } else {
-          const errorText = await uploadResponse.text();
-          console.error('Direct B2 upload failed:', {
-            status: uploadResponse.status,
-            statusText: uploadResponse.statusText,
-            errorText,
-            headers: Object.fromEntries(uploadResponse.headers.entries())
-          });
-          throw new Error(`Direct upload failed: ${uploadResponse.status} - ${errorText}`);
-        }
-      } catch (directUploadError) {
-        console.warn('Direct B2 upload failed, trying fallback:', directUploadError);
-        
-        // Step 2b: Fallback to server-side upload
-        try {
-          const fallbackFormData = new FormData();
-          fallbackFormData.append('file', file);
-          fallbackFormData.append('repositoryId', repositoryId || '');
-
-          const fallbackResponse = await fetch('/api/attachments/upload-fallback', {
-            method: 'POST',
-            body: fallbackFormData,
-          });
-
-          if (fallbackResponse.ok) {
-            console.log('Fallback server upload successful');
-            uploadResult = await fallbackResponse.json();
-            uploadSuccess = true;          } else {
-            let errorMessage = 'Fallback upload failed';
-            try {
-              const errorData = await fallbackResponse.json();
-              errorMessage = errorData.error || errorMessage;
-            } catch {
-              errorMessage = fallbackResponse.statusText || errorMessage;
-            }
-            throw new Error(errorMessage);
+          let errorMessage = 'Fallback upload failed';
+          try {
+            const errorData = await fallbackResponse.json();
+            errorMessage = errorData.error || errorMessage;
+          } catch {
+            errorMessage = fallbackResponse.statusText || errorMessage;
           }
-        } catch (fallbackError) {
-          throw new Error(`Both direct and fallback uploads failed. Direct: ${directUploadError}. Fallback: ${fallbackError}`);
+          throw new Error(errorMessage);
         }
+      } catch (fallbackError) {
+        throw new Error(`Upload failed: ${fallbackError}`);
       }      if (!uploadSuccess || !uploadResult) {
         throw new Error('Upload failed');
       }
@@ -256,7 +211,7 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
       // Return the attachment data - no need to store metadata again since 
       // /api/attachments/upload already created the database record
       return {
-        id: uploadResult.attachmentId,
+        id: uploadResult.id,
         fileName: uploadResult.fileName,
         originalFileName: uploadResult.originalFileName,
         fileSize: uploadResult.fileSize,
@@ -272,6 +227,11 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     await processFiles(files);
+
+    // Reset the file input after processing to allow re-selection of the same files
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleDrop = async (event: React.DragEvent) => {
@@ -282,6 +242,11 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
 
     const files = Array.from(event.dataTransfer.files);
     await processFiles(files);
+
+    // Reset the file input after processing to allow re-selection
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleDragOver = (event: React.DragEvent) => {
@@ -329,7 +294,15 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
     }
     // Only pass QuestionAttachment fields to parent
     const { clientKey, ...rest } = attachment;
-    onAttachmentsChange([...attachments, rest]);
+    onAttachmentsChange(prev => {
+      // Prevent duplicates by checking if attachment with same ID or same filename already exists
+      const exists = prev.some(a => a.id === rest.id || a.originalFileName === rest.originalFileName);
+      if (exists) {
+        console.warn(`Attachment with ID ${rest.id} or name ${rest.originalFileName} already exists, skipping duplicate`);
+        return prev;
+      }
+      return [...prev, rest];
+    });
   };
 
   const processFiles = async (files: File[]) => {
@@ -339,17 +312,38 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
       return;
     }
     setUploadError(null);
+    
+    // Filter out files that are already attached or being uploaded
+    const existingFileNames = new Set([
+      ...attachments.map(a => a.originalFileName),
+      ...Object.values(pendingFiles).map(f => f.name)
+    ]);
+    
     const validFiles = files.filter(file => {
       const validationError = validateFile(file);
       if (validationError) {
         setUploadError(validationError);
         return false;
       }
+      
+      // Check for duplicates
+      if (existingFileNames.has(file.name)) {
+        setUploadError(`File "${file.name}" is already attached or being uploaded`);
+        return false;
+      }
+      
       return true;
     });
+    
     if (validFiles.length === 0) {
       return;
     }
+
+    // Notify parent that uploading has started
+    if (onUploadingChange) {
+      onUploadingChange(true);
+    }
+
     const tempIds = validFiles.map(() => `temp-${crypto.randomUUID()}`);
     setPendingFiles(prev => {
       const next = { ...prev };
@@ -367,13 +361,30 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
       tempIds.forEach(id => { delete next[id]; });
       return next;
     });
-    results.forEach((result, idx) => {
-      if (result.status === 'fulfilled') {
-        // Use tempId as clientKey for the uploaded file (preserve for removal)
-        const uploaded = { ...result.value, clientKey: tempIds[idx] };
-        addUploadedAttachment(uploaded);
-      }
-    });
+
+    // Collect all successful uploads and update attachments at once
+    const successfulUploads = results
+      .map((result, idx) => ({ result, idx }))
+      .filter(({ result }) => result.status === 'fulfilled')
+      .map(({ result, idx }) => ({ ...(result as PromiseFulfilledResult<QuestionAttachment>).value, clientKey: tempIds[idx] }));
+
+    if (successfulUploads.length > 0) {
+      onAttachmentsChange(prev => {
+        const newAttachments = [...prev];
+        successfulUploads.forEach(uploaded => {
+          const { clientKey, ...rest } = uploaded;
+          // Prevent duplicates by checking if attachment with same ID or same name already exists
+          const exists = newAttachments.some(a => a.id === rest.id || a.originalFileName === rest.originalFileName);
+          if (!exists) {
+            newAttachments.push(rest);
+          } else {
+            console.warn(`Attachment with ID ${rest.id} or name ${rest.originalFileName} already exists, skipping duplicate`);
+          }
+        });
+        return newAttachments;
+      });
+    }
+
     // ...existing code for error handling...
   };
 
@@ -381,6 +392,11 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
     setPendingFiles({});
     setUploading([]);
     onAttachmentsChange([]);
+
+    // Notify parent that uploading has stopped
+    if (onUploadingChange) {
+      onUploadingChange(false);
+    }
   };
 
   const handleButtonClick = () => {
@@ -487,7 +503,6 @@ const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
                 })),
               ...attachments
                 .filter((attachment, index, array) =>
-                  array.findIndex(a => a.id === attachment.id) === index &&
                   !cancelledUploadsRef.current.has(attachment.id)
                 )
                 .map((attachment, idx) => ({

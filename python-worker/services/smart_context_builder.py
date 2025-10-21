@@ -310,6 +310,15 @@ class SmartContextBuilder:
         file_path_lower = file_path.lower()
         question_lower = question.lower()
         
+        # CRITICAL: User-provided attachments should always have high priority
+        is_attachment = file_path.startswith('attachment/') or '🔴 USER-PROVIDED' in content or 'attachment/' in file_path_lower
+        if is_attachment:
+            logger.info(f"🎯 ATTACHMENT DETECTED: {file_path} - giving maximum priority score")
+            score += 10.0  # Very high base score for attachments
+            # Additional boost if attachment is mentioned in question
+            if 'attachment' in question_lower or 'file' in question_lower or 'document' in question_lower:
+                score += 5.0
+        
         # Keyword matching in content
         for keyword in question_analysis['keywords']:
             if keyword in content_lower:

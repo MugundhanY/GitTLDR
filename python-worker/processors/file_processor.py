@@ -14,6 +14,7 @@ from datetime import datetime
 
 from config.settings import get_settings
 from utils.logger import get_logger
+from processors.document_processor import document_processor
 
 logger = get_logger(__name__)
 
@@ -27,22 +28,32 @@ class FileProcessor:
           # Batch commit summarization configuration
         self.batch_summarize_count = getattr(self.settings, 'batch_commit_summarize_count', 10)
         
-        # Supported file extensions
+        # Supported file extensions (expanded for comprehensive format support)
         self.supported_extensions = {
+            # Text and code files
             '.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.cpp', '.c', '.h',
             '.cs', '.php', '.rb', '.go', '.rs', '.swift', '.kt', '.scala',
             '.md', '.txt', '.yml', '.yaml', '.json', '.xml', '.html', '.css',
             '.sh', '.bash', '.sql', '.r', '.m', '.pl', '.ps1', '.dockerfile',
-            '.gitignore', '.env.example', 'makefile', 'readme', 'license'
+            '.gitignore', '.env.example', 'makefile', 'readme', 'license',
+            
+            # Document formats
+            '.pdf', '.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt',
+            
+            # Data formats
+            '.csv',
+            
+            # Image formats
+            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp',
+            
+            # Audio formats
+            '.mp3', '.wav', '.flac', '.m4a', '.ogg'
         }
         
-        # Binary file extensions to skip
+        # Binary file extensions to skip (reduced list - now we can process many "binary" formats)
         self.binary_extensions = {
             '.exe', '.dll', '.so', '.dylib', '.bin', '.app', '.deb', '.rpm',
             '.tar', '.gz', '.zip', '.rar', '.7z', '.bz2', '.xz',
-            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.ico', '.tiff',
-            '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-            '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm',
             '.ttf', '.otf', '.woff', '.woff2', '.eot'
         }
         
@@ -167,7 +178,7 @@ class FileProcessor:
         # Check file extension
         file_ext = Path(file_path).suffix.lower()
         
-        # Skip binary files
+        # Skip binary files that we can't process
         if file_ext in self.binary_extensions:
             return False
         
@@ -178,26 +189,63 @@ class FileProcessor:
         if filename in {'readme', 'license', 'makefile', 'dockerfile'}:
             return True
         
-        # Check supported extensions
+        # Check supported extensions (now includes PDFs, docs, images, audio, etc.)
         if file_ext in self.supported_extensions:
             return True
         
-        # Skip files without extensions that aren't special
+        # For files without extensions, try to detect if they're text files
         if not file_ext and filename not in {'readme', 'license', 'makefile', 'dockerfile'}:
             return False
         
-        # Check if it's a text file by trying to read it
+        # Try to read the file to see if it's text-based
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                f.read(1024)  # Try to read first 1KB
-            return True
+                sample = f.read(1024)
+                # If we can read it and it contains mostly printable characters, process it
+                if len(sample) > 0:
+                    printable_chars = sum(1 for c in sample if c.isprintable() or c in '\n\r\t')
+                    if printable_chars / len(sample) > 0.7:  # 70% printable characters
+                        return True
         except:
-            return False
+            pass
+        
+        return False
 
     async def _read_file_content(self, file_path: str) -> Optional[str]:
-        """Read file content safely."""
+        """Read file content safely, with enhanced support for various formats."""
         try:
-            # Try UTF-8 first
+            file_ext = Path(file_path).suffix.lower()
+            
+            # For binary formats that need special processing, use document processor
+            binary_formats = {'.pdf', '.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt', 
+                            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp',
+                            '.mp3', '.wav', '.flac', '.m4a', '.ogg'}
+            
+            if file_ext in binary_formats:
+                logger.info(f"Processing binary format {file_ext} with document processor: {file_path}")
+                try:
+                    # Read as bytes first
+                    with open(file_path, 'rb') as f:
+                        content_bytes = f.read()
+                    
+                    # Use document processor
+                    result = await document_processor.process_document(
+                        content=content_bytes,
+                        filename=os.path.basename(file_path),
+                        mime_type=None
+                    )
+                    
+                    if result.get('success'):
+                        return result['content']
+                    else:
+                        logger.warning(f"Document processor failed for {file_path}: {result.get('error')}")
+                        return f"[Failed to process {file_ext.upper()} file: {os.path.basename(file_path)}]\n{result.get('error', 'Unknown error')}"
+                        
+                except Exception as doc_error:
+                    logger.error(f"Document processor error for {file_path}: {str(doc_error)}")
+                    return f"[Error processing {file_ext.upper()} file: {os.path.basename(file_path)}]\n{str(doc_error)}"
+            
+            # For text files, try UTF-8 first
             with open(file_path, 'r', encoding='utf-8') as f:
                 return f.read()
         except UnicodeDecodeError:
@@ -248,6 +296,26 @@ class FileProcessor:
         # Source code
         elif extension in {'.java', '.cpp', '.c', '.h', '.cs', '.php', '.rb', '.go', '.rs', '.swift', '.kt', '.scala'}:
             return 'source'
+        
+        # Documents
+        elif extension in {'.pdf', '.docx', '.doc'}:
+            return 'document'
+        
+        # Spreadsheets
+        elif extension in {'.xlsx', '.xls', '.csv'}:
+            return 'spreadsheet'
+        
+        # Presentations
+        elif extension in {'.pptx', '.ppt'}:
+            return 'presentation'
+        
+        # Images
+        elif extension in {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp'}:
+            return 'image'
+        
+        # Audio
+        elif extension in {'.mp3', '.wav', '.flac', '.m4a', '.ogg'}:
+            return 'audio'
         
         else:
             return 'other'
@@ -403,11 +471,13 @@ class FileProcessor:
               # Store files in database
             await self._store_files_in_database(repo_id, files_result['files'], task_logger)            # Generate individual file summaries
             await self._generate_file_summaries(repo_id, files_result['files'], task_logger)
-              # Fetch and process repository commits
-            await self._process_repository_commits(temp_dir, repo_id, repo_url, task_logger)
             
             # Generate embeddings for processed files
             await self._generate_embeddings(repo_id, files_result['files'], task_logger)
+            
+            # Build code graph if enabled
+            if self.settings.enable_graph_retrieval:
+                await self._build_code_graph(repo_id, repo_url, files_result['files'], task_logger)
             
             # Generate summary (optional - can be done later)
             summary = await self._generate_repository_summary(files_result, task_logger)
@@ -800,224 +870,6 @@ class FileProcessor:
         except Exception as e:
             logger.error(f"Failed to update repository completion: {str(e)}")
             # Don't fail the entire task for status update issues
-    async def _process_repository_commits(self, repo_path: str, repo_id: str, repo_url: str, task_logger):
-        """Fetch and process repository commits."""
-        from services.redis_client import redis_client
-        import subprocess
-        import json
-        
-        try:
-            task_logger.info("Fetching repository commits...")
-              # Get last 50 commits using git log with unix timestamp
-            git_log_cmd = [
-                "git", "log", "--max-count=50", "--pretty=format:%H|%s|%an|%ae|%ad|%P|%at",
-                "--date=iso", "--name-status"
-            ]
-            
-            result = subprocess.run(
-                git_log_cmd, 
-                cwd=repo_path, 
-                capture_output=True, 
-                text=True, 
-                timeout=60
-            )
-            
-            if result.returncode != 0:
-                task_logger.warning(f"Failed to fetch commits: {result.stderr}")
-                return
-            
-            commits_data = []
-            current_commit = None
-            
-            for line in result.stdout.strip().split('\n'):
-                if not line.strip():
-                    continue
-                      # Check if this is a commit line (contains pipe separators)
-                if '|' in line and len(line.split('|')) >= 7:  # Updated to expect 7 fields
-                    # Save previous commit if exists
-                    if current_commit:
-                        commits_data.append(current_commit)
-                    
-                    # Parse commit line: hash|subject|author|email|date|parents|unix_timestamp
-                    parts = line.split('|')
-                    
-                    # Extract GitHub avatar URL if possible
-                    avatar_url = self._extract_github_avatar_url(parts[3], parts[2])
-                    
-                    # Parse unix timestamp for actual commit time
-                    unix_timestamp = int(parts[6]) if parts[6] else None
-                    commit_datetime = None
-                    if unix_timestamp:
-                        import datetime
-                        commit_datetime = datetime.datetime.fromtimestamp(unix_timestamp)
-                        iso_timestamp = commit_datetime.isoformat()
-                    else:
-                        iso_timestamp = parts[4]  # Fallback to ISO date string
-                    
-                    current_commit = {
-                        'sha': parts[0],
-                        'message': parts[1],
-                        'author': {
-                            'name': parts[2],
-                            'email': parts[3],
-                            'date': iso_timestamp,  # Use actual commit timestamp
-                            'avatar': avatar_url
-                        },
-                        'parents': parts[5].split() if parts[5] else [],
-                        'files': [],
-                        'timestamp': iso_timestamp,  # Add explicit timestamp field
-                        'unix_timestamp': unix_timestamp  # Keep unix timestamp for reference
-                    }
-                else:
-                    # This should be a file change line (e.g., "M	filename.py")
-                    if current_commit and '\t' in line:
-                        parts = line.split('\t', 1)
-                        if len(parts) == 2:
-                            status, filename = parts
-                            current_commit['files'].append({
-                                'status': status,
-                                'filename': filename
-                            })            # Don't forget the last commit
-            if current_commit:
-                commits_data.append(current_commit)
-            
-            # Add GitHub URLs to all commits
-            for commit in commits_data:
-                commit['url'] = self._generate_github_commit_url(repo_id, commit['sha'], repo_url)
-            
-            task_logger.info(f"Found {len(commits_data)} commits")
-            
-            # Implement batch commit summarization for immediate processing
-            # Use configurable batch count for recent commits to summarize during initial processing
-            commits_to_summarize = commits_data[:self.batch_summarize_count]  # Take the most recent commits
-            commits_to_queue_pending = commits_data[self.batch_summarize_count:]  # Rest remain pending for lazy loading
-            
-            commits_summarized = 0
-            commits_queued = 0
-            
-            # Collect all commit results for batch writing to Redis
-            commit_results_batch = []
-            
-            # Process recent commits with immediate summarization
-            for i, commit in enumerate(commits_to_summarize):
-                try:
-                    task_logger.info(f"Batch summarizing commit {i+1}/{len(commits_to_summarize)}: {commit['sha'][:8]}")
-                    
-                    # Generate commit summary immediately using SummarizationProcessor
-                    from processors.summarization import SummarizationProcessor
-                    summarization_processor = SummarizationProcessor()
-                    
-                    # Prepare task data for summarization
-                    summary_task_data = {
-                        "commitData": {
-                            "sha": commit['sha'],
-                            "message": commit['message'],
-                            "author": commit['author']
-                        },
-                        "changes": [
-                            {
-                                "filename": file_change['filename'],
-                                "status": file_change['status'],
-                                "additions": 0,  # We don't have detailed stats from git log --name-status
-                                "deletions": 0
-                            }
-                            for file_change in commit['files']
-                        ]
-                    }
-                    
-                    # Generate summary
-                    summary_result = await summarization_processor.summarize_commit(summary_task_data, task_logger)
-                    if summary_result.get('status') == 'completed':
-                        # Create commit result with completed summary                        
-                        commit_result = {
-                            "type": "commit_summary",
-                            "repositoryId": repo_id,
-                            "commitSha": commit['sha'],
-                            "commitMessage": commit['message'],
-                            "author": commit['author'],
-                            "parents": commit['parents'],
-                            "files": commit['files'],
-                            "summary": summary_result.get('summary', ''),
-                            "timestamp": commit['author']['date'],
-                            "url": commit.get('url', ''),
-                            "status": "COMPLETED"
-                        }
-                        commits_summarized += 1
-                    else:
-                        # Fall back to pending if summarization failed
-                        commit_result = {
-                            "type": "commit_summary",
-                            "repositoryId": repo_id,
-                            "commitSha": commit['sha'],
-                            "commitMessage": commit['message'],
-                            "author": commit['author'],
-                            "parents": commit['parents'],
-                            "files": commit['files'],
-                            "timestamp": commit['author']['date'],
-                            "status": "PENDING"
-                        }
-                    
-                    # Add to batch instead of immediate Redis write
-                    commit_results_batch.append(commit_result)
-                    
-                    task_logger.debug(f"Processed commit with summary: {commit['sha'][:8]}")
-                    
-                except Exception as e:
-                    task_logger.warning(f"Failed to summarize commit {commit.get('sha', 'unknown')}: {str(e)}")
-                      # Create pending commit result as fallback
-                    commit_result = {
-                        "type": "commit_summary",
-                        "repositoryId": repo_id,
-                        "commitSha": commit['sha'],
-                        "commitMessage": commit['message'],
-                        "author": commit['author'],
-                        "parents": commit['parents'],
-                        "files": commit['files'],
-                        "timestamp": commit['author']['date'],
-                        "status": "PENDING"
-                    }
-                    # Add to batch instead of immediate Redis write
-                    commit_results_batch.append(commit_result)
-                    continue
-            
-            # Queue remaining commits as pending (for lazy loading)
-            for commit in commits_to_queue_pending:
-                try:                    # Create commit result for node-worker processing (pending status)
-                    commit_result = {
-                        "type": "commit_summary",
-                        "repositoryId": repo_id,
-                        "commitSha": commit['sha'],
-                        "commitMessage": commit['message'],
-                        "author": commit['author'],
-                        "parents": commit['parents'],
-                        "files": commit['files'],
-                        "timestamp": commit['author']['date'],
-                        "status": "PENDING"
-                    }
-                    
-                    # Add to batch instead of immediate Redis write
-                    commit_results_batch.append(commit_result)
-                    commits_queued += 1
-                    
-                    task_logger.debug(f"Queued commit for lazy loading: {commit['sha'][:8]}")
-                    
-                except Exception as e:
-                    task_logger.warning(f"Failed to queue commit {commit.get('sha', 'unknown')}: {str(e)}")
-                    continue
-            
-            # Batch write all commit results to Redis at once
-            if commit_results_batch:
-                batch_data = [json.dumps(result) for result in commit_results_batch]
-                await redis_client.lpush("result_queue", *batch_data)
-                task_logger.info(f"Batched {len(commit_results_batch)} commit results to Redis queue")
-            
-            task_logger.info(f"Batch commit processing complete: {commits_summarized} summarized immediately, {commits_queued} queued for lazy loading")
-            
-        except subprocess.TimeoutExpired:
-            task_logger.warning("Git log command timed out")
-        except Exception as e:
-            task_logger.error(f"Error processing repository commits: {str(e)}")
-            # Don't fail the entire task for commit processing issues
 
     def _extract_github_avatar_url(self, author_email: str, author_name: str) -> Optional[str]:
         """
@@ -1115,3 +967,55 @@ class FileProcessor:
         except Exception as e:
             logger.warning(f"Error generating commit URL: {str(e)}")
             return f"https://github.com/unknown/repository/commit/{commit_sha}"
+    
+    async def _build_code_graph(
+        self, 
+        repo_id: str, 
+        repo_url: str,
+        files: List[Dict[str, Any]], 
+        task_logger
+    ) -> None:
+        """Build code graph structure in Neo4j."""
+        from services.code_graph_builder import code_graph_builder
+        from services.neo4j_client import neo4j_client
+        from services.database_service import database_service
+        
+        try:
+            if not neo4j_client.is_connected():
+                task_logger.warning("Neo4j not connected, skipping graph building")
+                return
+            
+            task_logger.info("🕸️ Building code graph structure...")
+            
+            # Get repository metadata from database
+            repo_status = await database_service.get_repository_status(repo_id)
+            
+            repository_metadata = {
+                'name': repo_status.get('name', 'Unknown'),
+                'url': repo_url,
+                'language': repo_status.get('language', ''),
+                'description': repo_status.get('description', ''),
+                'created_at': datetime.utcnow().isoformat()
+            }
+            
+            # Build graph from files
+            graph_stats = await code_graph_builder.build_repository_graph(
+                repository_id=repo_id,
+                repository_metadata=repository_metadata,
+                files=files
+            )
+            
+            task_logger.info("✅ Code graph built successfully", **graph_stats)
+            
+            # Store graph stats in database
+            try:
+                neo4j_stats = await neo4j_client.get_repository_stats(repo_id)
+                task_logger.info("📊 Graph statistics", **neo4j_stats)
+            except Exception as e:
+                task_logger.warning(f"Failed to get graph stats: {str(e)}")
+        
+        except Exception as e:
+            task_logger.error(f"Failed to build code graph: {str(e)}")
+            # Don't fail the entire task for graph building issues
+            task_logger.warning("Continuing without code graph")
+

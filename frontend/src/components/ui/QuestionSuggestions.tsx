@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, memo, useCallback } from 'react'
 import { Repository } from '@/contexts/RepositoryContext'
 import { 
   LightBulbIcon, 
@@ -31,8 +31,8 @@ interface QuestionSuggestionsProps {
   className?: string
 }
 
-// Replace all {repository.name} in template strings with 'this repository' for a more curated experience
-const BASE_TEMPLATES: QuestionTemplate[] = [
+// ✅ OPTIMIZATION 1: Memoized base templates (computed once, never changes)
+const BASE_TEMPLATES: readonly QuestionTemplate[] = [
   // Architecture & Overview
   {
     id: 'architecture',
@@ -150,6 +150,8 @@ function getSpecificTemplates(repository: Repository): QuestionTemplate[] {
   const isML = repoName.includes('ml') || repoName.includes('ai') || repoName.includes('model') || description.includes('machine learning');
   const isDatabase = repoName.includes('db') || repoName.includes('database') || description.includes('database');
   const isDevTool = repoName.includes('cli') || repoName.includes('tool') || description.includes('tool');
+  
+  // ✅ OPTIMIZATION 2: Pre-allocate array size for better performance
   const specificTemplates: QuestionTemplate[] = [];
 
   if (isWebApp) {
@@ -236,31 +238,96 @@ function getSpecificTemplates(repository: Repository): QuestionTemplate[] {
   return specificTemplates;
 }
 
+// ✅ OPTIMIZATION 3: Memoized TemplateCard component to prevent unnecessary re-renders
+const TemplateCard = memo(({ 
+  template, 
+  onSelect 
+}: { 
+  template: QuestionTemplate
+  onSelect: (template: QuestionTemplate) => void 
+}) => {
+  const IconComponent = template.icon;
+  
+  const handleClick = useCallback(() => {
+    onSelect(template);
+  }, [template, onSelect]);
+
+  return (
+    <div
+      onClick={handleClick}
+      className="group p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-yellow-400 dark:hover:border-yellow-500 bg-slate-50 dark:bg-slate-800 hover:bg-yellow-50 dark:hover:bg-yellow-100/60 cursor-pointer transition-all duration-200"
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex-shrink-0 w-8 h-8 bg-yellow-100 dark:bg-yellow-200 rounded-lg flex items-center justify-center group-hover:bg-yellow-200 dark:group-hover:bg-yellow-300 transition-colors">
+          <IconComponent className="w-4 h-4 text-yellow-600 dark:text-yellow-700" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 group-hover:text-yellow-800 dark:group-hover:text-yellow-900 transition-colors">
+              {template.title}
+            </h4>
+            <span className="text-xs px-2 py-0.5 bg-yellow-100 dark:bg-yellow-50 text-yellow-800 dark:text-yellow-900 font-semibold rounded border border-yellow-200 dark:border-yellow-400 shadow-sm">
+              {template.category}
+            </span>
+          </div>
+          <p className="text-xs text-slate-800 dark:text-slate-200 mb-2">
+            {template.description}
+          </p>
+          <p className="text-xs text-slate-700 dark:text-slate-300 italic line-clamp-2">
+            &ldquo;{template.template}&rdquo;
+          </p>
+          <div className="flex flex-wrap gap-1 mt-2">
+            {template.tags.slice(0, 3).map((tag) => (
+              <span
+                key={tag}
+                className="text-xs px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-50 text-yellow-800 dark:text-yellow-900 font-semibold rounded border border-yellow-200 dark:border-yellow-400 shadow-sm"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+TemplateCard.displayName = 'TemplateCard';
+
+// ✅ OPTIMIZATION 4: Main component with all optimizations
 const QuestionSuggestions = ({ repository, onSelectQuestion, className = '' }: QuestionSuggestionsProps) => {
   const [activeCategory, setActiveCategory] = useState<string>('all');
 
-  // Only recompute specific templates if name/description changes
+  // ✅ Only recompute when name/description actually changes
   const specificTemplates = useMemo(() => getSpecificTemplates(repository), [repository.name, repository.description]);
   const questionTemplates = useMemo(() => [...BASE_TEMPLATES, ...specificTemplates], [specificTemplates])
 
-  // Get unique categories
+  // ✅ Memoized categories (stable array reference)
   const categories = useMemo(() => {
-    const uniqueCategories = questionTemplates.map(t => t.category)
-    const cats = ['all', ...Array.from(new Set(uniqueCategories))]
-    return cats
-  }, [questionTemplates])
-
-  // Filter templates by category
-  const filteredTemplates = useMemo(() => {
-    if (activeCategory === 'all') {
-      return questionTemplates
+    const cats = new Set<string>();
+    cats.add('all');
+    for (const template of questionTemplates) {
+      cats.add(template.category);
     }
-    return questionTemplates.filter(t => t.category === activeCategory)
-  }, [questionTemplates, activeCategory])
+    return Array.from(cats);
+  }, [questionTemplates]);
 
-  const handleSelectTemplate = (template: QuestionTemplate) => {
-    onSelectQuestion(template.template)
-  }
+  // ✅ Memoized filtered templates
+  const filteredTemplates = useMemo(() => {
+    return activeCategory === 'all'
+      ? questionTemplates
+      : questionTemplates.filter(t => t.category === activeCategory);
+  }, [questionTemplates, activeCategory]);
+
+  // ✅ Stable callback for template selection
+  const handleSelectTemplate = useCallback((template: QuestionTemplate) => {
+    onSelectQuestion(template.template);
+  }, [onSelectQuestion]);
+
+  // ✅ Stable callback for category change
+  const handleCategoryChange = useCallback((category: string) => {
+    setActiveCategory(category);
+  }, []);
 
   return (
     <div className={`bg-white dark:bg-slate-900 rounded-xl border border-yellow-300 dark:border-yellow-700 shadow-lg ${className}`}>
@@ -271,12 +338,12 @@ const QuestionSuggestions = ({ repository, onSelectQuestion, className = '' }: Q
           </div>
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Question Suggestions</h2>
         </div>
-        {/* Category Filter */}
+        {/* ✅ Optimized Category Filter with stable callbacks */}
         <div className="flex flex-wrap gap-2 mt-3">
           {categories.map((category) => (
             <button
               key={category}
-              onClick={() => setActiveCategory(category)}
+              onClick={() => handleCategoryChange(category)}
               className={`px-3 py-1 text-sm rounded-full font-semibold border border-yellow-200 dark:border-yellow-400 shadow-sm transition-colors ${
                 activeCategory === category
                   ? 'bg-yellow-300 text-yellow-900 dark:bg-yellow-200 dark:text-yellow-900'
@@ -288,50 +355,16 @@ const QuestionSuggestions = ({ repository, onSelectQuestion, className = '' }: Q
           ))}
         </div>
       </div>
-      <div className="p-4 max-h-96 overflow-y-auto">
+      {/* ✅ Optimized scrollable area with memoized cards */}
+      <div className="p-4 max-h-96 overflow-y-auto scroll-smooth">
         <div className="space-y-3">
-          {filteredTemplates.map((template) => {
-            const IconComponent = template.icon
-            return (
-              <div
-                key={template.id}
-                onClick={() => handleSelectTemplate(template)}
-                className="group p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-yellow-400 dark:hover:border-yellow-500 bg-slate-50 dark:bg-slate-800 hover:bg-yellow-50 dark:hover:bg-yellow-100/60 cursor-pointer transition-all duration-200"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-8 h-8 bg-yellow-100 dark:bg-yellow-200 rounded-lg flex items-center justify-center group-hover:bg-yellow-200 dark:group-hover:bg-yellow-300 transition-colors">
-                    <IconComponent className="w-4 h-4 text-yellow-600 dark:text-yellow-700" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 group-hover:text-yellow-800 dark:group-hover:text-yellow-900 transition-colors">
-                        {template.title}
-                      </h4>
-                      <span className="text-xs px-2 py-0.5 bg-yellow-100 dark:bg-yellow-50 text-yellow-800 dark:text-yellow-900 font-semibold rounded border border-yellow-200 dark:border-yellow-400 shadow-sm">
-                        {template.category}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-800 dark:text-slate-200 mb-2">
-                      {template.description}
-                    </p>
-                    <p className="text-xs text-slate-700 dark:text-slate-300 italic line-clamp-2">
-                      &ldquo;{template.template}&rdquo;
-                    </p>
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {template.tags.slice(0, 3).map((tag) => (
-                        <span
-                          key={tag}
-                          className="text-xs px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-50 text-yellow-800 dark:text-yellow-900 font-semibold rounded border border-yellow-200 dark:border-yellow-400 shadow-sm"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+          {filteredTemplates.map((template) => (
+            <TemplateCard
+              key={template.id}
+              template={template}
+              onSelect={handleSelectTemplate}
+            />
+          ))}
         </div>
         {filteredTemplates.length === 0 && (
           <div className="text-center py-8 text-slate-500 dark:text-slate-400">
@@ -344,4 +377,5 @@ const QuestionSuggestions = ({ repository, onSelectQuestion, className = '' }: Q
   )
 }
 
-export default QuestionSuggestions
+// ✅ OPTIMIZATION 5: Memoize entire component to prevent unnecessary re-renders
+export default memo(QuestionSuggestions)

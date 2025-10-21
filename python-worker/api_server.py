@@ -1,25 +1,31 @@
 """
 FastAPI server for python-worker HTTP endpoints.
-Clean, scalable architecture focused on AI thinking and analysis.
+Clean, scalable architecture focused on Q&A and code analysis.
 """
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import time
 import json
+import hashlib
+import asyncio
+from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 from typing import Optional, List
 
-from api.thinking_context import get_thinking_context, ThinkingContextRequest, ThinkingContextResponse
-from api.pure_thinking import pure_thinking_service
-from api.comprehensive_thinking import comprehensive_thinking_service
 from api.attachments import router as attachments_router
-from api.lightweight_thinking import lightweight_thinking_service
 from services.redis_client import redis_client
 from services.qdrant_client import qdrant_client
 from services.gemini_client import GeminiClient
+from services.github_api_client import GitHubClient
+from services.tools.tool_registry import ToolRegistry
+from services.tools.github.commit_tool import CommitTool, CommitDetailsTool
+from services.tools.github.pr_tool import PullRequestTool, PullRequestDetailsTool
+from services.tools.github.issue_tool import IssueTool, IssueDetailsTool
+from services.tools.github.diff_tool import DiffTool, CompareTool
+from services.gemini_function_caller import GeminiFunctionCaller
 from utils.logger import setup_logging, get_logger
 
 # Setup logging
@@ -110,6 +116,52 @@ app.add_middleware(
 
 app.include_router(attachments_router, prefix="/attachments", tags=["attachments"])
 
+# ===== DUPLICATE REQUEST PREVENTION =====
+# Track active requests to prevent duplicate API calls within short timeframes
+_active_requests = {}  # {request_hash: timestamp}
+_request_lock = asyncio.Lock()
+
+async def check_duplicate_request(repository_id: str, question: str) -> None:
+    """
+    Check if this exact request was made recently to prevent duplicates.
+    Raises HTTPException 429 if duplicate detected within 90 seconds.
+    """
+    global _active_requests  # CRITICAL: Declare global to modify module-level dict
+    
+    request_hash = hashlib.md5(f"{repository_id}:{question.strip()}".encode()).hexdigest()
+    
+    async with _request_lock:
+        now = datetime.now()
+        
+        # Check if this exact request was made recently (within 90 seconds)
+        if request_hash in _active_requests:
+            last_time = _active_requests[request_hash]
+            time_diff = (now - last_time).total_seconds()
+            
+            if time_diff < 90:
+                logger.warning(f"🚫 DUPLICATE REQUEST BLOCKED - Hash: {request_hash[:8]}, Time: {time_diff:.1f}s ago")
+                logger.warning(f"🚫 Question: '{question[:80]}...'")
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Duplicate request detected. This question is already being processed. Please wait {90 - int(time_diff)} more seconds."
+                )
+        
+        # Mark this request timestamp
+        _active_requests[request_hash] = now
+        logger.info(f"✅ REQUEST ACCEPTED - Hash: {request_hash[:8]}, Question: '{question[:50]}...'")
+        
+        # Clean up old entries (older than 3 minutes) - modify in place
+        cutoff = now - timedelta(minutes=3)
+        old_count = len(_active_requests)
+        # Use list() to avoid "dictionary changed size during iteration" error
+        for h in list(_active_requests.keys()):
+            if _active_requests[h] <= cutoff:
+                del _active_requests[h]
+        if len(_active_requests) < old_count:
+            logger.debug(f"🧹 Cleaned up {old_count - len(_active_requests)} old request entries")
+
+# ===== END DUPLICATE PREVENTION =====
+
 # Health check cache to reduce Redis pings
 health_cache = {"data": None, "timestamp": 0}
 HEALTH_CACHE_TTL = 30  # Cache for 30 seconds
@@ -173,33 +225,7 @@ async def debug_reset_circuit_breakers():
     except Exception as e:
         return {"error": str(e), "message": "Failed to reset circuit breakers"}
 
-@app.post("/get-thinking-context", response_model=ThinkingContextResponse)
-async def get_thinking_context_endpoint(request: ThinkingContextRequest):
-    """
-    Get file context and analysis for AI thinking mode.
-    This endpoint integrates with FileRetrievalService and SmartContextBuilder.
-    """
-    try:
-        return await get_thinking_context(request)
-    except Exception as e:
-        logger.error(f"Failed to get thinking context: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-class PureThinkingRequest(BaseModel):
-    """Request model for pure thinking endpoint."""
-    repository_id: str
-    question: str
-    attachments: list = []
-    stream: bool = True
-
-class ComprehensiveThinkingRequest(BaseModel):
-    """Request model for comprehensive thinking endpoint."""
-    repository_id: str
-    question: str
-    attachments: list = []
-    stream: bool = True
-
-# Add new request models
+# Request/Response models
 class QnARequest(BaseModel):
     """Request model for Q&A processing."""
     repository_id: str
@@ -235,158 +261,178 @@ class AnalyticsInsightsResponse(BaseModel):
     insights: List[str]
     generated_at: str
 
-@app.post("/pure-thinking")
-async def pure_thinking_endpoint(request: PureThinkingRequest):
-    """
-    Pure AI thinking endpoint - shows ONLY real DeepSeek R1 reasoning steps.
-    No dummy steps, just actual chain of thought from the AI model.
-    """
-    try:
-        logger.info(f"Starting pure AI thinking for repository {request.repository_id}")
-        return await pure_thinking_service.process_pure_thinking(
-            repository_id=request.repository_id,
-            question=request.question,
-            attachments=request.attachments,
-            stream=request.stream
-        )
-    except Exception as e:
-        logger.error(f"Failed to process pure thinking: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+# Helper Functions for GitHub Integration
 
-@app.post("/comprehensive-thinking")
-async def comprehensive_thinking_endpoint(request: ComprehensiveThinkingRequest):
+async def get_user_github_token(user_id: str) -> Optional[str]:
     """
-    Comprehensive AI thinking endpoint - complete thinking process with file retrieval + AI reasoning.
-    Includes setup steps, file context building, and full DeepSeek R1 chain of thought.
-    """
-    try:
-        logger.info(f"Starting comprehensive AI thinking for repository {request.repository_id}")
-        return await comprehensive_thinking_service.process_thinking_request(
-            repository_id=request.repository_id,
-            question=request.question,
-            attachments=request.attachments,
-            stream=request.stream
-        )
-    except Exception as e:
-        logger.error(f"Failed to process comprehensive thinking: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/lightweight-thinking")
-async def lightweight_thinking_endpoint(request: PureThinkingRequest):
-    """
-    Lightweight AI thinking endpoint - optimized architecture with minimal Redis dependencies.
+    Get user's GitHub access token from database.
     
-    This endpoint demonstrates how the thinking mode can work with:
-    - Database-first file access (Redis caching optional)
-    - Direct B2 storage access (Redis caching optional) 
-    - Direct HTTP streaming (no Redis pub/sub needed)
-    - No task queuing overhead
+    Args:
+        user_id: User ID
+        
+    Returns:
+        GitHub access token or None if not found
+    """
+    from services.database_service import database_service
     
-    Redis is only used for performance caching, not core functionality.
-    """
     try:
-        logger.info(f"Starting lightweight AI thinking for repository {request.repository_id}")
-        return await lightweight_thinking_service.process_lightweight_thinking(
-            repository_id=request.repository_id,
-            question=request.question,
-            attachments=request.attachments,
-            stream=request.stream
-        )
+        user_info = await database_service.get_user_info(user_id)
+        
+        if user_info and user_info.get('github_token'):
+            token = user_info['github_token']
+            logger.info(f"Retrieved GitHub token for user {user_id}: ***{token[-4:]}")
+            return token
+        
+        logger.warning(f"No GitHub token found for user {user_id}")
+        return None
+        
     except Exception as e:
-        logger.error(f"Failed to process lightweight thinking: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error retrieving GitHub token: {str(e)}", exc_info=True)
+        return None
 
-@app.get("/thinking/architecture-comparison")
-async def thinking_architecture_comparison():
+
+async def get_repository_context(repository_id: str) -> dict:
     """
-    Compare different thinking architectures to show Redis usage optimization.
+    Get repository context for Q&A.
+    
+    Args:
+        repository_id: Repository ID
+        
+    Returns:
+        Repository context dict
     """
-    comparison = {
-        "current_architecture": {
-            "description": "Current comprehensive thinking with heavy Redis usage",
-            "redis_usage": [
-                "File metadata storage and retrieval",
-                "Repository status tracking", 
-                "Task status management",
-                "File content caching",
-                "Cross-repository file searching"
-            ],
-            "performance": "Good caching, but complex Redis dependencies",
-            "maintenance": "High - requires Redis to be available and consistent"
-        },
-        "lightweight_architecture": {
-            "description": "Optimized thinking with minimal Redis dependencies",
-            "redis_usage": [
-                "Optional file metadata caching",
-                "Optional file content caching"
-            ],
-            "primary_sources": [
-                "PostgreSQL database for file metadata", 
-                "B2 storage for file content",
-                "Direct HTTP streaming for real-time updates"
-            ],
-            "performance": "Excellent - database is fast, Redis only for performance boost",
-            "maintenance": "Low - works without Redis, gracefully uses Redis when available"
-        },
-        "redis_free_architecture": {
-            "description": "Pure database + B2 storage approach",
-            "redis_usage": [],
-            "primary_sources": [
-                "PostgreSQL database for everything",
-                "B2 storage for file content",
-                "Direct HTTP streaming"
-            ],
-            "performance": "Good - modern databases are very fast",
-            "maintenance": "Minimal - only database and B2 storage needed"
-        },
-        "recommendation": {
-            "best_approach": "lightweight_architecture",
-            "reasons": [
-                "Works without Redis (graceful degradation)",
-                "Uses Redis only for performance benefits",
-                "Simpler architecture and debugging",
-                "Database is the source of truth",
-                "Easy to scale and maintain"
-            ],
-            "redis_role": "Optional performance enhancement, not core dependency"
+    from services.database_service import database_service
+    
+    try:
+        repo = await database_service.get_repository_status(repository_id)
+        
+        if not repo:
+            raise HTTPException(status_code=404, detail=f"Repository {repository_id} not found")
+        
+        return {
+            "id": repo.get('id'),
+            "name": repo.get('name'),
+            "full_name": repo.get('full_name'),
+            "owner": repo.get('owner'),
+            "description": repo.get('description'),
+            "language": repo.get('language'),
+            "stars": repo.get('stars', 0),
+            "avatar_url": repo.get('avatar_url')
         }
-    }
-    
-    return comparison
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving repository context: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get repository context: {str(e)}")
+
+# Q&A Endpoint
 
 @app.post("/qna")
 async def qna_endpoint(request: QnARequest):
     """
-    Traditional Q&A endpoint - processes questions and stores results.
-    This provides an alternative to the Redis queue system for direct API access.
+    Enhanced Q&A endpoint with GitHub integration and function calling.
+    Supports dynamic GitHub data access through Gemini function calling.
     """
     try:
-        from processors.embedding import EmbeddingProcessor
+        logger.info(f"Processing Q&A for user {request.user_id}, repository {request.repository_id}")
+        logger.info(f"Question: {request.question[:100]}...")
         
-        logger.info(f"Processing Q&A for repository {request.repository_id}")
+        # Get user's GitHub token
+        user_github_token = await get_user_github_token(request.user_id)
+        if user_github_token:
+            logger.info(f"User has GitHub token - enabling GitHub tools")
+        else:
+            logger.info(f"No GitHub token found - proceeding with file-based analysis only")
         
-        # Create embedding processor
-        embedding_processor = EmbeddingProcessor()
+        # Get repository context
+        repo_context = await get_repository_context(request.repository_id)
+        logger.info(f"Repository context: {repo_context.get('full_name') if repo_context else None}")
         
-        # Process the question
-        result = await embedding_processor.answer_question(
-            task_data={
-                "questionId": request.question_id or f"api_{request.repository_id}_{int(time.time())}",
-                "repositoryId": request.repository_id,
-                "userId": request.user_id,
-                "question": request.question,
-                "attachments": request.attachments
-            },
-            logger=logger
-        )
+        # Initialize GitHub client with user's token
+        github_client = GitHubClient(user_token=user_github_token)
         
-        return {
-            "status": "success",
-            "result": result
-        }
+        # Initialize tool registry
+        tool_registry = ToolRegistry()
+        
+        # Register all GitHub tools if user has token
+        if user_github_token:
+            tool_registry.register_tool(CommitTool(github_client), category="commit")
+            tool_registry.register_tool(CommitDetailsTool(github_client), category="commit")
+            tool_registry.register_tool(PullRequestTool(github_client), category="pull_request")
+            tool_registry.register_tool(PullRequestDetailsTool(github_client), category="pull_request")
+            tool_registry.register_tool(IssueTool(github_client), category="issue")
+            tool_registry.register_tool(IssueDetailsTool(github_client), category="issue")
+            tool_registry.register_tool(DiffTool(github_client), category="code")
+            tool_registry.register_tool(CompareTool(github_client), category="code")
+            
+            logger.info(f"Registered {tool_registry.get_tool_count()} GitHub tools")
+            logger.info(f"Available tools: {', '.join(tool_registry.list_tool_names())}")
+        
+        # Check if question might benefit from GitHub tools
+        github_keywords = ['commit', 'pr', 'pull request', 'issue', 'author', 'diff', 'change', 'merge', 'branch']
+        uses_github_keywords = any(keyword in request.question.lower() for keyword in github_keywords)
+        
+        # Use function calling if GitHub tools are available and question suggests it
+        if user_github_token and tool_registry.get_tool_count() > 0 and uses_github_keywords:
+            logger.info("Using GitHub function calling for this question")
+            
+            # Initialize Gemini client and function caller
+            gemini_client = GeminiClient()
+            function_caller = GeminiFunctionCaller(
+                gemini_client=gemini_client,
+                tool_registry=tool_registry,
+                github_client=github_client
+            )
+            
+            # Process question with function calling
+            result = await function_caller.process_question(
+                question=request.question,
+                repository_context=repo_context
+            )
+            
+            logger.info(f"Function calling complete: {result['conversation_turns']} turns, "
+                       f"{len(result['tool_executions'])} tool calls, success={result.get('success', False)}")
+            
+            return {
+                "status": "success",
+                "result": {
+                    "answer": result['answer'],
+                    "tool_executions": result['tool_executions'],
+                    "conversation_turns": result['conversation_turns'],
+                    "github_data_used": len(result['tool_executions']) > 0,
+                    "confidence": 0.95 if result.get('success') else 0.7,
+                    "relevant_files": [],
+                    "tags": ["github-integrated"] if result.get('success') else []
+                }
+            }
+        
+        else:
+            # Fall back to traditional embedding-based Q&A
+            logger.info("Using traditional embedding-based Q&A (no GitHub integration)")
+            
+            from processors.embedding import EmbeddingProcessor
+            
+            embedding_processor = EmbeddingProcessor()
+            
+            result = await embedding_processor.answer_question(
+                task_data={
+                    "questionId": request.question_id or f"api_{request.repository_id}_{int(time.time())}",
+                    "repositoryId": request.repository_id,
+                    "userId": request.user_id,
+                    "question": request.question,
+                    "attachments": request.attachments
+                },
+                logger=logger
+            )
+            
+            return {
+                "status": "success",
+                "result": result
+            }
         
     except Exception as e:
-        logger.error(f"Failed to process Q&A: {str(e)}")
+        logger.error(f"Failed to process Q&A: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/task-status/{task_id}", response_model=TaskStatusResponse)
@@ -554,26 +600,6 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-@app.websocket("/ws/thinking/{repository_id}")
-async def thinking_websocket(websocket: WebSocket, repository_id: str):
-    """
-    WebSocket endpoint for real-time thinking updates.
-    Alternative to HTTP streaming for better connection management.
-    """
-    await manager.connect(websocket)
-    try:
-        while True:
-            # Keep connection alive and handle any incoming messages
-            data = await websocket.receive_text()
-            logger.info(f"Received WebSocket message for {repository_id}: {data}")
-            
-            # Echo back for now - can be extended for interactive thinking
-            await manager.send_personal_message(f"Processing: {data}", websocket)
-            
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-        logger.info(f"WebSocket disconnected for repository {repository_id}")
-
 @app.get("/repositories/{repository_id}/status")
 async def get_repository_status(repository_id: str):
     """
@@ -657,13 +683,6 @@ async def perform_health_check():
     except Exception as e:
         health_status["services"]["qdrant"] = f"error: {str(e)}"
         health_status["status"] = "degraded"
-    
-    # Check DeepSeek client
-    try:
-        from services.enhanced_deepseek_client import deepseek_client
-        health_status["services"]["deepseek"] = "configured" if deepseek_client.github_token else "not_configured"
-    except Exception as e:
-        health_status["services"]["deepseek"] = f"error: {str(e)}"
     
     return health_status
 

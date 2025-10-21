@@ -19,7 +19,6 @@ python-worker/
 ├── requirements.txt       # Python dependencies
 ├── api/                   # HTTP endpoint handlers
 │   ├── attachments.py     # File upload and processing endpoints
-│   ├── comprehensive_thinking.py  # Deep analysis AI endpoints
 │   ├── lightweight_thinking.py    # Quick response AI endpoints
 │   ├── pure_thinking.py   # Core AI reasoning endpoints
 │   └── thinking_context.py       # Context-aware AI responses
@@ -31,7 +30,6 @@ python-worker/
 │   ├── meeting_summarizer.py  # Meeting transcript analysis and summarization
 │   └── summarization.py   # Repository and commit summarization
 ├── services/              # External service integrations
-│   ├── enhanced_deepseek_client.py  # DeepSeek R1 integration via GitHub AI
 │   ├── gemini_client.py   # Google Gemini integration for AI tasks
 │   ├── qdrant_client.py   # Vector database for embeddings storage
 │   ├── redis_client.py    # Cache and session management
@@ -42,8 +40,7 @@ python-worker/
 
 ## Why These AI Models
 
-- **Gemini for General AI Tasks**: We use Google's Gemini 2.0 Flash Lite for most text generation, summarization, and Q&A because it's fast, reliable, and has good rate limits.
-- **DeepSeek R1 for Complex Analysis**: For deep code analysis and complex reasoning, we use DeepSeek R1 through GitHub's AI service because it excels at chain-of-thought reasoning and understanding programming contexts.
+- **Gemini for All AI Tasks**: We use Google's Gemini for all text generation, code analysis, summarization, and Q&A with multi-step reasoning. It's fast, reliable, has excellent chain-of-thought capabilities, and provides great rate limits.
 - **Embedding Models**: We use sentence-transformers like `all-MiniLM-L6-v2` for creating vector embeddings because they work well for semantic search across code and documentation.
 - **Qdrant Vector DB**: Handles vector similarity search much faster than traditional databases, crucial for real-time Q&A responses.
 
@@ -55,7 +52,7 @@ python-worker/
 - Redis (for caching and job queues)
 - Qdrant (vector database)
 - PostgreSQL (shared with node-worker)
-- AI API keys (Google Gemini, GitHub token for DeepSeek)
+- Google Gemini API key
 
 ### Quick Start
 
@@ -67,7 +64,7 @@ python-worker/
 2. Configure environment:
    ```bash
    cp .env.example .env
-   # Add your AI API keys (GEMINI_API_KEY, GITHUB_TOKEN) and service URLs
+   # Add your Gemini API key (GEMINI_API_KEY) and service URLs
    ```
 
 3. Start services:
@@ -107,7 +104,6 @@ REDIS_URL=redis://localhost:6379
 
 # API Keys
 GEMINI_API_KEY=your-gemini-api-key
-GITHUB_TOKEN=your-github-token
 
 # Qdrant Vector Database
 QDRANT_URL=your-qdrant-cloud-url
@@ -160,24 +156,26 @@ LOG_LEVEL=info
 
 ## AI Model Router
 
-We automatically select the best AI model based on the task:
+We use Google Gemini for all AI tasks with multi-step reasoning:
 
 ```python
-# Complex reasoning: DeepSeek R1 for deep analysis
+# All tasks use Gemini with optimized prompts
 if task_type == "complex_analysis":
-    model = "deepseek/DeepSeek-R1"
+    model = "gemini-2.0-flash-lite"
+    use_reasoning = True  # Enable multi-step chain-of-thought
     
-# General tasks: Gemini for speed and reliability
+# Summarization tasks
 elif task_type == "summarization":
     model = "gemini-2.0-flash-lite"
     
-# Quick questions: Gemini for fast responses
+# Quick Q&A
 elif task_type == "quick_qa":
     model = "gemini-2.0-flash-lite"
     
-# Code explanation: DeepSeek for programming context
+# Code analysis with reasoning steps
 elif task_type == "code_analysis":
-    model = "deepseek/DeepSeek-R1"
+    model = "gemini-2.0-flash-lite"
+    use_reasoning = True
 ```
 
 ## Error Handling

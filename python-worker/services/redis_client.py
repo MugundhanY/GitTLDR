@@ -97,6 +97,16 @@ class RedisClient:
         if result:
             await self.redis.set(result_key, json.dumps(result), ex=3600)
 
+        # Publish job update for Node.js worker to pick up
+        update_message = {
+            "jobId": task_id,
+            "status": status,
+            "progress": "100" if status in ["completed", "failed"] else "50",
+            "result": result,
+            "error": None if status != "failed" else str(result.get("error", "Unknown error")) if result else None
+        }
+        await self.publish("job_updates", json.dumps(update_message))
+
         logger.info("Task status updated", task_id=task_id, status=status)
 
     async def get_task_status(self, task_id: str) -> Optional[str]:

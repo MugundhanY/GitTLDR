@@ -15,65 +15,142 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }    // Create question record in database using Prisma
-    // We'll create it after processing since it requires an answer
+    // We'll create it as pending and update it when processing completes
     const questionId = Date.now().toString();
 
-    // Create pending question record with attachments if provided
-    if (attachments && attachments.length > 0) {
-      try {
-        await prisma.question.create({
-          data: {
-            id: questionId,
-            query: question,
-            answer: '', // Will be filled when processing completes
-            confidenceScore: 0,
-            relevantFiles: [],
-            userId: userId,
-            repositoryId: repositoryId,
-            createdAt: new Date(),            questionAttachments: {
-              create: attachments.map((attachment: any) => ({
-                fileName: attachment.fileName,
-                originalFileName: attachment.originalFileName,
-                fileSize: attachment.fileSize,
-                fileType: attachment.fileType,
-                uploadUrl: attachment.uploadUrl,
-                backblazeFileId: attachment.backblazeFileId,
-                uploadedBy: userId, // Link attachment to the user who uploaded it
-                repositoryId: repositoryId, // Link attachment to the repository
-                createdAt: new Date()
-              }))
-            }
-          }
-        });
-        console.log(`✅ Created pending question with ${attachments.length} attachments: ${questionId}`);
-      } catch (error) {
-        console.error('Error creating pending question with attachments:', error);
-        // Continue with processing even if pending creation fails
-      }
-    }    // Send processing request to Node.js worker
-    const workerResponse = await fetch(`${process.env.NODE_WORKER_URL}/process-question`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        questionId: questionId,
-        repositoryId,
-        userId,
-        question,
-        attachments: attachments || []
-      })
-    });
-
-    if (!workerResponse.ok) {
-      throw new Error('Failed to queue question processing');
+    // Create pending question record
+    try {
+      await prisma.question.create({
+        data: {
+          id: questionId,
+          query: question,
+          answer: '', // Will be filled when processing completes
+          confidenceScore: 0,
+          relevantFiles: [],
+          userId: userId,
+          repositoryId: repositoryId,
+          createdAt: new Date(),
+          questionAttachments: attachments && attachments.length > 0 ? {
+            create: attachments.map((attachment: any) => ({
+              fileName: attachment.fileName,
+              originalFileName: attachment.originalFileName,
+              fileSize: attachment.fileSize,
+              fileType: attachment.fileType,
+              uploadUrl: attachment.uploadUrl,
+              backblazeFileId: attachment.backblazeFileId,
+              uploadedBy: userId, // Link attachment to the user who uploaded it
+              repositoryId: repositoryId, // Link attachment to the repository
+              createdAt: new Date()
+            }))
+          } : undefined
+        }
+      });
+      console.log(`✅ Created pending question: ${questionId}`);
+    } catch (error) {
+      console.error('Error creating pending question:', error);
+      // Continue with processing even if pending creation fails
     }
 
-    const workerResult = await workerResponse.json();    return NextResponse.json({
-      questionId: questionId,
-      jobId: workerResult.jobId,
-      status: 'processing'
-    });
+    // Check processing mode: API or WORKER
+    const PROCESSING_MODE = process.env.PROCESSING_MODE || 'WORKER';
+    
+    if (PROCESSING_MODE === 'API') {
+      // API Mode: Direct call to python-worker API (synchronous, no Redis needed)
+      console.log('🔄 API Mode: Calling python-worker directly');
+      
+      const pythonWorkerUrl = process.env.PYTHON_WORKER_URL || 'http://localhost:8000';
+      const apiResponse = await fetch(`${pythonWorkerUrl}/qna`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          question_id: questionId,
+          repository_id: repositoryId,
+          user_id: userId,
+          question: question,
+          attachments: attachments || []
+        })
+      });
+
+      if (!apiResponse.ok) {
+        throw new Error('Failed to process question via API');
+      }
+
+      const apiResult = await apiResponse.json();
+      console.log('✅ API Mode: Question processed successfully', apiResult);
+      console.log('📁 API Mode: Relevant files from python worker:', apiResult.result?.relevant_files);
+      
+      // Extract tool execution data
+      const toolExecutions = apiResult.result?.tool_executions || [];
+      const githubDataUsed = apiResult.result?.github_data_used || false;
+      
+      if (toolExecutions.length > 0) {
+        console.log('🔧 GitHub Tools Used:', toolExecutions.map((t: any) => t.tool).join(', '));
+      }
+      
+      // Update question in database with the answer and relevant files
+      await prisma.question.update({
+        where: { id: questionId },
+        data: {
+          answer: apiResult.result?.answer || 'No answer generated',
+          relevantFiles: apiResult.result?.relevant_files || [],
+          confidenceScore: apiResult.result?.confidence || 0,
+          category: apiResult.result?.category || null,
+          tags: apiResult.result?.tags || [],
+          toolExecutions: toolExecutions.length > 0 ? toolExecutions : null,
+          githubDataUsed: githubDataUsed
+        }
+      });
+      
+      console.log('✅ API Mode: Question updated in database with answer, relevant files, tags, and tool data');
+      console.log('📁 API Mode: Sending to frontend - relevantFiles:', apiResult.result?.relevant_files);
+      
+      return NextResponse.json({
+        questionId: questionId,
+        status: 'completed',
+        mode: 'api',
+        answer: apiResult.result?.answer,
+        relevantFiles: apiResult.result?.relevant_files,
+        category: apiResult.result?.category,
+        tags: apiResult.result?.tags,
+        confidence: apiResult.result?.confidence,
+        toolExecutions: toolExecutions,
+        githubDataUsed: githubDataUsed
+      });
+      
+    } else {
+      // WORKER Mode: Send to Node.js worker which queues to Redis (async)
+      console.log('🔄 WORKER Mode: Queuing to Redis via node-worker');
+      
+      const workerResponse = await fetch(`${process.env.NODE_WORKER_URL}/process-question`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          questionId: questionId,
+          repositoryId,
+          userId,
+          question,
+          attachments: attachments || []
+        })
+      });
+
+      if (!workerResponse.ok) {
+        throw new Error('Failed to queue question processing');
+      }
+
+      const workerResult = await workerResponse.json();
+      console.log('✅ WORKER Mode: Question queued successfully');
+      
+      return NextResponse.json({
+        questionId: questionId,
+        jobId: workerResult.jobId,
+        status: 'processing',
+        mode: 'worker'
+      });
+    }
 
   } catch (error) {
     console.error('Error processing question:', error);
@@ -89,6 +166,7 @@ export async function GET(request: NextRequest) {  try {
     const { searchParams } = new URL(request.url);
     const repositoryId = searchParams.get('repositoryId');
     const userId = searchParams.get('userId');
+    const questionId = searchParams.get('questionId');
     const favoritesOnly = searchParams.get('favoritesOnly') === 'true';
     const category = searchParams.get('category');
     const tags = searchParams.get('tags')?.split(',').filter(Boolean);
@@ -107,6 +185,12 @@ export async function GET(request: NextRequest) {  try {
       repositoryId,
       userId,
     };
+
+    // Add questionId filter if provided (for polling)
+    if (questionId) {
+      whereClause.id = questionId;
+      console.log(`🔍 Polling for specific question: ${questionId}, repositoryId: ${repositoryId}, userId: ${userId}`);
+    }
 
     if (favoritesOnly) {
       whereClause.isFavorite = true;
@@ -166,14 +250,22 @@ export async function GET(request: NextRequest) {  try {
         { createdAt: 'desc' }
       ],
       take: 500 // Increased limit for better history access
-    });    // Transform questions for frontend
+    });    
+
+    console.log(`📊 Found ${questions.length} questions for repository ${repositoryId}, user ${userId}${questionId ? `, question ${questionId}` : ''}`);
+    if (questions.length > 0) {
+      console.log(`📋 First question: id=${questions[0].id}, answer length=${questions[0].answer?.length || 0}, status=completed, hasAnswer=${!!questions[0].answer}`);
+      if (questions[0].answer) {
+        console.log(`📝 Answer preview: ${questions[0].answer.substring(0, 100)}...`);
+      }
+    }    // Transform questions for frontend
     const qnaHistory = questions.map(question => ({
       id: question.id,
       query: question.query,
       answer: question.answer,
       createdAt: question.createdAt.toISOString(),
       updatedAt: question.updatedAt.toISOString(),
-      status: 'completed', // All stored questions are completed
+      status: question.answer && question.answer.trim() ? 'completed' : 'pending', // Check if answer exists and is not empty
       repositoryId: question.repositoryId,
       repositoryName: question.repository?.name || '',
       confidence: question.confidenceScore,
@@ -183,6 +275,8 @@ export async function GET(request: NextRequest) {  try {
       isFavorite: question.isFavorite,
       tags: question.tags,
       category: question.category,
+      toolExecutions: question.toolExecutions,
+      githubDataUsed: question.githubDataUsed,
       questionAttachments: question.questionAttachments?.map(attachment => ({
         id: attachment.id,
         fileName: attachment.fileName,

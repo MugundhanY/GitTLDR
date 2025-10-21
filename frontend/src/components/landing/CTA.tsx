@@ -1,6 +1,6 @@
 'use client';
 import { Link } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 
 export default function CTA() {
   const [isButtonHovered, setIsButtonHovered] = useState(false);
@@ -17,6 +17,100 @@ export default function CTA() {
     };
   }, []);
   
+  const particles = useMemo(() => {
+    if (!showDots) return null;
+    return (
+      <div className="absolute inset-0 z-[3] overflow-hidden">
+        {/* Large particles (slower) - smaller radius with random positioning */}
+        {Array.from({ length: 20 }, (_, i) => {
+          const angle = Math.random() * 360; // Random angle
+          const radius = 12 + Math.random() * 20; // Smaller radius (20-35px) from aura center
+          const startX = 50 + radius * Math.cos(angle * Math.PI / 180);
+          const startY = 80 + radius * Math.sin(angle * Math.PI / 180); // Positioned around aura center
+          const size = Math.random() * 2 + 2.5; // Larger particles (2.5-4.5px)
+          const duration = Math.random() * 3 + 15; // Much faster (2-5s)
+          const delay = Math.random() * 8;
+          
+          return (
+            <div
+              key={`large-${i}`}
+              className="absolute rounded-full bg-white z-[-1]"
+              style={{
+                width: `${size}px`,
+                height: `${size}px`,
+                left: `${startX}%`,
+                top: `${startY}%`,
+                opacity: 0,
+                animation: `suck-to-center ${duration}s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite`,
+                animationDelay: `${delay}s`,
+                boxShadow: `0 0 12px rgba(255, 255, 255, 1), 0 0 20px rgba(128, 255, 210, 0.6)`,
+                willChange: 'left, top, opacity',
+              }}
+            />
+          );
+        })}
+        
+        {/* Small particles (faster) - smaller radius with random positioning */}
+        {Array.from({ length: 40 }, (_, i) => {
+          const angle = Math.random() * 360; // Random angle
+          const radius = 15 + Math.random() * 25; // Smaller radius (25-45px) from aura center
+          const startX = 50 + radius * Math.cos(angle * Math.PI / 180);
+          const startY = 80 + radius * Math.sin(angle * Math.PI / 180); // Positioned around aura center
+          const size = Math.random() * 1.5 + 0.8; // Smaller particles (0.8-2.3px)
+          const duration = Math.random() * 2 + 10; // Very fast (1.5-3.5s)
+          const delay = Math.random() * 10;
+          
+          return (
+            <div
+              key={`small-${i + 40}`}
+              className="absolute rounded-full bg-white"
+              style={{
+                width: `${size}px`,
+                height: `${size}px`,
+                left: `${startX}%`,
+                top: `${startY}%`,
+                opacity: 0,
+                animation: `suck-to-center ${duration}s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite`,
+                animationDelay: `${delay}s`,
+                boxShadow: `0 0 8px rgba(255, 255, 255, 0.9), 0 0 15px rgba(133, 184, 255, 0.5)`,
+                willChange: 'left, top, opacity',
+              }}
+            />
+          );
+        })}
+        
+        {/* Extra tiny particles for density */}
+        {Array.from({ length: 30 }, (_, i) => {
+          const angle = Math.random() * 360; // Random angle
+          const radius = 16 + Math.random() * 25; // Further out (30-55px)
+          const startX = 50 + radius * Math.cos(angle * Math.PI / 180);
+          const startY = 80 + radius * Math.sin(angle * Math.PI / 180);
+          const size = Math.random() * 1 + 0.5; // Tiny particles (0.5-1.5px)
+          const duration = Math.random() * 2 + 6; // Super fast (1-2.5s)
+          const delay = Math.random() * 12;
+          
+          return (
+            <div
+              key={`tiny-${i + 120}`}
+              className="absolute rounded-full bg-white"
+              style={{
+                width: `${size}px`,
+                height: `${size}px`,
+                left: `${startX}%`,
+                top: `${startY}%`,
+                opacity: 0,
+                animation: `suck-to-center ${duration}s cubic-bezier(0.55, 0.085, 0.68, 0.53) infinite`,
+                animationDelay: `${delay}s`,
+                boxShadow: `0 0 6px rgba(255, 255, 255, 0.8), 0 0 12px rgba(128, 255, 210, 0.4)`,
+                willChange: 'left, top, opacity',
+              }}
+            />
+          );
+        })}
+      </div>
+    );
+  }, [showDots]);
+
     const getAnimationStyle = (delay: number, type: 'default' | 'scale' | 'word' = 'default') => {
         const baseStyle = animateIn
             ? {
@@ -79,11 +173,12 @@ export default function CTA() {
     rgb(128, 255, 210) 306.00000000000006deg,
     rgb(0, 255, 166) 360deg
   )`,
-            filter: 'blur(100px)',
+            filter: 'blur(75px)',
             opacity: 1,
             animation: 'rotate-globe 5s linear infinite',
             transform: 'translateY(50%)', 
             aspectRatio: '1/1',
+            willChange: 'transform',
           }}
         />
       </div>
@@ -106,6 +201,7 @@ export default function CTA() {
             animation: 'rotate-globe-inverse 5s linear infinite',
             transform: 'translateY(50%)', 
             aspectRatio: '1/1',
+            willChange: 'transform',
           }}
         />
       </div>
@@ -129,99 +225,14 @@ export default function CTA() {
             transform: 'translateY(50%)', 
             aspectRatio: '1/1',
             mixBlendMode: 'overlay',
+            willChange: 'transform',
           }}
         />
       </div>
      
 
       {/* Floating Particles toward Center - Layer 4 */}
-      {showDots && (
-        <div className="absolute inset-0 z-[3] overflow-hidden">
-          {/* Large particles (slower) - smaller radius with random positioning */}
-          {Array.from({ length: 40 }, (_, i) => {
-            const angle = Math.random() * 360; // Random angle
-            const radius = 12 + Math.random() * 20; // Smaller radius (20-35px) from aura center
-            const startX = 50 + radius * Math.cos(angle * Math.PI / 180);
-            const startY = 80 + radius * Math.sin(angle * Math.PI / 180); // Positioned around aura center
-            const size = Math.random() * 2 + 2.5; // Larger particles (2.5-4.5px)
-            const duration = Math.random() * 3 + 15; // Much faster (2-5s)
-            const delay = Math.random() * 8;
-            
-            return (
-              <div
-                key={`large-${i}`}
-                className="absolute rounded-full bg-white z-[-1]"
-                style={{
-                  width: `${size}px`,
-                  height: `${size}px`,
-                  left: `${startX}%`,
-                  top: `${startY}%`,
-                  opacity: 0,
-                  animation: `suck-to-center ${duration}s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite`,
-                  animationDelay: `${delay}s`,
-                  boxShadow: `0 0 12px rgba(255, 255, 255, 1), 0 0 20px rgba(128, 255, 210, 0.6)`
-                }}
-              />
-            );
-          })}
-          
-          {/* Small particles (faster) - smaller radius with random positioning */}
-          {Array.from({ length: 80 }, (_, i) => {
-            const angle = Math.random() * 360; // Random angle
-            const radius = 15 + Math.random() * 25; // Smaller radius (25-45px) from aura center
-            const startX = 50 + radius * Math.cos(angle * Math.PI / 180);
-            const startY = 80 + radius * Math.sin(angle * Math.PI / 180); // Positioned around aura center
-            const size = Math.random() * 1.5 + 0.8; // Smaller particles (0.8-2.3px)
-            const duration = Math.random() * 2 + 10; // Very fast (1.5-3.5s)
-            const delay = Math.random() * 10;
-            
-            return (
-              <div
-                key={`small-${i + 40}`}
-                className="absolute rounded-full bg-white"
-                style={{
-                  width: `${size}px`,
-                  height: `${size}px`,
-                  left: `${startX}%`,
-                  top: `${startY}%`,
-                  opacity: 0,
-                  animation: `suck-to-center ${duration}s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite`,
-                  animationDelay: `${delay}s`,
-                  boxShadow: `0 0 8px rgba(255, 255, 255, 0.9), 0 0 15px rgba(133, 184, 255, 0.5)`
-                }}
-              />
-            );
-          })}
-          
-          {/* Extra tiny particles for density */}
-          {Array.from({ length: 60 }, (_, i) => {
-            const angle = Math.random() * 360; // Random angle
-            const radius = 16 + Math.random() * 25; // Further out (30-55px)
-            const startX = 50 + radius * Math.cos(angle * Math.PI / 180);
-            const startY = 80 + radius * Math.sin(angle * Math.PI / 180);
-            const size = Math.random() * 1 + 0.5; // Tiny particles (0.5-1.5px)
-            const duration = Math.random() * 2 + 6; // Super fast (1-2.5s)
-            const delay = Math.random() * 12;
-            
-            return (
-              <div
-                key={`tiny-${i + 120}`}
-                className="absolute rounded-full bg-white"
-                style={{
-                  width: `${size}px`,
-                  height: `${size}px`,
-                  left: `${startX}%`,
-                  top: `${startY}%`,
-                  opacity: 0,
-                  animation: `suck-to-center ${duration}s cubic-bezier(0.55, 0.085, 0.68, 0.53) infinite`,
-                  animationDelay: `${delay}s`,
-                  boxShadow: `0 0 6px rgba(255, 255, 255, 0.8), 0 0 12px rgba(128, 255, 210, 0.4)`
-                }}
-              />
-            );
-          })}
-        </div>
-      )}
+      {particles}
 
       {/* Foreground UI Content - Layer 5 */}
       <div className="relative z-[60] flex flex-col items-center justify-center w-full md:max-w-3xl sm:max-w-xl mx-auto text-center">

@@ -87,59 +87,6 @@ class SummarizationProcessor:
             logger.error(f"Failed to summarize file {file_path}: {str(e)}")
             raise
     
-    async def summarize_commit(self, task_data: Dict[str, Any], logger) -> Dict[str, Any]:
-        """Summarize commit changes."""
-        logger.info("Processing commit summarization")
-        
-        commit_data = task_data.get("commitData")
-        changes = task_data.get("changes", [])
-        
-        if not commit_data:
-            raise ValueError("Commit data is required")
-        
-        try:            # Build enhanced commit context from changes
-            change_summary = []
-            for change in changes:
-                filename = change.get("filename", "unknown")
-                status = change.get("status", "modified")
-                additions = change.get("additions", 0)
-                deletions = change.get("deletions", 0)
-                
-                # Create more descriptive change entries
-                change_desc = f"- {filename}: {status}"
-                if additions > 0 or deletions > 0:
-                    change_desc += f" (+{additions}/-{deletions})"
-                change_summary.append(change_desc)
-            
-            # Create enhanced commit context
-            commit_context = f"""
-Commit: {commit_data.get('sha', 'unknown')[:8]}
-Message: {commit_data.get('message', '')}
-Author: {commit_data.get('author', {}).get('name', 'unknown')}
-
-Files modified ({len(changes)} files):
-{chr(10).join(change_summary)}
-
-Context: This is a git commit representing changes made to a codebase. Analyze the commit message and file changes to understand what functionality was added, modified, or fixed.
-"""
-            
-            # Generate summary using Gemini
-            summary = await gemini_client.generate_summary(
-                text=commit_context,
-                context="git commit"
-            )
-            
-            return {
-                "status": "completed",
-                "commit_sha": commit_data.get("sha"),
-                "summary": summary,
-                "files_changed": len(changes)
-            }
-            
-        except Exception as e:
-            logger.error(f"Failed to summarize commit: {str(e)}")
-            raise
-    
     # async def process_meeting(self, task_data: Dict[str, Any], logger) -> Dict[str, Any]:
     #     """Process meeting audio/transcript for summarization."""
     #     logger.info("Processing meeting summarization")

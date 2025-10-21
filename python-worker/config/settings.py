@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     # Environment Configuration
     node_env: str = "production"
     
+    # Processing Mode: "API" or "WORKER"
+    # API mode: Direct HTTP processing via api_server.py (no Redis needed)
+    # WORKER mode: Async processing via worker.py with Redis queue
+    processing_mode: str = "WORKER"
+    
     # Service URLs for CORS configuration
     frontend_url: str = "https://gittldr.vercel.app"
     node_worker_url: str = ""
@@ -19,8 +24,6 @@ class Settings(BaseSettings):
     gemini_api_key: str = "your-gemini-api-key"
     # Multiple Gemini API keys for rotation (comma-separated)
     gemini_api_keys: Optional[str] = None  # Format: "key1,key2,key3"
-    deepseek_api_key: Optional[str] = None
-    github_token: Optional[str] = None
     qdrant_api_key: Optional[str] = None
     
     # Embedding Configuration
@@ -33,6 +36,17 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379"
     qdrant_url: str = "http://localhost:6333"
     database_url: str = "postgresql://user:password@localhost:5432/gittldr"
+    
+    # Neo4j Configuration
+    neo4j_uri: Optional[str] = None
+    neo4j_username: Optional[str] = None
+    neo4j_password: Optional[str] = None
+    neo4j_database: Optional[str] = None
+    
+    # Feature Flags
+    enable_graph_retrieval: bool = True  # Enable Neo4j graph-based retrieval
+    enable_multi_step_retrieval: bool = True  # Enable iterative context gathering
+    enable_hybrid_retrieval: bool = True  # Enable hybrid retrieval (embeddings + graph + summaries + smart context)
     
     # Queue Configuration
     queue_name: str = "gittldr_tasks"

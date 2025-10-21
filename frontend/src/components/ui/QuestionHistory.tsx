@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRepository } from '@/contexts/RepositoryContext'
+import { useUserData } from '@/hooks/useUserData'
 import { 
   StarIcon,
   TagIcon,
@@ -39,6 +40,7 @@ interface QuestionHistoryProps {
 
 const QuestionHistory = ({ onSelectQuestion, currentQuestionId, className = '' }: QuestionHistoryProps) => {
   const { selectedRepository } = useRepository()
+  const { userData } = useUserData()
   const [questions, setQuestions] = useState<Question[]>([])
   const [filteredQuestions, setFilteredQuestions] = useState<Question[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -63,13 +65,13 @@ const QuestionHistory = ({ onSelectQuestion, currentQuestionId, className = '' }
   }, [questions, searchQuery, filterFavorites, selectedCategory, selectedTags])
 
   const fetchQuestions = async () => {
-    if (!selectedRepository?.id) return
+    if (!selectedRepository?.id || !userData?.id) return
 
     setIsLoading(true)
     try {
       const params = new URLSearchParams({
         repositoryId: selectedRepository.id,
-        userId: '1', // Replace with actual user ID
+        userId: userData.id,
       })
 
       const response = await fetch(`/api/qna?${params}`)
@@ -134,7 +136,7 @@ const QuestionHistory = ({ onSelectQuestion, currentQuestionId, className = '' }
         },
         body: JSON.stringify({
           questionId,
-          userId: '1',
+          userId: userData?.id || '1',
           isFavorite: !currentFavorite
         })
       })
@@ -179,12 +181,12 @@ const QuestionHistory = ({ onSelectQuestion, currentQuestionId, className = '' }
   }
 
   const exportQuestions = async (format: 'markdown' | 'json' | 'html') => {
-    if (!selectedRepository?.id) return
+    if (!selectedRepository?.id || !userData?.id) return
 
     try {
       const params = new URLSearchParams({
         repositoryId: selectedRepository.id,
-        userId: '1',
+        userId: userData.id,
         format,
         ...(filterFavorites && { favoritesOnly: 'true' }),
         ...(selectedCategory && { category: selectedCategory })

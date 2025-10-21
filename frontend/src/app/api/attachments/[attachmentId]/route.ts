@@ -41,45 +41,56 @@ async function handleTokenBasedDownload(fileId: string, token: string, userId: s
       );
     }
 
-    // Try to fetch file content for direct download
-    let fileBuffer: ArrayBuffer | null = null;
-    
-    // Try original upload URL first
-    if (attachment.uploadUrl) {
+    // Fetch file from B2 with proper authentication and proxy it
+    if (attachment.fileName) {
       try {
-        const fileResponse = await fetch(attachment.uploadUrl);
-        if (fileResponse.ok) {
-          fileBuffer = await fileResponse.arrayBuffer();
+        console.log(`Downloading file from B2: ${attachment.fileName}`);
+        
+        // Import B2 storage service
+        const { B2StorageService } = await import('@/lib/b2-storage');
+        const b2Storage = new B2StorageService();
+        
+        // Download file buffer from B2 with authentication
+        const fileBuffer = await b2Storage.downloadFileBuffer(attachment.fileName);
+        console.log(`Successfully fetched file, size: ${fileBuffer.byteLength} bytes`);
+
+        // Return file with proper headers
+        // Force CSV files to display as text/plain so browsers preview instead of download
+        let contentType = attachment.fileType || 'application/octet-stream';
+        if (contentType.includes('csv')) {
+          contentType = 'text/plain; charset=utf-8';
         }
+        
+        const headers = new Headers({
+          'Content-Type': contentType,
+          'Content-Disposition': `inline; filename="${encodeURIComponent(attachment.originalFileName || attachment.fileName)}"`,
+          'Content-Length': fileBuffer.byteLength.toString(),
+          'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
+          'Access-Control-Allow-Origin': '*', // Allow cross-origin for previews
+        });
+
+        return new NextResponse(fileBuffer, {
+          status: 200,
+          headers
+        });
       } catch (error) {
-        console.warn('Failed to fetch from upload URL:', error);
+        console.error('Error downloading file from B2:', error);
+        return NextResponse.json({
+          error: 'Failed to load file from storage',
+          details: error instanceof Error ? error.message : 'Unknown error',
+          fileId: attachment.id,
+          fileName: attachment.originalFileName
+        }, { status: 500 });
       }
     }
 
-    // If we have the file buffer, return it directly
-    if (fileBuffer) {
-      const headers = new Headers({
-        'Content-Type': attachment.fileType || 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="${attachment.originalFileName || attachment.fileName}"`,
-        'Content-Length': fileBuffer.byteLength.toString(),
-      });
-
-      return new NextResponse(fileBuffer, {
-        status: 200,
-        headers
-      });
-    }
-
-    // Fallback: return file info if direct download fails
+    // If no uploadUrl available, return error
     return NextResponse.json({
+      error: 'File URL not available',
       id: attachment.id,
       fileName: attachment.fileName,
       originalFileName: attachment.originalFileName,
-      fileSize: attachment.fileSize,
-      fileType: attachment.fileType,
-      uploadUrl: attachment.uploadUrl,
-      message: 'Direct download not available, use uploadUrl for download'
-    });
+    }, { status: 404 });
 
   } catch (error) {
     console.error('Error in token-based download:', error);

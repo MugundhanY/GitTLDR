@@ -6,21 +6,47 @@ qdrant-client
 redis
 b2sdk
 python-dotenv
+pydantic>=2.0.0
 pydantic-settings
 asyncpg
 fastapi
 uvicorn[standard]
 httpx
-aiohttp
+aiohttp>=3.9.0
 azure-ai-inference
 structlog
 rich
 pydub
 hf_xet
 
+# PDF processing
+PyPDF2
+pdfplumber
+PyMuPDF
+pytesseract
+Pillow
+
+# Office document processing
+python-docx
+openpyxl>=3.1.0
+pandas>=2.0.0
+xlrd>=2.0.1
+
+# Neo4j graph database
+neo4j
+neo4j-driver
+
 # Audio processing dependencies
 faster-whisper
 openai-whisper
+
+# LangChain document loaders for comprehensive file format support
+langchain
+langchain-community
+langchain-core
+unstructured[all-docs]
+python-magic
+tabulate
 
 # Optional dependencies for better performance
 torch

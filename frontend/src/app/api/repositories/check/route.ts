@@ -37,6 +37,8 @@ export async function POST(req: NextRequest) {  // Get authenticated user first,
     }    // Get repository contents recursively
     const fileCount = await getRepositoryFileCount(apiUrl, headers);
     
+    console.log('Repository check - Owner:', owner, 'Repo:', repo, 'API URL:', apiUrl);
+    
     // Calculate credits needed (1 file = 1 credit, 0 files = 0 credits)
     const creditsNeeded = fileCount;
     const hasEnoughCredits = fileCount === 0 ? true : user.credits >= creditsNeeded;    return NextResponse.json({
@@ -65,7 +67,9 @@ export async function POST(req: NextRequest) {  // Get authenticated user first,
 
 async function getRepositoryFileCount(apiUrl: string, headers: Record<string, string>, path: string = ''): Promise<number> {
   try {
-    const response = await fetch(`${apiUrl}${path}`, { headers });
+    const fullUrl = `${apiUrl}${path}`;
+    console.log('Fetching URL:', fullUrl);
+    const response = await fetch(fullUrl, { headers });
     
     if (!response.ok) {
       throw new Error(`GitHub API error: ${response.status}`);
@@ -97,7 +101,7 @@ async function getRepositoryFileCount(apiUrl: string, headers: Record<string, st
           const subDirCount = await getRepositoryFileCount(
             apiUrl.replace('/contents', ''),
             headers,
-            `/contents${item.path}`
+            `/contents/${item.path}`
           );
           fileCount += subDirCount;
         }

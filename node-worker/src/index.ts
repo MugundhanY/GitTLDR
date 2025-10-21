@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import Redis from 'ioredis';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { PrismaClient } from '@prisma/client';
 import { FileMetadataProcessor } from './processors/fileMetadataProcessor';
 import { RepositoryCompletionProcessor } from './processors/repositoryCompletionProcessor';
 import { ResultProcessor } from './processors/resultProcessor';
@@ -17,6 +18,9 @@ const PORT = process.env.PORT || 3001;
 // Redis connections
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 const subscriber = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+
+// Prisma client
+const prisma = new PrismaClient();
 
 // Subscribe to meeting status updates
 subscriber.subscribe('meeting_status_updates');
@@ -116,6 +120,36 @@ app.post('/process-question', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
+    // Prioritize attachments from request body (which include content)
+    // Only fall back to database if no attachments provided in request
+    let allAttachments: any[] = [];
+    
+    if (attachments && attachments.length > 0) {
+      // Use attachments from request body - they include the content field
+      console.log(`📎 Using ${attachments.length} attachments from request body (with content)`);
+      allAttachments = attachments;
+    } else {
+      // Fallback: Retrieve attachments from database if not provided in request
+      try {
+        const existingQuestion = await prisma.question.findUnique({
+          where: { id: questionId },
+          include: { questionAttachments: true }
+        });
+        
+        if (existingQuestion && existingQuestion.questionAttachments) {
+          allAttachments = existingQuestion.questionAttachments.map(att => ({
+            fileName: att.backblazeFileId || att.fileName, // Use backblazeFileId as the B2 key
+            originalFileName: att.originalFileName,
+            fileType: att.fileType,
+            fileSize: att.fileSize
+          }));
+          console.log(`📎 Retrieved ${allAttachments.length} attachments from database for question ${questionId}`);
+        }
+      } catch (dbError) {
+        console.warn(`⚠️ Failed to retrieve attachments from database: ${(dbError as Error).message}`);
+      }
+    }
+    
     const jobId = `qna_${questionId}_${Date.now()}`;
     
     // Create job record
@@ -139,11 +173,11 @@ app.post('/process-question', async (req: Request, res: Response) => {
       repositoryId,
       userId,
       question,
-      attachments: attachments || [],
+      attachments: allAttachments,
       timestamp: new Date().toISOString()
     }));
     
-    console.log(`❓ Queued QnA job for question ${questionId}${attachments && attachments.length > 0 ? ` with ${attachments.length} attachments` : ''}`);
+    console.log(`❓ Queued QnA job for question ${questionId}${allAttachments.length > 0 ? ` with ${allAttachments.length} attachments` : ''}`);
     
     res.json({ jobId, status: 'queued' });
   } catch (error) {
@@ -193,47 +227,6 @@ app.post('/process-meeting', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error processing meeting:', error);
     res.status(500).json({ error: 'Failed to queue meeting processing' });
-  }
-});
-
-// Commit summarization endpoint
-app.post('/process-commit-summary', async (req: Request, res: Response) => {
-  try {
-    const { taskId, repositoryId, userId, commitData, changes, type } = req.body;
-    
-    if (!taskId || !repositoryId || !userId || !commitData || !type) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-    
-    // Create job record
-    await redis.hset(`job:${taskId}`, {
-      id: taskId,
-      type: 'summarize_commit',
-      repositoryId,
-      userId,
-      commitSha: commitData.sha,
-      status: 'queued',
-      createdAt: new Date().toISOString(),
-      progress: '0'
-    });
-    
-    // Queue job for Python worker
-    await redis.lpush(process.env.QUEUE_NAME || 'gittldr_tasks', JSON.stringify({
-      id: taskId,
-      type: 'summarize_commit',
-      repositoryId,
-      userId,
-      commit: commitData,
-      changes: changes || [],
-      timestamp: new Date().toISOString()
-    }));
-    
-    console.log(`📝 Queued commit summary job for commit ${commitData.sha}`);
-    
-    res.json({ taskId, status: 'queued' });
-  } catch (error) {
-    console.error('Error processing commit summary:', error);
-    res.status(500).json({ error: 'Failed to queue commit summarization' });
   }
 });
 
@@ -316,7 +309,32 @@ subscriber.on('message', async (channel, message) => {
       if (result) updateData.result = JSON.stringify(result);
       if (error) updateData.error = error;
       await redis.hset(`job:${jobId}`, updateData);
-      await updateMeetingStatus(jobId, status, result, error);
+      
+      // Handle different job types
+      if (jobId.startsWith('qna_')) {
+        // Extract questionId from jobId (format: qna_{questionId}_{timestamp})
+        const parts = jobId.split('_');
+        if (parts.length >= 2) {
+          const questionId = parts[1];
+          try {
+            // Update question status in database
+            await prisma.question.updateMany({
+              where: { id: questionId },
+              data: { 
+                updatedAt: new Date(),
+                // Note: We don't set answer here, that's done by resultProcessor
+              }
+            });
+            console.log(`📝 Updated question ${questionId} status to ${status}`);
+          } catch (dbError) {
+            console.error(`❌ Failed to update question ${questionId} status:`, dbError);
+          }
+        }
+      } else {
+        // Handle meeting jobs
+        await updateMeetingStatus(jobId, status, result, error);
+      }
+      
       console.log(`📊 Job ${jobId} updated: ${status} (${progress}%)`);
       if (status === 'completed' || status === 'failed') {
         console.log(`✅ Job ${jobId} finished with status: ${status}`);
@@ -332,6 +350,7 @@ process.on('SIGTERM', async () => {
   console.log('🛑 Shutting down worker gracefully...');
   await redis.disconnect();
   await subscriber.disconnect();
+  await prisma.$disconnect();
   
   // Stop processors
   await fileMetadataProcessor.stop();

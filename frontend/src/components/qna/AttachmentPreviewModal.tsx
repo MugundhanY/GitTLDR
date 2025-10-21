@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment } from 'react'
+import { Fragment, useState } from 'react'
 import Image from 'next/image'
 import { Dialog, Transition } from '@headlessui/react'
 import { XMarkIcon } from '@heroicons/react/24/outline'
@@ -22,6 +22,10 @@ const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({
   isOpen,
   onClose,
 }) => {
+  const [imageLoading, setImageLoading] = useState(true)
+  const [imageError, setImageError] = useState(false)
+  const [iframeLoading, setIframeLoading] = useState(true)
+
   if (!attachment) {
     return null
   }
@@ -31,24 +35,63 @@ const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({
 
     if (fileType.startsWith('image/')) {
       return (
-        <Image
-          src={downloadUrl}
-          alt={originalFileName}
-          width={800}
-          height={600}
-          className="max-w-full max-h-[80vh] object-contain mx-auto"
-        />
+        <div className="relative min-h-[300px] flex items-center justify-center">
+          {imageLoading && !imageError && (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-100 dark:bg-slate-800">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                <p className="text-sm text-slate-600 dark:text-slate-400">Loading image...</p>
+              </div>
+            </div>
+          )}
+          {imageError ? (
+            <div className="p-6 text-center">
+              <p className="text-lg font-medium text-red-600 dark:text-red-400">
+                Failed to load image
+              </p>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                The image file may be corrupted or too large to display.
+              </p>
+            </div>
+          ) : (
+            <Image
+              src={downloadUrl}
+              alt={originalFileName}
+              width={800}
+              height={600}
+              className="max-w-full max-h-[80vh] object-contain mx-auto"
+              onLoad={() => setImageLoading(false)}
+              onError={() => {
+                setImageLoading(false)
+                setImageError(true)
+              }}
+            />
+          )}
+        </div>
       )
     }
 
-    if (fileType.includes('pdf') || fileType.startsWith('text/')) {
+    if (fileType.includes('pdf') || fileType.startsWith('text/') || fileType.includes('csv')) {
       return (
-        <iframe
-          src={downloadUrl}
-          title={originalFileName}
-          className="w-full h-[80vh] bg-white"
-          frameBorder="0"
-        />
+        <div className="relative min-h-[300px]">
+          {iframeLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-100 dark:bg-slate-800">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Loading {fileType.includes('pdf') ? 'PDF' : fileType.includes('csv') ? 'CSV' : 'document'}...
+                </p>
+              </div>
+            </div>
+          )}
+          <iframe
+            src={downloadUrl}
+            title={originalFileName}
+            className="w-full h-[80vh] bg-white"
+            frameBorder="0"
+            onLoad={() => setIframeLoading(false)}
+          />
+        </div>
       )
     }
 
@@ -58,6 +101,9 @@ const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({
           Preview is not available for this file type.
         </p>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+          File type: <span className="font-mono">{fileType}</span>
+        </p>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
           You can download the file to view it.
         </p>
       </div>

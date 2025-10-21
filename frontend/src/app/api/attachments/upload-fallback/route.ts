@@ -62,26 +62,52 @@ export async function POST(request: NextRequest) {
       // Get upload URL
       const uploadData = await b2Service.getUploadUrl(uniqueFileName, file.type);
 
-      // Upload file to B2
+      // Upload file to B2 with retry logic
       const fileBuffer = await file.arrayBuffer();
       const hashBuffer = await crypto.subtle.digest('SHA-1', fileBuffer);
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       const sha1Hash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-      const uploadResponse = await fetch(uploadData.uploadUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': uploadData.authorizationToken,
-          'Content-Type': file.type,
-          'X-Bz-File-Name': encodeURIComponent(uniqueFileName),
-          'X-Bz-Content-Sha1': sha1Hash
-        },
-        body: fileBuffer,
-      });
+      let uploadResponse;
+      let retries = 3;
+      let delay = 1000; // Start with 1 second
 
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        throw new Error(`Upload failed: ${uploadResponse.status} - ${errorText}`);
+      while (retries > 0) {
+        try {
+          uploadResponse = await fetch(uploadData.uploadUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': uploadData.authorizationToken,
+              'Content-Type': file.type,
+              'X-Bz-File-Name': encodeURIComponent(uniqueFileName),
+              'X-Bz-Content-Sha1': sha1Hash
+            },
+            body: fileBuffer,
+          });
+
+          if (uploadResponse.status !== 503) {
+            break; // Success or other error, break
+          }
+
+          console.log(`B2 returned 503, retrying in ${delay}ms... (${retries - 1} retries left)`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          delay *= 2; // Exponential backoff
+          retries--;
+        } catch (fetchError) {
+          console.error('Fetch error during upload:', fetchError);
+          retries--;
+          if (retries > 0) {
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay *= 2;
+          } else {
+            throw fetchError;
+          }
+        }
+      }
+
+      if (!uploadResponse || !uploadResponse.ok) {
+        const errorText = uploadResponse ? await uploadResponse.text() : 'No response';
+        throw new Error(`Upload failed after retries: ${uploadResponse?.status || 'unknown'} - ${errorText}`);
       }
 
       console.log('Server-side upload successful for file:', uniqueFileName);

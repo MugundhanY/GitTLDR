@@ -19,19 +19,19 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 // Components
 import QuestionInput from '@/components/qna/QuestionInput'
+import OptimizedQuestionList from '@/components/qna/VirtualizedQuestionList'
 import QnAHeader from '@/components/qna/QnAHeader'
 import QnASearchBar from '@/components/qna/QnASearchBar'
 import QnAFilterPanel from '@/components/qna/QnAFilterPanel'
 import QnAEmptyState from '@/components/qna/QnAEmptyState'
 import QuestionCard from '@/components/qna/QuestionCard'
 import QuestionSuggestions from '@/components/ui/QuestionSuggestions'
-import ReasoningSteps from '@/components/qna/ReasoningSteps'
-import ThinkingProcess from '@/components/qna/ThinkingProcess'
 
 // Hooks
 import { useQnAFiltering, Question } from '@/hooks/useQnAFiltering'
 import { useQnAActions } from '@/hooks/useQnAActions'
 import { useCodeFormatting } from '@/hooks/useCodeFormatting'
+import { useUserData } from '@/hooks/useUserData'
 
 import { QuestionAttachment } from '@/types/attachments'
 
@@ -39,15 +39,14 @@ export default function QnAPage() {
   const { selectedRepository } = useRepository()
   const { isCollapsed } = useSidebar()
   const { incrementQuestionCount, updateQuestionCount, triggerStatsRefreshOnCompletion } = useQnA()
+  const { userData } = useUserData()
   // Core state
   const [newQuestion, setNewQuestion] = useState('')
   const [showSuggestions, setShowSuggestions] = useState(true)
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null)
   const [isPageVisible, setIsPageVisible] = useState(true)
   const [visibleQuestions, setVisibleQuestions] = useState(10)
-  const [enableDeepResearch, setEnableDeepResearch] = useState(false)
   const [questionAttachments, setQuestionAttachments] = useState<QuestionAttachment[]>([])
-  const [currentThinkingQuestion, setCurrentThinkingQuestion] = useState('')
   const [optimisticQuestions, setOptimisticQuestions] = useState<Question[]>([])
   const queryClient = useQueryClient()
 
@@ -59,23 +58,40 @@ export default function QnAPage() {
     refetch: refetchQuestions
   } = useQuery<Question[]>({
     queryKey: ['questions', selectedRepository?.id],
-    queryFn: async () => {
-      if (!selectedRepository?.id) return []
-      const response = await fetch(`/api/qna?repositoryId=${selectedRepository.id}&userId=1`)
+    queryFn: async ({ signal }) => {
+      if (!selectedRepository?.id || !userData?.id) return []
+      const response = await fetch(`/api/qna?repositoryId=${selectedRepository.id}&userId=${userData.id}`, { signal })
       if (!response.ok) throw new Error('Failed to fetch questions')
       const data = await response.json()
       return data.questions || []
     },
-    enabled: !!selectedRepository?.id,
-    staleTime: 1000 * 60 // 1 minute
+    enabled: !!selectedRepository?.id && !!userData?.id,
+    staleTime: 1000 * 60, // 1 minute
+    gcTime: 1000 * 60 * 5 // 5 minutes (formerly cacheTime)
   })
   const fetchedQuestions = fetchedQuestionsRaw as Question[]
 
-  // Merge fetched and optimistic questions, deduping by id (optimistic first)
+  // Wrapper for refetch to match expected signature
+  const handleRefetch = useCallback(async () => {
+    await refetchQuestions()
+  }, [refetchQuestions])
+
+  // Merge fetched and optimistic questions, deduping by id
+  // Optimistic questions take priority to show instant updates
   const mergedQuestions = useMemo(() => {
     const byId = new Map<string, Question>()
-    for (const q of optimisticQuestions) byId.set(q.id, q)
-    for (const q of fetchedQuestions) if (!byId.has(q.id)) byId.set(q.id, q)
+    
+    // First, add all fetched questions (server truth)
+    for (const q of fetchedQuestions) {
+      byId.set(q.id, q)
+    }
+    
+    // Then, OVERRIDE with optimistic questions (for instant UI updates)
+    // This allows favorites, tags, etc. to update immediately
+    for (const q of optimisticQuestions) {
+      byId.set(q.id, q)
+    }
+    
     return Array.from(byId.values())
   }, [optimisticQuestions, fetchedQuestions])
 
@@ -101,6 +117,7 @@ export default function QnAPage() {
       id: selectedRepository.id, 
       name: selectedRepository.name 
     } : undefined,
+    userId: userData?.id,  // Pass actual user ID
     onQuestionsUpdate: (newQuestions: Question[] | Question) => {
       // Optimistically update the local state for instant UI
       setOptimisticQuestions(prev => {
@@ -113,23 +130,22 @@ export default function QnAPage() {
           // Update or insert single question
           const found = prev.find(q => q.id === newQuestions.id)
           if (found) {
+            // Update in place
             return prev.map(q => q.id === newQuestions.id ? newQuestions : q)
           } else {
+            // Add new question (for pending questions)
             return [newQuestions, ...prev]
           }
         }
       })
-      // Optionally, schedule a refetch after a short delay to sync with server
-      // setTimeout(() => refetchQuestions(), 2000)
     },
     incrementQuestionCount,
-    triggerStatsRefreshOnCompletion
+    triggerStatsRefreshOnCompletion,
+    refetchQuestions: async () => {
+      // Wrap refetchQuestions to match expected signature
+      await refetchQuestions()
+    }
   })
-  
-  // Update the deep research setting
-  useEffect(() => {
-    actions.multiStepReasoning.enableMultiStepReasoning = enableDeepResearch
-  }, [enableDeepResearch, actions.multiStepReasoning])
 
   const codeFormatting = useCodeFormatting()
 
@@ -161,66 +177,127 @@ export default function QnAPage() {
     }
   }, [fetchedQuestions, selectedRepository?.id, updateQuestionCount])
 
-  // Remove optimistic questions only when backend returns a matching completed question
+  // Remove optimistic questions when backend returns matching questions
+  // ONLY remove optimistic PENDING questions that have been completed
+  // For completed questions with optimistic updates (favorites), remove optimistic
+  // version once server data matches
   useEffect(() => {
     if (!optimisticQuestions.length) return;
-    const completedIds = new Set(fetchedQuestions.map(q => q.query.trim().toLowerCase()));
-    setOptimisticQuestions(prev => prev.filter(optQ => !completedIds.has(optQ.query.trim().toLowerCase())));
+    
+    const completedQuestionIds = new Set(fetchedQuestions.filter(q => q.status === 'completed').map(q => q.id));
+    
+    // Also match by query text for deep thinking questions (which have different IDs)
+    const completedQueries = new Set(
+      fetchedQuestions
+        .filter(q => q.status === 'completed')
+        .map(q => q.query.trim().toLowerCase())
+    );
+    
+    // Create a map of fetched questions for easy lookup
+    const fetchedQuestionsMap = new Map(fetchedQuestions.map(q => [q.id, q]));
+    
+    setOptimisticQuestions(prev => 
+      prev.filter(optQ => {
+        // ONLY remove if it was a PENDING question that's now completed
+        if (optQ.status === 'pending' && completedQuestionIds.has(optQ.id)) {
+          return false; // Remove - pending question is now completed
+        }
+        
+        // Remove deep thinking optimistic pending if query matches
+        if (optQ.id.startsWith('optimistic-deep-') && 
+            optQ.status === 'pending' &&
+            completedQueries.has(optQ.query.trim().toLowerCase())) {
+          return false;
+        }
+        
+        // For completed questions with optimistic updates (favorites, tags):
+        // Remove optimistic version if server data matches the optimistic state
+        if (optQ.status === 'completed' && completedQuestionIds.has(optQ.id)) {
+          const fetchedVersion = fetchedQuestionsMap.get(optQ.id);
+          if (fetchedVersion) {
+            // If server data matches our optimistic update, remove optimistic version
+            // (let the fetched version show through)
+            if (fetchedVersion.isFavorite === optQ.isFavorite) {
+              return false; // Remove - server has caught up
+            }
+            // Otherwise keep optimistic version until server catches up
+          }
+        }
+        
+        // Keep everything else
+        return true;
+      })
+    );
   }, [fetchedQuestions, optimisticQuestions.length]);
 
-  // Add optimistic pending question for deep thinking as well
+  // Auto-scroll to newly added pending questions (only when user submits a new question)
+  // Track the count separately to avoid scrolling on refetches
+  const [lastScrolledQuestionId, setLastScrolledQuestionId] = useState<string | null>(null);
+  
   useEffect(() => {
-    if (enableDeepResearch && currentThinkingQuestion && selectedRepository?.id) {
-      // Only add if not already present
-      const alreadyExists = optimisticQuestions.some(q => q.query.trim().toLowerCase() === currentThinkingQuestion.trim().toLowerCase());
-      if (!alreadyExists) {
-        const optimisticId = `optimistic-deep-${Date.now()}`;
-        const pendingQuestion: Question = {
-          id: optimisticId,
-          query: currentThinkingQuestion.trim(),
-          repositoryId: selectedRepository.id,
-          repositoryName: selectedRepository.name,
-          createdAt: new Date().toISOString(),
-          status: 'pending',
-          tags: [],
-          category: '',
-          relevantFiles: [],
-          confidence: 0,
-          isFavorite: false,
-          reasoningSteps: [],
-          hasMultiStepReasoning: true,
-          questionAttachments: questionAttachments || [],
-        };
-        setOptimisticQuestions(prev => [pendingQuestion, ...prev]);
+    if (optimisticQuestions.length > 0) {
+      const newestQuestion = optimisticQuestions[0];
+      
+      // Only scroll if:
+      // 1. This is a new question we haven't scrolled to yet
+      // 2. The question is actually pending (not a completed question being updated)
+      if (newestQuestion.id !== lastScrolledQuestionId && newestQuestion.status === 'pending') {
+        setLastScrolledQuestionId(newestQuestion.id);
+        setTimeout(() => {
+          const element = document.getElementById(`question-${newestQuestion.id}`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enableDeepResearch, currentThinkingQuestion, selectedRepository?.id])
+  }, [optimisticQuestions.length, lastScrolledQuestionId]);
 
-  // In ThinkingProcess onAnswerSubmitted, just refetch (optimistic removal is handled globally)
   const handleAskQuestion = useCallback(async () => {
     if (!newQuestion.trim()) return
-    
-    // Set thinking mode if deep research is enabled
-    if (enableDeepResearch) {
-      setCurrentThinkingQuestion(newQuestion.trim())
-    } else {
-      setCurrentThinkingQuestion('')
-    }
     
     // Clear the input
     const questionText = newQuestion.trim()
     setNewQuestion('')
     setQuestionAttachments([])
     
-    // Let the actions handle the optimistic update and API call
+    // For API mode, add a pending optimistic question immediately
+    const tempId = `api-pending-${Date.now()}`
+    const pendingQuestion: Question = {
+      id: tempId,
+      query: questionText,
+      answer: undefined,
+      repositoryId: selectedRepository?.id || '',
+      repositoryName: selectedRepository?.name || '',
+      createdAt: new Date().toISOString(),
+      status: 'pending',
+      questionAttachments: questionAttachments
+    }
+    
+    // Add pending question to show in UI immediately
+    setOptimisticQuestions(prev => [pendingQuestion, ...prev])
+    
+    // Auto-scroll to the pending question
+    setTimeout(() => {
+      const element = document.getElementById(`question-${tempId}`)
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }, 100)
+    
+    // Let the actions handle the API call
     await actions.handleAskQuestion(questionText, questionAttachments)
+    
+    // Remove the pending optimistic question after the real one is added
+    setTimeout(() => {
+      setOptimisticQuestions(prev => prev.filter(q => q.id !== tempId))
+    }, 500)
     
     // Refetch after a short delay to ensure consistency
     setTimeout(() => {
       refetchQuestions()
     }, 1000)
-  }, [newQuestion, questionAttachments, actions, enableDeepResearch, refetchQuestions])  
+  }, [newQuestion, questionAttachments, actions, refetchQuestions, selectedRepository])  
   
   const handleSelectSuggestion = useCallback((suggestion: string) => {
     setNewQuestion(suggestion)
@@ -263,8 +340,8 @@ export default function QnAPage() {
     setVisibleQuestions(prev => Math.min(prev + 10, filtering.filteredQuestions.length))
   }, [filtering.filteredQuestions.length])
 
-  // Status utility functions
-  const getStatusIcon = (status: string) => {
+  // Status utility functions (memoized for better performance)
+  const getStatusIcon = useCallback((status: string) => {
     switch (status) {
       case 'completed':
         return <CheckCircleIcon className="h-5 w-5 text-green-500" />
@@ -275,9 +352,9 @@ export default function QnAPage() {
       default:
         return <QuestionMarkCircleIcon className="h-5 w-5 text-slate-500" />
     }
-  }
+  }, [])
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = useCallback((status: string) => {
     switch (status) {
       case 'completed':
         return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
@@ -288,7 +365,7 @@ export default function QnAPage() {
       default:
         return 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-400'
     }
-  }
+  }, [])
 
   // Loading and error states
   if (!selectedRepository) {
@@ -374,20 +451,15 @@ export default function QnAPage() {
                         className="w-12 h-12 sm:w-12 sm:h-12 rounded-2xl object-cover shadow-lg border-2 border-white/20 transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in"
                       />
                     ) : (
-                      <div className={`w-12 h-12 sm:w-12 sm:h-12 bg-gradient-to-br from-${enableDeepResearch ? 'purple' : 'blue'}-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in`}>
+                      <div className="w-12 h-12 sm:w-12 sm:h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl animate-in zoom-in">
                         <ChatBubbleLeftRightIcon className="w-6 h-6 text-white" />
                       </div>
                     )}
                   </div>
                   <div className="animate-in slide-in-from-left duration-500 delay-200">
                     <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2 sm:gap-3">
-                      <SparklesIcon className={`w-6 h-6 text-${enableDeepResearch ? 'purple' : 'blue'}-500`} />
+                      <SparklesIcon className="w-6 h-6 text-blue-500" />
                       Q&A Assistant
-                      {enableDeepResearch && (
-                        <span className="text-xs sm:text-sm px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-full font-medium">
-                          Thinking Mode
-                        </span>
-                      )}
                     </h1>
                     <p className="text-slate-600 dark:text-slate-400 mt-1 text-xs sm:text-base">
                       Ask questions about {selectedRepository.name} and get AI-powered answers
@@ -412,7 +484,7 @@ export default function QnAPage() {
                       showSuggestions && selectedRepository
                         ? 'lg:w-2/3 w-full'
                         : 'w-full'
-                    } ${enableDeepResearch ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-700' : ''}`}
+                    }`}
                   >
                     <QuestionInput
                       repository={selectedRepository}
@@ -423,8 +495,6 @@ export default function QnAPage() {
                       showSuggestions={showSuggestions}
                       onToggleSuggestions={() => setShowSuggestions(!showSuggestions)}
                       onSelectSuggestion={handleSelectSuggestion}
-                      enableDeepResearch={enableDeepResearch}
-                      onToggleDeepResearch={() => setEnableDeepResearch(!enableDeepResearch)}
                       attachments={questionAttachments}
                       onAttachmentsChange={setQuestionAttachments}
                     />
@@ -441,32 +511,6 @@ export default function QnAPage() {
                   )}
                 </div>
               </div>
-              {/* AI Thinking Process */}
-              {enableDeepResearch && selectedRepository && currentThinkingQuestion && (
-                <div className="col-span-12 animate-in fade-in slide-in-from-bottom duration-600 delay-200">
-                  <ThinkingProcess
-                    repositoryId={selectedRepository.id}
-                    question={currentThinkingQuestion}
-                    isVisible={enableDeepResearch}
-                    onClose={() => {
-                      setEnableDeepResearch(false)
-                      setQuestionAttachments([])
-                      setCurrentThinkingQuestion('') // Clear the current thinking question when closed
-                    }}
-                    attachments={questionAttachments}
-                    onAnswerSubmitted={async (answer) => {
-                      setQuestionAttachments([])
-                      setTimeout(async () => {
-                        await refetchQuestions()
-                        console.log('Questions refreshed after thinking answer submitted')
-                        setEnableDeepResearch(false)
-                        setCurrentThinkingQuestion('') // Also clear after answer is posted
-                      }, 1000)
-                    }}
-                    onClearThinking={() => setCurrentThinkingQuestion('')} // Clear when user hits Clear
-                  />
-                </div>
-              )}
 
               {/* Questions & Answers Section */}
               <section className="col-span-12 animate-in fade-in slide-in-from-bottom duration-600 delay-200" aria-label="Questions and Answers">
@@ -520,38 +564,29 @@ export default function QnAPage() {
                     {filtering.filteredQuestions.length === 0 ? (
                       <QnAEmptyState repositoryName={selectedRepository.name} />
                     ) : (
-                      <div className="space-y-4">
-                        {questionsToShow.map((question: Question, idx: number) => (
-                          <div
-                            key={question.id}
-                            style={{
-                              animation: `fadeInUp 0.5s cubic-bezier(0.4,0,0.2,1) both`,
-                              animationDelay: `${idx * 60}ms`,
-                            }}
-                            tabIndex={-1}
-                          >
-                            <QuestionCard
-                              question={question}
-                              selectedRepository={selectedRepository}
-                              expandedFiles={actions.expandedFiles}
-                              loadingFiles={actions.loadingFiles}
-                              fileContents={actions.fileContents}
-                              copiedStates={actions.copiedStates}
-                              languageMap={codeFormatting.languageMap}
-                              getStatusIcon={getStatusIcon}
-                              getStatusColor={getStatusColor}
-                              toggleFileExpansion={actions.toggleFileExpansion}
-                              copyToClipboard={actions.copyToClipboard}
-                              formatCodeContent={codeFormatting.formatCodeContent}
-                              getLanguageColor={codeFormatting.getLanguageColor}
-                              onQuestionUpdate={actions.handleQuestionUpdate}
-                              getFollowUpSuggestions={actions.getFollowUpSuggestions}
-                              handleSelectFollowUp={handleSelectFollowUp}
-                              isPageVisible={isPageVisible}
-                              useConfidenceFilter={filtering.useConfidenceFilter}
-                            />
-                          </div>
-                        ))}
+                      <>
+                        {/* ✅ OPTIMIZATION: Use optimized list component */}
+                        <OptimizedQuestionList
+                          questions={questionsToShow}
+                          selectedRepository={selectedRepository}
+                          expandedFiles={actions.expandedFiles}
+                          loadingFiles={actions.loadingFiles}
+                          fileContents={actions.fileContents}
+                          copiedStates={actions.copiedStates}
+                          languageMap={codeFormatting.languageMap}
+                          getStatusIcon={getStatusIcon}
+                          getStatusColor={getStatusColor}
+                          toggleFileExpansion={actions.toggleFileExpansion}
+                          copyToClipboard={actions.copyToClipboard}
+                          formatCodeContent={codeFormatting.formatCodeContent}
+                          getLanguageColor={codeFormatting.getLanguageColor}
+                          onQuestionUpdate={actions.handleQuestionUpdate}
+                          getFollowUpSuggestions={actions.getFollowUpSuggestions}
+                          handleSelectFollowUp={handleSelectFollowUp}
+                          isPageVisible={isPageVisible}
+                          useConfidenceFilter={filtering.useConfidenceFilter}
+                          refetchQuestions={handleRefetch}
+                        />
                         {/* Load More Button */}
                         {questionsToShow.length < filtering.filteredQuestions.length && (
                           <div className="text-center pt-4 sm:pt-6">
@@ -563,7 +598,7 @@ export default function QnAPage() {
                             </button>
                           </div>
                         )}
-                      </div>
+                      </>
                     )}
                   </div>
                 </div>

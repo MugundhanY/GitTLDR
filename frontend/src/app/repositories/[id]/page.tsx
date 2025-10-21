@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { useQnA } from '@/contexts/QnAContext'
+import { useUserData } from '@/hooks/useUserData'
 import { useQuery } from '@tanstack/react-query'
 
 interface Repository {
@@ -40,6 +41,7 @@ export default function RepositoryPage() {
   const router = useRouter()
   const repositoryId = params?.id as string
   const { incrementQuestionCount, triggerStatsRefreshOnCompletion } = useQnA()
+  const { userData } = useUserData()
 
   // React Query: Fetch repository details
   const {
@@ -65,18 +67,18 @@ export default function RepositoryPage() {
   } = useQuery<Question[]>({
     queryKey: ['questions', repositoryId],
     queryFn: async () => {
-      const response = await fetch(`/api/qna?repositoryId=${repositoryId}&userId=1`)
+      const response = await fetch(`/api/qna?repositoryId=${repositoryId}&userId=${userData?.id || '1'}`)
       if (!response.ok) throw new Error('Failed to fetch questions')
       return (await response.json()).questions || []
     },
-    enabled: !!repositoryId
+    enabled: !!repositoryId && !!userData?.id
   })
 
   const [newQuestion, setNewQuestion] = useState('')
   const [isAsking, setIsAsking] = useState(false)
 
   const handleAskQuestion = async () => {
-    if (!newQuestion.trim() || !repositoryData) return
+    if (!newQuestion.trim() || !repositoryData || !userData?.id) return
 
     setIsAsking(true)
     try {
@@ -88,19 +90,60 @@ export default function RepositoryPage() {
         body: JSON.stringify({
           repositoryId: repositoryData.id,
           question: newQuestion.trim(),
-          userId: '1' // Mock user ID
+          userId: userData.id
         }),
       })
 
       if (response.ok) {
+        const data = await response.json()
+        
         // Immediately increment the question count for sidebar update
         incrementQuestionCount()
         setNewQuestion('')
         
-        // Refresh questions after a delay to get the answer
-        setTimeout(() => {
-          refetchQuestions()
-        }, 5000) // Check for answer after 5 seconds
+        // Poll for question completion
+        const pollForCompletion = async (questionId: string) => {
+          let attempts = 0
+          const maxAttempts = 30 // 30 attempts = ~2.5 minutes with backoff
+          
+          const poll = async () => {
+            attempts++
+            try {
+              const pollResponse = await fetch(`/api/qna?repositoryId=${repositoryData.id}&userId=${userData.id}&questionId=${questionId}`)
+              if (pollResponse.ok) {
+                const pollData = await pollResponse.json()
+                const questions = pollData.questions || []
+                const question = questions.find((q: any) => q.id === questionId)
+                
+                if (question && question.status === 'completed' && question.answer) {
+                  console.log(`✅ Question ${questionId} completed`)
+                  refetchQuestions()
+                  return
+                }
+              }
+              
+              if (attempts < maxAttempts) {
+                // Exponential backoff: start at 2s, max at 10s
+                const delay = Math.min(2000 + (attempts * 200), 10000)
+                setTimeout(poll, delay)
+              } else {
+                console.log(`⏰ Polling timeout for question ${questionId}`)
+                refetchQuestions() // Final refetch
+              }
+            } catch (error) {
+              console.error(`❌ Poll error for question ${questionId}:`, error)
+              if (attempts < maxAttempts) {
+                setTimeout(poll, 5000)
+              }
+            }
+          }
+          
+          // Start polling after 2 seconds
+          setTimeout(poll, 2000)
+        }
+        
+        // Start polling for the new question
+        pollForCompletion(data.questionId)
       } else {
         throw new Error('Failed to ask question')
       }

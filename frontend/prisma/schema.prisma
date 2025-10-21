@@ -72,7 +72,6 @@ model Repository {
   fileCount           Int?                      @map("file_count")
   totalSize           Int?                      @map("total_size")
   watchersCount       Int?                      @map("watchers_count")
-  commits             Commit[]
   meetings            Meeting[]
   questionAttachments QuestionAttachment[]
   questions           Question[]
@@ -103,25 +102,6 @@ model RepositoryFile {
   @@map("repository_files")
 }
 
-model Commit {
-  id           String           @id @default(cuid())
-  sha          String           @unique
-  message      String
-  authorName   String           @map("author_name")
-  authorEmail  String           @map("author_email")
-  authorAvatar String?          @map("author_avatar")
-  timestamp    DateTime
-  url          String
-  summary      String?
-  filesChanged Int              @map("files_changed")
-  createdAt    DateTime         @default(now()) @map("created_at")
-  repositoryId String           @map("repository_id")
-  status       RepositoryStatus @default(PENDING)
-  repository   Repository       @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
-
-  @@map("commits")
-}
-
 model Question {
   id                  String               @id @default(cuid())
   query               String
@@ -133,6 +113,10 @@ model Question {
   category            String?
   notes               String?
   attachments         Json                 @default("[]")
+  toolExecutions      Json?                @map("tool_executions")
+  githubDataUsed      Boolean              @default(false) @map("github_data_used")
+  feedback            QuestionFeedback?
+  feedbackAt          DateTime?            @map("feedback_at")
   createdAt           DateTime             @default(now()) @map("created_at")
   updatedAt           DateTime             @updatedAt @map("updated_at")
   userId              String               @map("user_id")
@@ -352,6 +336,11 @@ enum AccessRequestStatus {
   PENDING
   APPROVED
   DENIED
+}
+
+enum QuestionFeedback {
+  LIKE
+  DISLIKE
 }
 
 enum RepositoryStatus {

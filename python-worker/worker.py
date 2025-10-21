@@ -9,6 +9,7 @@ This worker handles AI-powered processing tasks:
 """
 import asyncio
 import signal
+import json
 from typing import Dict, Any, Optional
 from datetime import datetime
 
@@ -17,6 +18,15 @@ from utils.logger import setup_logging, get_logger, TaskLogger
 from services.redis_client import redis_client
 from services.gemini_client import gemini_client
 from services.qdrant_client import qdrant_client
+from services.neo4j_client import neo4j_client
+from services.database_service import database_service
+from services.gemini_function_caller import GeminiFunctionCaller
+from services.github_api_client import GitHubClient
+from services.tools.tool_registry import ToolRegistry
+from services.tools.github.commit_tool import CommitTool, CommitDetailsTool
+from services.tools.github.pr_tool import PullRequestTool, PullRequestDetailsTool
+from services.tools.github.issue_tool import IssueTool, IssueDetailsTool
+from services.tools.github.diff_tool import DiffTool, CompareTool
 from processors.embedding import EmbeddingProcessor
 from processors.summarization import SummarizationProcessor
 from processors.file_processor import FileProcessor
@@ -75,6 +85,15 @@ class GitTLDRWorker:
         # Connect to Qdrant
         await qdrant_client.connect()
         
+        # Connect to Neo4j if enabled
+        if self.settings.enable_graph_retrieval:
+            try:
+                await neo4j_client.connect()
+                logger.info("Neo4j graph database connected")
+            except Exception as e:
+                logger.error(f"Failed to connect to Neo4j: {str(e)}")
+                logger.warning("Continuing without graph-based retrieval")
+        
         logger.info("All services connected")
         
     async def _process_loop(self) -> None:
@@ -111,7 +130,7 @@ class GitTLDRWorker:
                 
     async def _process_task(self, task_data: Dict[str, Any]) -> None:
         """Process a single task."""
-        task_id = task_data.get("id", "unknown")
+        task_id = task_data.get("jobId", task_data.get("id", "unknown"))
         task_type = task_data.get("type", "unknown")
         
         with TaskLogger(task_id, task_type) as task_logger:
@@ -138,6 +157,42 @@ class GitTLDRWorker:
                 task_logger.error("Task processing failed", error=str(e))
                 raise
     
+    async def _get_user_github_token(self, user_id: str) -> Optional[str]:
+        """Get GitHub token for a user from database."""
+        try:
+            user_info = await database_service.get_user_info(user_id)
+            if user_info:
+                return user_info.get('github_token')
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get GitHub token for user {user_id}", error=str(e))
+            return None
+    
+    async def _get_repository_context(self, repository_id: str) -> Optional[Dict[str, Any]]:
+        """Get repository metadata from database."""
+        try:
+            repo = await database_service.get_repository_status(repository_id)
+            if repo:
+                return {
+                    "owner": repo.get("owner"),
+                    "name": repo.get("name"),
+                    "full_name": f"{repo.get('owner')}/{repo.get('name')}"
+                }
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get repository context for {repository_id}", error=str(e))
+            return None
+    
+    def _should_use_github_tools(self, question: str) -> bool:
+        """Determine if question requires GitHub API tools based on keywords."""
+        github_keywords = [
+            'commit', 'commits', 'pr', 'pull request', 'issue', 'diff', 
+            'author', 'contributor', 'merge', 'branch', 'merged', 'closed',
+            'opened', 'created by', 'who made', 'who created', 'recent changes'
+        ]
+        question_lower = question.lower()
+        return any(keyword in question_lower for keyword in github_keywords)
+    
     async def _route_task(self, task_data: Dict[str, Any], logger) -> Dict[str, Any]:
         """Route task to appropriate processor."""
         task_type = task_data.get("type")
@@ -157,13 +212,103 @@ class GitTLDRWorker:
         elif task_type == "summarize_file":
             return await self.processors["summarization"].summarize_file(task_data, logger)
             
-        elif task_type == "summarize_commit":
-            return await self.processors["summarization"].summarize_commit(task_data, logger)
         elif task_type == "answer_question":
             return await self.processors["embedding"].answer_question(task_data, logger)
             
         elif task_type == "qna":
-            # Q&A task - same as answer_question but with different interface
+            # Enhanced Q&A with GitHub function calling support
+            question = task_data.get("question", "")
+            user_id = task_data.get("userId")
+            repository_id = task_data.get("repositoryId")
+            question_id = task_data.get("questionId")
+            
+            logger.info(f"Processing Q&A question: {question_id}")
+            
+            # Check if question requires GitHub tools
+            if self._should_use_github_tools(question):
+                logger.info("Question detected as GitHub-related, attempting function calling")
+                
+                # Get user's GitHub token
+                github_token = await self._get_user_github_token(user_id)
+                
+                if github_token:
+                    logger.info("GitHub token found, using function calling")
+                    
+                    # Get repository context
+                    repo_context = await self._get_repository_context(repository_id)
+                    
+                    if repo_context:
+                        try:
+                            # Initialize GitHub client
+                            github_client = GitHubClient(github_token)
+                            
+                            # Initialize tool registry
+                            tool_registry = ToolRegistry()
+                            
+                            # Register GitHub tools
+                            tool_registry.register_tool(CommitTool(github_client))
+                            tool_registry.register_tool(CommitDetailsTool(github_client))
+                            tool_registry.register_tool(PullRequestTool(github_client))
+                            tool_registry.register_tool(PullRequestDetailsTool(github_client))
+                            tool_registry.register_tool(IssueTool(github_client))
+                            tool_registry.register_tool(IssueDetailsTool(github_client))
+                            tool_registry.register_tool(DiffTool(github_client))
+                            tool_registry.register_tool(CompareTool(github_client))
+                            
+                            # Initialize Gemini client
+                            gemini_client_instance = gemini_client  # Use existing gemini_client from services
+                            
+                            # Initialize function caller with correct argument order
+                            function_caller = GeminiFunctionCaller(
+                                gemini_client=gemini_client_instance,
+                                tool_registry=tool_registry,
+                                github_client=github_client
+                            )
+                            
+                            # Process question with function calling
+                            result = await function_caller.process_question(
+                                question=question,
+                                repository_context=repo_context
+                            )
+                            
+                            # Format result for Redis queue
+                            result_data = {
+                                "question_id": question_id,
+                                "question": question,
+                                "answer": result['answer'],
+                                "confidence": result.get('confidence', 0.8),
+                                "relevant_files": result.get('relevant_files', []),
+                                "user_id": user_id,
+                                "repository_id": repository_id,
+                                "context_files_used": len(result.get('relevant_files', [])),
+                                "tool_executions": result.get('tool_executions', []),
+                                "github_data_used": True
+                            }
+                            
+                            # Push to results queue
+                            await redis_client.lpush("qna_results", json.dumps(result_data))
+                            
+                            logger.info(f"GitHub function calling completed for question {question_id}")
+                            return {
+                                "status": "completed",
+                                "answer": result['answer'],
+                                "confidence": result.get('confidence', 0.8),
+                                "tool_executions": result.get('tool_executions', []),
+                                "github_data_used": True
+                            }
+                            
+                        except Exception as e:
+                            logger.error(f"GitHub function calling failed: {str(e)}", error=str(e))
+                            logger.info("Falling back to traditional Q&A")
+                            # Fall through to traditional Q&A
+                    else:
+                        logger.warning(f"Repository context not found for {repository_id}, using traditional Q&A")
+                else:
+                    logger.info("No GitHub token found, using traditional Q&A")
+            else:
+                logger.info("Question not GitHub-related, using traditional Q&A")
+            
+            # Traditional Q&A processing (fallback or default)
             return await self.processors["embedding"].answer_question(task_data, logger)
             
         elif task_type == "process_meeting":
@@ -182,6 +327,12 @@ class GitTLDRWorker:
             await redis_client.disconnect()
         except Exception as e:
             logger.error("Error disconnecting from Redis", error=str(e))
+        
+        try:
+            if neo4j_client.is_connected():
+                await neo4j_client.disconnect()
+        except Exception as e:
+            logger.error("Error disconnecting from Neo4j", error=str(e))
             
         logger.info("Cleanup completed")
 

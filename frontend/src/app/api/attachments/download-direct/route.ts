@@ -19,9 +19,9 @@ export async function POST(request: NextRequest) {
     
     try {
       // Download file content directly from B2
-      const content = await b2Storage.downloadFileContent(filePath)
+      const fileBuffer = await b2Storage.downloadFileBuffer(filePath)
       
-      if (!content) {
+      if (!fileBuffer) {
         console.warn(`No content returned for file: ${filePath}`)
         return NextResponse.json(
           { error: 'File not found or empty' },
@@ -29,13 +29,21 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      console.log(`Successfully downloaded file: ${filePath} (${content.length} characters)`)
+      console.log(`Successfully downloaded file: ${filePath} (${fileBuffer.byteLength} bytes)`)
       
-      // Return the file content as text
-      return new NextResponse(content, {
+      // For PDFs and binary files, return as base64 encoded string
+      // This preserves the binary data while allowing it to be transmitted as text
+      // FIXED: Use Buffer for proper base64 encoding (handles large files correctly)
+      const base64Content = Buffer.from(fileBuffer).toString('base64')
+      
+      console.log(`Converted to base64: ${base64Content.length} characters`)
+      
+      // Return the file content as base64 encoded text
+      return new NextResponse(base64Content, {
         status: 200,
         headers: {
           'Content-Type': 'text/plain; charset=utf-8',
+          'X-Content-Type': 'base64',
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'POST',
           'Access-Control-Allow-Headers': 'Content-Type'
@@ -44,6 +52,42 @@ export async function POST(request: NextRequest) {
       
     } catch (downloadError) {
       console.error(`B2 download error for ${filePath}:`, downloadError)
+      
+      // Try fallback: direct B2 URL access
+      try {
+        const bucketName = process.env.B2_BUCKET_NAME || 'gittldr-attachments'
+        const directUrl = `https://f002.backblazeb2.com/file/${bucketName}/${filePath}`
+        
+        console.log(`Trying direct B2 URL fallback for ${filePath}: ${directUrl}`)
+        
+        const response = await fetch(directUrl)
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer()
+          
+          // Convert to base64
+          const uint8Array = new Uint8Array(arrayBuffer)
+          const binaryString = Array.from(uint8Array, byte => String.fromCharCode(byte)).join('')
+          const base64Content = btoa(binaryString)
+          
+          console.log(`Direct URL fallback successful for ${filePath}, base64 length: ${base64Content.length}`)
+          
+          return new NextResponse(base64Content, {
+            status: 200,
+            headers: {
+              'Content-Type': 'text/plain; charset=utf-8',
+              'X-Content-Type': 'base64',
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Methods': 'POST',
+              'Access-Control-Allow-Headers': 'Content-Type'
+            }
+          })
+        } else {
+          console.error(`Direct URL fallback failed for ${filePath}:`, response.status, response.statusText)
+        }
+      } catch (fallbackError) {
+        console.error(`Direct URL fallback error for ${filePath}:`, fallbackError)
+      }
+      
       return NextResponse.json(
         { error: 'Failed to download file from storage', details: String(downloadError) },
         { status: 500 }

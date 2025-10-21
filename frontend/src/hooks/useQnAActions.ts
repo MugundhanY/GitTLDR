@@ -2,13 +2,14 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { Question, FileContent } from './useQnAFiltering'
-import { useMultiStepReasoning } from './useMultiStepReasoning'
 
 interface UseQnAActionsProps {
   selectedRepository?: { id: string; name: string }
+  userId?: string  // NEW: Pass actual user ID
   onQuestionsUpdate: (questions: Question[] | Question) => void
   incrementQuestionCount: () => void
   triggerStatsRefreshOnCompletion?: () => void
+  refetchQuestions?: () => Promise<void>  // NEW: Callback to refetch questions from server
 }
 
 interface UseQnAActionsReturn {
@@ -34,16 +35,15 @@ interface UseQnAActionsReturn {
   // Follow-up questions
   getFollowUpSuggestions: (question: Question) => string[]
   handleSelectFollowUp: (originalQuestion: Question, followUpText: string, onQuestionChange: (text: string) => void) => void
-  
-  // Multi-step reasoning
-  multiStepReasoning: ReturnType<typeof useMultiStepReasoning>
 }
 
 export function useQnAActions({ 
   selectedRepository, 
+  userId,  // NEW: Get actual user ID
   onQuestionsUpdate,
   incrementQuestionCount,
-  triggerStatsRefreshOnCompletion
+  triggerStatsRefreshOnCompletion,
+  refetchQuestions  // NEW: Callback to refetch questions
 }: UseQnAActionsProps): UseQnAActionsReturn {
   
   const [isAsking, setIsAsking] = useState(false)
@@ -51,11 +51,8 @@ export function useQnAActions({
   const [fileContents, setFileContents] = useState<{ [key: string]: FileContent }>({})
   const [loadingFiles, setLoadingFiles] = useState<{ [key: string]: boolean }>({})
   const [copiedStates, setCopiedStates] = useState<{ [key: string]: boolean }>({})
-    // Multi-step reasoning hook
-  const multiStepReasoning = useMultiStepReasoning({ 
-    enableMultiStepReasoning: true // This will be overridden in the main component
-  })
-    // Store active polling timeouts for cleanup
+  
+  // Store active polling timeouts for cleanup
   const pollingTimeouts = useRef<Set<NodeJS.Timeout>>(new Set())
   // Cleanup effect - clear all polling timeouts when component unmounts or dependencies change
   useEffect(() => {
@@ -82,6 +79,92 @@ export function useQnAActions({
       console.log('🧹 Cleaned up all polling timeouts and cleanup functions')
     }
   }, [selectedRepository?.id]) // Clean up when repository changes
+
+  // Helper function to process attachments for Q&A API
+  const processAttachmentsForQNA = async (attachments: any[]) => {
+    const processedAttachments = []
+    
+    for (const attachment of attachments) {
+      try {
+        const fileName = attachment.fileName || attachment.originalFileName || attachment.name
+        console.log(`🔄 Q&A: Processing attachment for Q&A: ${fileName}`)
+        
+        // Get B2 file key for download
+        const b2FileKey = attachment.fileName || attachment.fileKey || attachment.backblazeFileId
+        
+        if (b2FileKey) {
+          console.log(`🔄 Q&A: Getting direct download for Q&A attachment: ${b2FileKey}`)
+          
+          // Use the new direct download endpoint to get content
+          const response = await fetch('/api/attachments/download-direct', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              filePath: b2FileKey
+            })
+          })
+          
+          console.log(`🔄 Q&A: Download response status: ${response?.status}, OK: ${response?.ok}`)
+          
+          if (response && response.ok) {
+          const base64Content = await response.text()
+          console.log(`✅ Q&A: Fetched base64 content for Q&A attachment ${fileName}:`, base64Content.length, 'characters')
+          
+          // For PDFs and binary files, keep the content as base64 for the backend to decode properly
+          // For text files, decode it here
+          let content = ''
+          const extension = fileName.split('.').pop()?.toLowerCase()
+          const isBinaryFile = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'doc', 'docx', 'xls', 'xlsx'].includes(extension || '')
+          
+          // ALWAYS keep as base64 and let backend decode
+          // Backend Python has proper base64 decoding that handles any file size
+          // Browser's atob() and fetch() data URLs both have size limitations for large files
+          content = base64Content
+          console.log(`✅ Q&A: Keeping ${fileName} as base64 (${content.length} chars) for backend processing`)
+                      // Create processed attachment with content included
+            const processedAttachment = {
+              ...attachment, // Keep all original properties
+              content: content // Add the decoded content
+            }
+            
+            processedAttachments.push(processedAttachment)
+            console.log(`✅ Q&A: Successfully processed Q&A attachment ${fileName} with content`)
+          } else {
+            // Try to get error details
+            let errorDetails = 'Unknown error'
+            try {
+              errorDetails = await response.text()
+            } catch (e) {
+              console.error('🔄 Q&A: Could not read error response:', e)
+            }
+            
+            console.warn(`❌ Q&A: Failed to fetch Q&A attachment content for ${fileName}:`, response?.status, response?.statusText, errorDetails)
+            // Include attachment without content as fallback
+            processedAttachments.push(attachment)
+            console.log(`⚠️ Q&A: Including Q&A attachment ${fileName} without content due to download failure`)
+          }
+        } else {
+          console.warn(`❌ Q&A: No B2 file key found for Q&A attachment ${fileName}`)
+          // Include attachment as-is if no file key
+          processedAttachments.push(attachment)
+        }
+      } catch (error) {
+        console.error(`❌ Q&A: Error processing Q&A attachment ${attachment.fileName || attachment.name}:`, error)
+        // Include attachment as-is if processing fails
+        processedAttachments.push(attachment)
+        console.log(`⚠️ Q&A: Including Q&A attachment ${attachment.fileName || attachment.name} as-is due to processing error`)
+      }
+    }
+    
+    console.log('📊 Q&A: Processed Q&A attachments:', processedAttachments.length)
+    processedAttachments.forEach(att => {
+      console.log(`📄 Q&A: - ${att.fileName || att.originalFileName || att.name}: ${att.content ? att.content.length + ' chars' : 'no content'}`)
+    })
+    
+    return processedAttachments
+  }
 
   const fetchFileContent = useCallback(async (filePath: string) => {
     if (!selectedRepository?.id) return
@@ -165,28 +248,16 @@ export function useQnAActions({
   }, [])
   
   const handleAskQuestion = useCallback(async (questionText: string, attachments: import('@/types/attachments').QuestionAttachment[] = []) => {
-    if (!questionText.trim() || !selectedRepository?.id) return
+    if (!questionText.trim() || !selectedRepository?.id || !userId) return
 
     setIsAsking(true)
     
-    // Start deep research thinking process if enabled
-    if (multiStepReasoning.enableMultiStepReasoning) {
-      try {
-        // Try to use real thinking model first
-        await multiStepReasoning.performRealThinking(questionText, selectedRepository.id, selectedRepository.name)
-      } catch (error) {
-        console.warn('Real thinking model failed, falling back to simulation:', error)
-        // Fallback to simulation if thinking model fails
-        await multiStepReasoning.simulateReasoning(questionText, selectedRepository.name)
-      }
-      
-      // For thinking mode, we don't submit to the regular Q&A endpoint
-      // The thinking process handles the question directly
-      setIsAsking(false)
-      return
-    }
-    
     try {
+      // Process attachments to download content before sending to Q&A API
+      console.log('Processing attachments for Q&A...')
+      const processedAttachments = await processAttachmentsForQNA(attachments || [])
+      console.log('Attachment processing completed, sending to Q&A API...')
+      
       const response = await fetch('/api/qna', {
         method: 'POST',
         headers: {
@@ -195,8 +266,8 @@ export function useQnAActions({
         body: JSON.stringify({
           repositoryId: selectedRepository.id,
           question: questionText.trim(),
-          userId: '1',
-          attachments
+          userId: userId,
+          attachments: processedAttachments
         }),
       });
 
@@ -204,6 +275,52 @@ export function useQnAActions({
         const data = await response.json();
         console.log('Question submitted successfully:', data);
         
+        // Check if this is API mode with immediate answer
+        if (data.mode === 'api' && data.status === 'completed' && data.answer) {
+          console.log('🚀 API Mode: Answer received immediately!');
+          console.log('📁 Frontend: Received data from API:', data);
+          console.log('📁 Frontend: data.relevantFiles =', data.relevantFiles);
+          
+          // Create completed question with answer and relevant files
+          const completedQuestion: Question = {
+            id: data.questionId,
+            query: questionText,
+            answer: data.answer,
+            repositoryId: selectedRepository.id,
+            repositoryName: selectedRepository.name,
+            createdAt: new Date().toISOString(),
+            status: 'completed',
+            relevantFiles: data.relevantFiles || [],
+            questionAttachments: attachments,
+            confidence: data.confidence,
+            category: data.category || undefined,
+            tags: data.tags || []
+          };
+          
+          console.log(`📁 Relevant files count: ${completedQuestion.relevantFiles?.length || 0}`);
+          console.log(`📁 Relevant files array:`, completedQuestion.relevantFiles);
+          console.log(`🏷️ Category: ${completedQuestion.category}, Tags: ${completedQuestion.tags?.join(', ')}`);
+          
+          // Add completed question to the list immediately
+          onQuestionsUpdate(completedQuestion);
+          
+          // Update question count
+          incrementQuestionCount();
+          
+          // Auto-scroll to the new question after a brief delay
+          setTimeout(() => {
+            const questionElement = document.querySelector(`[data-question-id="${data.questionId}"]`);
+            if (questionElement) {
+              questionElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }, 300);
+          
+          // No polling needed for API mode!
+          setIsAsking(false);
+          return;
+        }
+        
+        // WORKER mode or API mode without immediate answer - use polling
         const pendingQuestion: Question = {
           id: data.questionId,
           query: questionText,
@@ -212,9 +329,10 @@ export function useQnAActions({
           repositoryName: selectedRepository.name,
           createdAt: new Date().toISOString(),
           status: 'pending',
-          reasoningSteps: multiStepReasoning.reasoningSteps,
-          hasMultiStepReasoning: multiStepReasoning.enableMultiStepReasoning,          questionAttachments: attachments
-        };        // Add the pending question to the list immediately
+          questionAttachments: attachments
+        };
+        
+        // Add the pending question to the list immediately
         onQuestionsUpdate(pendingQuestion);
         
         // Update question count without triggering stats refresh during polling
@@ -238,15 +356,28 @@ export function useQnAActions({
               console.log(`🔄 Polling attempt ${attempts + 1}/${maxAttempts} for question ${data.questionId}`)
               
               // Use a more specific endpoint to reduce data transfer
-              const pollResponse = await fetch(`/api/qna?repositoryId=${selectedRepository.id}&userId=1&questionId=${data.questionId}`)
+              const pollResponse = await fetch(`/api/qna?repositoryId=${selectedRepository.id}&userId=${userId}&questionId=${data.questionId}`)
               if (pollResponse.ok) {
                 const pollData = await pollResponse.json()
                 const questions = pollData.questions || []
+                
+                console.log(`🔍 Poll result for question ${data.questionId}: found ${questions.length} questions`);
+                if (questions.length > 0) {
+                  const q = questions[0];
+                  console.log(`📋 Question ${q.id}: answer=${!!q.answer}, answerLength=${q.answer?.length || 0}, status=${q.status}`);
+                  console.log(`📁 Relevant files in poll result:`, q.relevantFiles);
+                  console.log(`🏷️ Category: ${q.category}, Tags:`, q.tags);
+                }
                 
                 // Find our specific question
                 const completedQuestion = questions.find((q: Question) => q.id === data.questionId)
                   if (completedQuestion && completedQuestion.answer && completedQuestion.status === 'completed') {
                   console.log(`✅ Question ${data.questionId} completed, updating UI`)
+                  console.log(`📁 Relevant files count: ${completedQuestion.relevantFiles?.length || 0}`)
+                  console.log(`📁 Relevant files data:`, completedQuestion.relevantFiles)
+                  console.log(`🏷️ Category: ${completedQuestion.category}, Tags:`, completedQuestion.tags)
+                  
+                  // Update just this specific question
                   onQuestionsUpdate(completedQuestion)
                     // Only trigger stats refresh very occasionally and with throttling
                   const shouldTriggerRefresh = Math.random() < 0.1; // Reduced to only 10% chance to trigger refresh
@@ -326,10 +457,12 @@ export function useQnAActions({
       }
     } catch (error) {
       console.error('Error asking question:', error)
-      alert('Failed to ask question. Please try again.')    } finally {
+      alert('Failed to ask question. Please try again.')
+    } finally {
       setIsAsking(false)
     }
-  }, [selectedRepository, onQuestionsUpdate, incrementQuestionCount, multiStepReasoning])
+  }, [selectedRepository, userId, onQuestionsUpdate, incrementQuestionCount])
+  
   const handleQuestionUpdate = useCallback(async (updatedQuestion: Question) => {
     // This would typically make an API call to update the question
     onQuestionsUpdate(updatedQuestion)
@@ -337,12 +470,12 @@ export function useQnAActions({
 
   // Export functionality
   const exportQuestions = useCallback(async (format: 'markdown' | 'json' | 'html', filters: any) => {
-    if (!selectedRepository?.id) return
+    if (!selectedRepository?.id || !userId) return
 
     try {
       const params = new URLSearchParams({
         repositoryId: selectedRepository.id,
-        userId: '1',
+        userId: userId,
         format,
         ...(filters.filterFavorites && { favoritesOnly: 'true' }),
         ...(filters.selectedCategory && { category: filters.selectedCategory }),
@@ -364,16 +497,16 @@ export function useQnAActions({
     } catch (error) {
       console.error('Error exporting questions:', error)
     }
-  }, [selectedRepository?.id])
+  }, [selectedRepository?.id, userId])
 
   // Advanced search with confidence filtering
   const performAdvancedSearch = useCallback(async (filters: any) => {
-    if (!selectedRepository?.id || !filters.useConfidenceFilter) return
+    if (!selectedRepository?.id || !filters.useConfidenceFilter || !userId) return
 
     try {
       const params = new URLSearchParams({
         repositoryId: selectedRepository.id,
-        userId: '1',
+        userId: userId,
         ...(filters.searchQuery && { query: filters.searchQuery }),
         ...(filters.selectedCategory && { category: filters.selectedCategory }),
         ...(filters.selectedTags.length > 0 && { tags: filters.selectedTags.join(',') }),
@@ -392,7 +525,7 @@ export function useQnAActions({
     } catch (error) {
       console.error('Error performing advanced search:', error)
     }
-  }, [selectedRepository?.id, onQuestionsUpdate])
+  }, [selectedRepository?.id, userId, onQuestionsUpdate])
 
   // Generate follow-up question suggestions based on question category and content
   const getFollowUpSuggestions = useCallback((question: Question): string[] => {
@@ -484,9 +617,6 @@ export function useQnAActions({
     
     // Follow-up questions
     getFollowUpSuggestions,
-    handleSelectFollowUp,
-    
-    // Multi-step reasoning
-    multiStepReasoning
+    handleSelectFollowUp
   }
 }

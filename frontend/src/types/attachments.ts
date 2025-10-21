@@ -12,7 +12,7 @@ export interface QuestionAttachment {
 
 export interface AttachmentUploaderProps {
   attachments: QuestionAttachment[];
-  onAttachmentsChange: (attachments: QuestionAttachment[]) => void;
+  onAttachmentsChange: (attachments: QuestionAttachment[] | ((prev: QuestionAttachment[]) => QuestionAttachment[])) => void;
   disabled?: boolean;
   maxFiles?: number;
   maxFileSize?: number; // in bytes

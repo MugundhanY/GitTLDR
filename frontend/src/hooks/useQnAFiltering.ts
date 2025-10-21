@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useCallback, useMemo } from 'react'
-import { ReasoningStep } from '@/components/qna/ReasoningSteps'
 import { QuestionAttachment } from '@/types/attachments'
+import { useDebounce } from './useDebounce'
 
 export interface Question {
   id: string
@@ -17,9 +17,9 @@ export interface Question {
   relevantFiles?: (string | any)[] // Can be strings or objects with path properties
   confidence?: number
   isFavorite?: boolean
-  reasoningSteps?: ReasoningStep[]
-  hasMultiStepReasoning?: boolean
   questionAttachments?: QuestionAttachment[]
+  feedback?: 'LIKE' | 'DISLIKE' | null
+  feedbackAt?: string | null
 }
 
 export interface FileContent {
@@ -71,6 +71,7 @@ export function useQnAFiltering({
 }: UseQnAFilteringProps): UseQnAFilteringReturn {
   // Filter state
   const [searchQuery, setSearchQuery] = useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery, 300) // Debounce search for better performance
   const [filterFavorites, setFilterFavorites] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState<string>('')
   const [selectedTags, setSelectedTags] = useState<string[]>([])
@@ -123,9 +124,9 @@ export function useQnAFiltering({
       ? questions.filter(q => q?.repositoryId === selectedRepositoryId)
       : questions
 
-    // Apply search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase()
+    // Apply search filter (using debounced query for better performance)
+    if (debouncedSearchQuery.trim()) {
+      const query = debouncedSearchQuery.toLowerCase()
       filtered = filtered.filter(q => 
         q.query.toLowerCase().includes(query) ||
         q.answer?.toLowerCase().includes(query) ||
@@ -187,7 +188,7 @@ export function useQnAFiltering({
   }, [
     questions, 
     selectedRepositoryId, 
-    searchQuery, 
+    debouncedSearchQuery, // Use debounced query in dependencies
     filterFavorites, 
     selectedCategory, 
     selectedTags, 

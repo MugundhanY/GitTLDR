@@ -1,6 +1,7 @@
 """
 Improved Embedding processor for GitTLDR Python Worker.
 Handles embedding generation and Q&A functionality with database-based file retrieval.
+Now includes multi-step retrieval, hybrid retrieval (embeddings + graph + summaries), and graph-based context gathering.
 """
 import json
 import re
@@ -11,6 +12,9 @@ from services.qdrant_client import qdrant_client
 from services.redis_client import redis_client
 from services.database_service import database_service
 from services.smart_context_builder import smart_context_builder
+from services.multi_step_retrieval import multi_step_retrieval
+from services.hybrid_retrieval import hybrid_retrieval
+from processors.document_processor import document_processor
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -44,7 +48,7 @@ class EmbeddingProcessor:
             raise ValueError("File content is required")
         
         try:
-            # Generate embedding
+            # Generate embedding using the configured embedder (Gemini or local based on settings)
             embedding = await gemini_client.generate_embedding(content)
             
             # Store in Qdrant
@@ -70,7 +74,7 @@ class EmbeddingProcessor:
             raise
 
     async def answer_question(self, task_data: Dict[str, Any], logger) -> Dict[str, Any]:
-        """Answer a question about repository content using database and B2 storage."""
+        """Answer a question about repository content using database, B2 storage, and advanced retrieval."""
         try:
             question_id = task_data.get("questionId")
             repository_id = task_data.get("repositoryId")
@@ -81,6 +85,17 @@ class EmbeddingProcessor:
             logger.info(f"Processing Q&A for question: {question_id}, repo: {repository_id}")
             if attachments:
                 logger.info(f"Question includes {len(attachments)} attachments")
+            
+            # Check feature flags
+            use_multi_step = self.settings.enable_multi_step_retrieval
+            use_hybrid = self.settings.enable_hybrid_retrieval
+            
+            if use_multi_step:
+                logger.info("🔄 Multi-step retrieval ENABLED")
+            if use_hybrid:
+                logger.info("🚀 Hybrid retrieval ENABLED (embeddings + graph + summaries + smart context)")
+            if not use_multi_step and not use_hybrid:
+                logger.info("📋 Using standard smart context retrieval")
             
             # First, check if repository processing is complete
             repo_status = await database_service.get_repository_status(repository_id)
@@ -153,10 +168,6 @@ class EmbeddingProcessor:
                     "confidence": result_data["confidence"],
                     "relevant_files": []
                 }
-            
-            # Analyze the question to understand what context is needed
-            question_analysis = smart_context_builder.analyze_question(question)
-            logger.info(f"Question analysis: {question_analysis}")
             
             # Check for commit-related questions
             from services.commit_analysis_service import commit_analysis_service
@@ -310,32 +321,143 @@ class EmbeddingProcessor:
             # Process attachments if present
             attachment_content = []
             if attachments:
-                logger.info(f"Processing {len(attachments)} attachments")
+                logger.info(f"Processing {len(attachments)} attachments using document processor")
                 try:
-                    from services.b2_storage_sdk_fixed import B2StorageService
-                    b2_service = B2StorageService()
+                    # DEDUPLICATE attachments based on filename to prevent duplicates
+                    seen_files = set()
+                    deduplicated_attachments = []
+
                     for attachment in attachments:
+                        attachment_name = attachment.get('originalFileName') or attachment.get('name') or attachment.get('fileName') or 'user_attachment'
+                        if attachment_name not in seen_files:
+                            seen_files.add(attachment_name)
+                            deduplicated_attachments.append(attachment)
+                            logger.info(f"✅ ACCEPTED ATTACHMENT: {attachment_name}")
+                        else:
+                            logger.info(f"🚫 SKIPPED DUPLICATE ATTACHMENT: {attachment_name}")
+
+                    logger.info(f"Deduplicated attachments from {len(attachments)} to {len(deduplicated_attachments)} unique files")
+
+                    for attachment in deduplicated_attachments:
                         try:
-                            # Download attachment content from B2
-                            file_key = attachment.get('fileName')  # This is the B2 file key
-                            if file_key:
-                                content = await b2_service.download_file_content(file_key)
-                                if content:
-                                    # Add attachment content to context
-                                    attachment_info = {
-                                        'name': attachment.get('originalFileName', 'Unknown'),
-                                        'type': attachment.get('fileType', 'unknown'),
-                                        'content': content,
-                                        'path': f"attachment/{attachment.get('originalFileName', 'unknown')}"
-                                    }
-                                    attachment_content.append(attachment_info)
-                                    files_with_content.append(attachment_info)
-                                    logger.info(f"Loaded attachment: {attachment.get('originalFileName')}")
-                        except Exception as att_error:
-                            logger.warning(f"Failed to load attachment {attachment.get('originalFileName', 'unknown')}: {str(att_error)}")
-                            
+                            # Get attachment details
+                            attachment_name = attachment.get('originalFileName') or attachment.get('name') or attachment.get('fileName') or 'user_attachment'
+                            file_type = attachment.get('fileType', attachment.get('type', ''))
+                            b2_file_key = attachment.get('fileName') or attachment.get('backblazeFileId') or attachment.get('fileKey')
+
+                            logger.info(f"🔍 Processing attachment: {attachment_name} (type: {file_type})")
+
+                            content_bytes = None
+
+                            # Try to get content from attachment metadata first
+                            attachment_content_str = attachment.get('content', '')
+                            if attachment_content_str and attachment_content_str.strip():
+                                logger.info(f"✅ Using pre-provided content for {attachment_name} ({len(attachment_content_str)} chars)")
+
+                                # Convert string content to bytes for document processor
+                                if isinstance(attachment_content_str, str):
+                                    # Check if it's base64 encoded
+                                    try:
+                                        import base64
+                                        content_bytes = base64.b64decode(attachment_content_str)
+                                        logger.info(f"Successfully decoded base64 content: {len(content_bytes)} bytes")
+                                    except Exception:
+                                        # If not base64, encode as UTF-8
+                                        content_bytes = attachment_content_str.encode('utf-8')
+                                        logger.info(f"Encoded text content as UTF-8: {len(content_bytes)} bytes")
+                                else:
+                                    content_bytes = attachment_content_str
+                            else:
+                                # No content provided, try to download from B2 as fallback
+                                logger.warning(f"No content provided for {attachment_name}, attempting B2 download as fallback")
+
+                                if b2_file_key:
+                                    logger.info(f"🔥 ATTEMPTING B2 DOWNLOAD - File key: {b2_file_key}")
+                                    try:
+                                        # Use the B2 storage service to download the actual content
+                                        from services.b2_storage_sdk_fixed import B2StorageService
+                                        b2_storage = B2StorageService()
+                                        if b2_storage:
+                                            # Download as bytes for document processor
+                                            content_bytes = await b2_storage.download_file_bytes(b2_file_key)
+                                            if content_bytes:
+                                                logger.info(f"🎉 SUCCESS! Downloaded attachment from B2: {len(content_bytes)} bytes")
+                                            else:
+                                                logger.warning(f"⚠️ B2 download returned empty bytes for {b2_file_key}")
+                                    except Exception as b2_error:
+                                        error_msg = str(b2_error)
+                                        if "File not present" in error_msg or "not found" in error_msg.lower():
+                                            logger.warning(f"📎 Attachment file not found in B2 storage ({b2_file_key}) - this may be a test file")
+                                        else:
+                                            logger.error(f"❌ Failed to download attachment from B2 ({b2_file_key}): {error_msg}")
+
+                            if content_bytes:
+                                # Use document processor to handle the file
+                                result = await document_processor.process_document(
+                                    content=content_bytes,
+                                    filename=attachment_name,
+                                    mime_type=file_type
+                                )
+
+                                if result.get('success'):
+                                    processed_content = result['content']
+                                    logger.info(f"✅ Document processor succeeded for {attachment_name}: {len(processed_content)} chars")
+                                else:
+                                    error_msg = result.get('error', 'Unknown error')
+                                    # Check if document processor provided fallback content even though success=False
+                                    fallback_content = result.get('content')
+                                    if fallback_content and len(fallback_content.strip()) > 0:
+                                        # Use the fallback content (e.g., raw text extraction)
+                                        processed_content = fallback_content
+                                        logger.warning(f"⚠️ Document processor used fallback for {attachment_name}: {error_msg}")
+                                    else:
+                                        # No fallback available, show error message
+                                        processed_content = f"🔴 USER-PROVIDED File: attachment/{attachment_name}\n\n[PROCESSING FAILED]\n{error_msg}\n\n[END FAILED CONTENT]"
+                                        logger.warning(f"⚠️ Document processor failed for {attachment_name}: {error_msg}")
+
+                                # Format exactly like the normal Q&A flow
+                                formatted_attachment = f"🔴 USER-PROVIDED File: attachment/{attachment_name}\n{processed_content}"
+                                attachment_content.append(formatted_attachment)
+                                logger.info(f"🎉 Added processed attachment to context: attachment/{attachment_name}")
+                            else:
+                                # No content available
+                                formatted_attachment = f"🔴 USER-PROVIDED File: attachment/{attachment_name}\n[File provided but content could not be downloaded from storage - may be inaccessible]"
+                                attachment_content.append(formatted_attachment)
+                                logger.info(f"📎 Added attachment placeholder to context: attachment/{attachment_name}")
+
+                        except Exception as e:
+                            logger.warning(f"Failed to process attachment {attachment.get('name', 'unknown')} in Q&A: {str(e)}")
+                            # Add error placeholder
+                            attachment_name = attachment.get('originalFileName') or attachment.get('name') or attachment.get('fileName') or 'user_attachment'
+                            formatted_attachment = f"🔴 USER-PROVIDED File: attachment/{attachment_name}\n[Error processing attachment: {str(e)}]"
+                            attachment_content.append(formatted_attachment)
+                            continue
+
+                    logger.info(f"🎯 CRITICAL: Processed {len(attachment_content)} attachments using document processor")
+
                 except Exception as att_proc_error:
                     logger.warning(f"Failed to process attachments: {str(att_proc_error)}")
+                    # Include basic attachment info even if processing fails
+                    for attachment in attachments:
+                        attachment_name = attachment.get('originalFileName') or attachment.get('name') or attachment.get('fileName') or 'user_attachment'
+                        formatted_attachment = f"🔴 USER-PROVIDED File: attachment/{attachment_name}\n[Attachment processing failed: {str(att_proc_error)}]"
+                        attachment_content.append(formatted_attachment)
+
+            # If attachments are present, modify the question to explicitly mention them
+            if attachment_content:
+                attachment_names = [att.get('originalFileName') or att.get('name') or att.get('fileName') or 'user_attachment' for att in attachments]
+                attachment_types = list(set(att.get('type', 'unknown') for att in attachments))
+                
+                # Create a more detailed attachment description
+                attachment_description = f"You have access to {len(attachment_content)} attached file(s): {', '.join(attachment_names)}"
+                if len(attachment_types) == 1:
+                    attachment_description += f" (all {attachment_types[0]} files)"
+                else:
+                    attachment_description += f" (file types: {', '.join(attachment_types)})"
+                
+                attachment_description += ". Please analyze and consider the content of these attached files when answering the user's question. For binary files like PDFs or documents, use the provided metadata and context clues to understand their relevance."
+                
+                question = f"{question}\n\n{attachment_description}"
             
             if not files_with_content:
                 logger.warning(f"No file content could be loaded for repository {repository_id}")
@@ -358,10 +480,156 @@ class EmbeddingProcessor:
                     "relevant_files": []
                 }
             
-            # Build smart context
-            files_content, relevant_file_paths = smart_context_builder.build_smart_context(
-                question_analysis, files_with_content, question
-            )
+            # Analyze the question to understand what context is needed
+            question_analysis = smart_context_builder.analyze_question(question)
+            logger.info(f"Question analysis: {question_analysis}")
+            
+            # Use Multi-Step Retrieval if enabled
+            if use_multi_step and not is_commit_question:
+                logger.info("🔄🔄🔄 Using MULTI-STEP RETRIEVAL")
+                
+                # Prepare initial context for multi-step retrieval
+                repo_info = f"Repository: {repo_status.get('name')} (ID: {repository_id})"
+                if repo_status.get('file_count'):
+                    repo_info += f"\nTotal files: {repo_status.get('file_count')}"
+                if repo_status.get('total_size'):
+                    repo_info += f"\nTotal size: {repo_status.get('total_size')} bytes"
+                if repo_status.get('url'):
+                    repo_info += f"\nGitHub URL: {repo_status.get('url')}"
+                if repo_status.get('description'):
+                    repo_info += f"\nDescription: {repo_status.get('description')}"
+                if repo_status.get('language'):
+                    repo_info += f"\nPrimary Language: {repo_status.get('language')}"
+                
+                if attachment_content:
+                    repo_info += f"\n\nAttachments provided: {len(attachment_content)} files"
+                    for att in attachments:
+                        att_name = att.get('originalFileName') or att.get('name') or att.get('fileName') or 'user_attachment'
+                        att_type = att.get('type', 'unknown')
+                        repo_info += f"\n  - {att_name} ({att_type})"
+                
+                initial_context = {
+                    'repo_info': repo_info,
+                    'attachments': attachment_content,
+                    'files_with_content': files_with_content
+                }
+                
+                # Use multi-step retrieval
+                multi_step_result = await multi_step_retrieval.answer_with_multi_step_retrieval(
+                    repository_id=repository_id,
+                    question=question,
+                    user_id=user_id,
+                    initial_context=initial_context,
+                    logger_instance=logger
+                )
+                
+                # Automatically categorize the question using AI
+                logger.info("Categorizing question using AI...")
+                categorization_result = await gemini_client.categorize_question(
+                    question=question,
+                    repository_context=repo_info
+                )
+                
+                logger.info(f"Question categorized as: {categorization_result.get('category')} "
+                          f"with tags: {categorization_result.get('tags')}")
+                
+                # Extract relevant files from multi-step result
+                relevant_files_from_multi_step = multi_step_result.get("relevant_files", [])
+                logger.info(f"📁 Multi-step retrieval returned {len(relevant_files_from_multi_step)} relevant files")
+                
+                # Store result in Redis for Node.js worker to process
+                if self.settings.store_qna_results:
+                    result_data = {
+                        "question_id": question_id,
+                        "question": question,
+                        "answer": multi_step_result["answer"],
+                        "confidence": multi_step_result["confidence"],
+                        "relevant_files": relevant_files_from_multi_step,  # ✅ FIX: Use file paths array
+                        "user_id": user_id,
+                        "repository_id": repository_id,
+                        "context_files_used": multi_step_result.get("retrieval_metadata", {}).get("files_retrieved", 0),
+                        "category": categorization_result.get("category", "general"),
+                        "tags": categorization_result.get("tags", ["question"]),
+                        "categorization_confidence": categorization_result.get("confidence", 0.5),
+                        "multi_step_metadata": multi_step_result.get("retrieval_metadata", {})
+                    }
+                    
+                    await redis_client.lpush("qna_results", json.dumps(result_data))
+                    logger.info(f"Multi-step Q&A result queued for storage: {question_id}")
+                
+                # ✅ FIX: Add relevant_files to return value
+                multi_step_result["relevant_files"] = relevant_files_from_multi_step
+                multi_step_result["category"] = categorization_result.get("category", "general")
+                multi_step_result["tags"] = categorization_result.get("tags", ["question"])
+                
+                return multi_step_result
+            
+            # Standard retrieval path (for commit questions or when multi-step is disabled)
+            # Use HYBRID RETRIEVAL for better accuracy (if enabled)
+                if is_commit_question:
+                    logger.info("💡 Hybrid retrieval enabled for COMMIT question")
+                logger.info("🚀 Using HYBRID retrieval (embeddings + graph + summaries + smart context)")
+                
+                try:
+                    # Use hybrid retrieval system
+                    selected_files, retrieval_stats = await hybrid_retrieval.retrieve_context(
+                        repository_id=repository_id,
+                        question=question,
+                        all_files=files_with_content,
+                        max_files=15
+                    )
+                    
+                    # Log retrieval statistics
+                    logger.info(f"📊 Hybrid Retrieval Stats:")
+                    logger.info(f"   Methods used: {', '.join(retrieval_stats['methods_used'])}")
+                    logger.info(f"   Final files: {retrieval_stats['final_file_count']}")
+                    logger.info(f"   Avg confidence: {retrieval_stats['average_confidence']:.2f}")
+                    
+                    # Format files content
+                    files_content = []
+                    relevant_file_paths = []
+                    
+                    for file_data in selected_files:
+                        file_info = file_data['file']
+                        file_path = file_info.get('path', '')
+                        content = file_info.get('content', '')
+                        
+                        # Safety check: warn if content is missing
+                        if not content:
+                            logger.warning(f"⚠️ File has no content: {file_path}")
+                            # Try to get content from original files_with_content
+                            original_file = next((f for f in files_with_content if f.get('path') == file_path), None)
+                            if original_file and original_file.get('content'):
+                                content = original_file['content']
+                                logger.info(f"✅ Recovered content for: {file_path}")
+                        
+                        if content:
+                            files_content.append(f"File: {file_path}\n{content}")
+                            relevant_file_paths.append(file_path)
+                        else:
+                            logger.error(f"❌ Could not load content for: {file_path}")
+                    
+                    logger.info(f"✅ Hybrid retrieval selected {len(files_content)} files with content")
+                    
+                except Exception as e:
+                    logger.warning(f"Hybrid retrieval failed: {str(e)}, falling back to smart context")
+                    # Fallback to smart context builder
+                    files_content, relevant_file_paths = smart_context_builder.build_smart_context(
+                        question_analysis, files_with_content, question
+                    )
+            else:
+                # When hybrid is disabled, use smart context builder
+                logger.info("📋 Using smart context builder")
+                files_content, relevant_file_paths = smart_context_builder.build_smart_context(
+                    question_analysis, files_with_content, question
+                )
+            
+            # CRITICAL DEBUG: Log relevant files after retrieval
+            logger.info(f"🔍 DEBUG - Retrieved {len(relevant_file_paths)} relevant files from context builder")
+            if relevant_file_paths:
+                logger.info(f"🔍 DEBUG - Relevant files list: {relevant_file_paths[:5]}...")  # Show first 5
+            else:
+                logger.warning(f"⚠️ DEBUG - NO RELEVANT FILES RETURNED from context builder!")
             
             # Add commit content to the context if available
             if commit_content:
@@ -497,19 +765,24 @@ class EmbeddingProcessor:
                 final_size = sum(len(content) for content in files_content)
                 logger.info(f"Final optimized context size: {final_size} characters")
             
-            # Debug: Log content sources
-            logger.info(f"Content sources breakdown:")
-            logger.info(f"  - Repository files: {len(files_with_content) - len(attachment_content)}")
-            logger.info(f"  - Attachments: {len(attachment_content)}")
-            logger.info(f"  - Commits: {len(commit_content)}")
-            logger.info(f"  - Total files for context: {len(files_with_content)}")
-            logger.info(f"  - Final context files: {len(files_content)}")
-            
-            # Show which attachments made it to final context
+            # Add attachments to the beginning of context for maximum visibility
             if attachment_content:
-                for att in attachment_content:
-                    att_in_context = any(att['name'] in fc for fc in files_content)
-                    logger.info(f"  - Attachment '{att['name']}' in final context: {att_in_context}")
+                logger.info(f"🔥🔥🔥 Adding {len(attachment_content)} attachments to the beginning of context")
+                attachment_context = []
+                for i, att_content in enumerate(attachment_content):
+                    # Get metadata from original attachments list
+                    att_meta = attachments[i] if i < len(attachments) else {}
+                    att_name = att_meta.get('originalFileName') or att_meta.get('name') or att_meta.get('fileName') or f'attachment_{i+1}'
+                    att_type = att_meta.get('type', 'unknown')
+                    
+                    logger.info(f"   📎 Attachment: {att_name}")
+                    logger.info(f"      - Type: {att_type}")
+                    logger.info(f"      - Content length: {len(att_content)}")
+                    logger.info(f"      - Content starts with: {att_content[:150]}")
+                    attachment_context.append(att_content)
+                # Prepend attachments to files_content
+                files_content = attachment_context + files_content
+                logger.info(f"✅ Files content now has {len(files_content)} items (attachments + repo files)")
             
             if not files_content:
                 logger.warning(f"No relevant content found for question: {question}")
@@ -562,9 +835,24 @@ class EmbeddingProcessor:
                 repo_info += f"\n\n⚠️ COMMIT ANALYSIS: No matching commits found for this query"
                 
             if attachment_content:
-                repo_info += f"\n\nAttachments provided: {len(attachment_content)} files"
-                for att in attachment_content:
-                    repo_info += f"\n  - {att['name']} ({att['type']})"
+                repo_info += f"\n\n🔴 USER-PROVIDED ATTACHMENTS ({len(attachment_content)} files):"
+                for att in attachments:
+                    att_name = att.get('originalFileName') or att.get('name') or att.get('fileName') or 'user_attachment'
+                    att_type = att.get('type', 'unknown')
+                    att_size = att.get('fileSize', 0)
+                    repo_info += f"\n  - {att_name} ({att_type}, {att_size} bytes)"
+                repo_info += f"\n  IMPORTANT: These are files uploaded by the user for analysis. Please consider their content when answering."
+            
+            # Log what we're about to send to the AI
+            logger.info(f"📤 Sending to Gemini AI:")
+            logger.info(f"   - Question: {question}")
+            logger.info(f"   - Files in context: {len(files_content)}")
+            logger.info(f"   - Has attachments: {bool(attachment_content)}")
+            if files_content:
+                for i, content in enumerate(files_content[:3]):  # Log first 3 items
+                    content_preview = content[:200] if len(content) > 200 else content
+                    logger.info(f"   - File {i+1} preview: {content_preview}")
+                    logger.info(f"   - File {i+1} contains USER-PROVIDED: {'🔴 USER-PROVIDED' in content}")
             
             answer_result = await gemini_client.answer_question(
                 question=question,
@@ -599,16 +887,24 @@ class EmbeddingProcessor:
                     "categorization_confidence": categorization_result.get("confidence", 0.5)
                 }
                 
+                # CRITICAL DEBUG: Log what we're sending to Redis
+                logger.info(f"📤 DEBUG - Sending to Redis: relevant_files count = {len(relevant_file_paths)}")
+                
                 await redis_client.lpush("qna_results", json.dumps(result_data))
                 logger.info(f"Q&A result queued for storage: {question_id}")
             else:
                 logger.debug(f"Q&A result storage disabled, skipping Redis write for: {question_id}")
             
+            # CRITICAL DEBUG: Log final return value
+            logger.info(f"✅ DEBUG - Returning relevant_files count = {len(relevant_file_paths)}")
+            
             return {
                 "status": "completed",
                 "answer": answer_result["answer"],
                 "confidence": answer_result["confidence"],
-                "relevant_files": relevant_file_paths
+                "relevant_files": relevant_file_paths,
+                "category": categorization_result.get("category", "general"),
+                "tags": categorization_result.get("tags", ["question"])
             }
             
         except Exception as e:
@@ -632,3 +928,4 @@ class EmbeddingProcessor:
                 logger.error(f"Failed to store error result: {str(storage_error)}")
             
             raise
+

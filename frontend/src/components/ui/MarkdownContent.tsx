@@ -1,6 +1,6 @@
 'use client'
 
-import { memo } from 'react'
+import { memo, useState, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
@@ -9,6 +9,62 @@ interface MarkdownContentProps {
   content: string
   className?: string
 }
+
+// ✅ FIX: Lazy-loading code block component for smooth scrolling
+const LazyCodeBlock = memo(({ className, children, ...props }: any) => {
+  const [isVisible, setIsVisible] = useState(false);
+  const [shouldRender, setShouldRender] = useState(false);
+  const codeRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setIsVisible(true);
+            // Delay rendering slightly to avoid blocking scroll
+            setTimeout(() => setShouldRender(true), 50);
+            observer.disconnect();
+          }
+        });
+      },
+      {
+        rootMargin: '200px', // Load 200px before entering viewport
+        threshold: 0.01
+      }
+    );
+
+    if (codeRef.current) {
+      observer.observe(codeRef.current);
+    }
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  if (!shouldRender) {
+    return (
+      <code 
+        ref={codeRef}
+        className="block bg-slate-900 dark:bg-slate-950 text-slate-100 p-4 rounded-lg mb-4 border border-slate-200 dark:border-slate-700 min-h-[100px]"
+        style={{ display: 'block' }}
+      >
+        <div className="flex items-center justify-center h-24">
+          <div className="text-slate-400 text-sm">Loading code...</div>
+        </div>
+      </code>
+    );
+  }
+
+  return (
+    <code className={`${className} hljs`} {...props} style={{ willChange: 'auto', contain: 'layout style paint' }}>
+      {children}
+    </code>
+  );
+});
+
+LazyCodeBlock.displayName = 'LazyCodeBlock';
 
 const MarkdownContent = memo(({ content, className = '' }: MarkdownContentProps) => {
   return (
@@ -70,14 +126,14 @@ const MarkdownContent = memo(({ content, className = '' }: MarkdownContentProps)
               )
             }
             
-            return (
-              <code className={`${className} hljs`} {...props}>
-                {children}
-              </code>
-            )
+            // ✅ Use lazy-loading code block for better scroll performance
+            return <LazyCodeBlock className={className} {...props}>{children}</LazyCodeBlock>
           },
           pre: ({ children }) => (
-            <pre className="bg-slate-900 dark:bg-slate-950 text-slate-100 p-4 rounded-lg overflow-x-auto mb-4 border border-slate-200 dark:border-slate-700">
+            <pre 
+              className="bg-slate-900 dark:bg-slate-950 text-slate-100 p-4 rounded-lg overflow-x-auto mb-4 border border-slate-200 dark:border-slate-700"
+              style={{ contain: 'layout style paint' }}
+            >
               {children}
             </pre>
           ),

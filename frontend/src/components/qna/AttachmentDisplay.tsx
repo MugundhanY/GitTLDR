@@ -42,6 +42,8 @@ const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({
 }) => {  const [downloadingFiles, setDownloadingFiles] = useState<Set<string>>(new Set())
   const [isExpanded, setIsExpanded] = useState(true)
   const [previewAttachment, setPreviewAttachment] = useState<any | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
 
   // Generate consistent key for attachment
   const getAttachmentKey = (attachment: Attachment, index: number) => {
@@ -89,8 +91,11 @@ const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({
            type.includes('pdf') || 
            type.startsWith('text/') ||
            type.includes('json') ||
-           type.includes('xml')
-  }  // Get secure download URL
+           type.includes('xml') ||
+           type.includes('csv')  // Enable CSV preview
+  }
+  
+  // Get secure download URL
   const getSecureDownloadUrl = async (attachment: Attachment) => {
     const response = await fetch('/api/attachments', {
       method: 'POST',
@@ -110,7 +115,9 @@ const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({
     }
 
     const data = await response.json();
-    return data.download_url;
+    
+    // Use download_url, uploadUrl, or the generated secure URL
+    return data.download_url || data.downloadUrl || data.uploadUrl || attachment.uploadUrl;
   };  // Handle file download
   const handleDownload = async (attachment: Attachment, index: number) => {
     const attachmentKey = getAttachmentKey(attachment, index)
@@ -141,18 +148,44 @@ const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({
     }
   }// Handle file preview
   const handlePreview = async (attachment: Attachment) => {
+    setPreviewLoading(true)
+    setPreviewError(null)
+    
     try {
-      const downloadUrl = await getSecureDownloadUrl(attachment);
-      setPreviewAttachment({ ...attachment, downloadUrl });
+      // Add timeout to prevent indefinite loading
+      const downloadUrl = await Promise.race([
+        getSecureDownloadUrl(attachment),
+        new Promise<string>((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout')), 30000) // 30 second timeout
+        )
+      ])
+      
+      setPreviewAttachment({ ...attachment, downloadUrl })
     } catch (error) {
       console.error('Error previewing file:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Failed to preview file'
-      alert(`Preview failed: ${errorMessage}. Please try again.`)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      
+      // Set user-friendly error message
+      if (errorMessage === 'Timeout') {
+        setPreviewError('⏱️ Preview is taking too long. Try downloading the file instead.')
+      } else if (errorMessage.includes('HTTP 404')) {
+        setPreviewError('📁 File not found. It may have been deleted.')
+      } else if (errorMessage.includes('HTTP 403')) {
+        setPreviewError('🔒 Access denied. You may not have permission to view this file.')
+      } else {
+        setPreviewError(`❌ Failed to load preview: ${errorMessage}`)
+      }
+      
+      // Show error for 5 seconds
+      setTimeout(() => setPreviewError(null), 5000)
+    } finally {
+      setPreviewLoading(false)
     }
   }
 
   const closePreview = () => {
     setPreviewAttachment(null)
+    setPreviewError(null)
   }
 
   if (!attachments || attachments.length === 0) {
@@ -214,10 +247,15 @@ const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({
                     {canPreview(attachment.fileType) && (
                       <button
                         onClick={() => handlePreview(attachment)}
-                        className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                        title="Preview file"
+                        disabled={previewLoading}
+                        className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={previewLoading ? "Loading preview..." : "Preview file"}
                       >
-                        <EyeIcon className="w-4 h-4" />
+                        {previewLoading ? (
+                          <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <EyeIcon className="w-4 h-4" />
+                        )}
                       </button>
                     )}                    {/* Download button */}
                     <button
@@ -244,6 +282,17 @@ const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({
                 </div>
               ))}
             </div>
+
+            {/* Error message for preview failures */}
+            {previewError && (
+              <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg animate-fade-in">
+                <ExclamationTriangleIcon className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+                <div className="text-sm text-red-700 dark:text-red-300 flex-1">
+                  <p className="font-medium">Preview Error</p>
+                  <p className="mt-1">{previewError}</p>
+                </div>
+              </div>
+            )}
 
             {/* Warning message for large files */}
             {attachments.some(att => att.fileSize > 10 * 1024 * 1024) && (

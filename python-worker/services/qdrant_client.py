@@ -24,8 +24,8 @@ class QuadrantVectorClient:
         self.settings = None
         self.client: Optional[QdrantClient] = None
         self._initialized = False
-        self.embedder = SentenceTransformer("all-MiniLM-L6-v2")
-        self.embedding_dimension = 384
+        self.embedder = SentenceTransformer("sentence-transformers/paraphrase-mpnet-base-v2")
+        self.embedding_dimension = 768
 
     async def connect(self) -> None:
         """Connect to Quadrant."""

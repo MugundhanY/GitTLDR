@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useUserData } from '@/hooks/useUserData'
 import { 
   TagIcon, 
   FolderIcon, 
@@ -33,6 +34,7 @@ interface QuestionMetadataProps {
 }
 
 const QuestionMetadata = ({ question, onUpdate, className = '' }: QuestionMetadataProps) => {
+  const { userData } = useUserData()
   const [isEditing, setIsEditing] = useState(false)
   const [tags, setTags] = useState<string[]>(question.tags || [])
   const [category, setCategory] = useState(question.category || '')
@@ -82,7 +84,7 @@ const QuestionMetadata = ({ question, onUpdate, className = '' }: QuestionMetada
           'Content-Type': 'application/json',
         },        body: JSON.stringify({
           questionId: question.id,
-          userId: '1', // Replace with actual user ID
+          userId: userData?.id || '1',
           tags: tags.filter((tag: string) => tag.trim()),
           category: category.trim() || undefined,
           notes: notes.trim() || undefined

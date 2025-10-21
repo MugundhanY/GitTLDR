@@ -579,14 +579,14 @@ class GeminiClient:
         repo_file_count = 0
         for i, content in enumerate(files_content):
             content_preview = content[:200] + "..." if len(content) > 200 else content
-            is_attachment = "attachment/" in content or "Attachment:" in content or "🔴 USER-PROVIDED" in content
-            if is_attachment:
+            is_user_attachment = "🔴 USER-PROVIDED" in content
+            if is_user_attachment:
                 attachment_count += 1
-                logger.info(f"Q&A Debug - ATTACHMENT {attachment_count} preview: {content_preview}")
+                logger.info(f"Q&A Debug - USER ATTACHMENT {attachment_count} preview: {content_preview}")
             else:
                 repo_file_count += 1
-                logger.info(f"Q&A Debug - Repository file {repo_file_count} preview: {content_preview}")
-        logger.info(f"Q&A Context Summary - Repository files: {repo_file_count}, Attachments: {attachment_count}")
+                logger.info(f"Q&A Debug - REPOSITORY FILE {repo_file_count} preview: {content_preview}")
+        logger.info(f"Q&A Context Summary - Repository files: {repo_file_count}, User Attachments: {attachment_count}")
         
         for attempt in range(max_retries):
             try:
@@ -958,7 +958,7 @@ Provide a clear, structured summary in 2-3 paragraphs:
 """ 
 
     async def generate_chain_of_thought(self, question: str, context: str, files_content: List[str]) -> Dict[str, Any]:
-        """Generate step-by-step chain-of-thought reasoning similar to DeepSeek R1."""
+        """Generate step-by-step chain-of-thought reasoning using Gemini's multi-step capabilities."""
         self._ensure_configured()
         
         max_retries = 3
@@ -1010,24 +1010,53 @@ Provide a clear, structured summary in 2-3 paragraphs:
     def _build_chain_of_thought_prompt(self, question: str, context: str) -> str:
         """Build prompt for step-by-step chain-of-thought reasoning."""
         
-        # Check if context contains user attachments
-        has_attachments = "🔴 USER-PROVIDED" in context
+        # Check if context contains user attachments or repository files (NEW: clearer markers)
+        has_user_attachments = "� USER-PROVIDED ATTACHMENTS" in context
+        has_repository_files = "📁 REPOSITORY FILES" in context
+        
         attachment_instruction = ""
-        if has_attachments:
+        
+        if has_user_attachments and has_repository_files:
+            # Both attachments and repository files present
             attachment_instruction = """
-🔴🔴🔴 CRITICAL ATTACHMENT PRIORITY 🔴🔴🔴: The user has provided specific files/attachments for analysis. These are marked with "🔴 USER-PROVIDED" in the context. 
+🎯 CONTEXT STRUCTURE - IMPORTANT:
+- Files under "📎 USER-PROVIDED ATTACHMENTS" are files the user explicitly uploaded
+- Files under "📁 REPOSITORY FILES" are from the codebase
+
+ANALYSIS STRATEGY:
+1. **If the question is about "this file", "this CSV", "this document", or uploaded content** → Focus PRIMARILY on 📎 USER-PROVIDED ATTACHMENTS
+2. **If the question is about code, implementation, or "how does X work?"** → Focus PRIMARILY on 📁 REPOSITORY FILES
+3. **If the question asks to compare or relate both** → Analyze both sections
+
+Think about what the user is actually asking for before diving into the analysis. Your reasoning should be CLEAR about which section you're analyzing.
+"""
+        elif has_user_attachments:
+            # Only user attachments present
+            attachment_instruction = """
+🔴🔴🔴 CRITICAL ATTACHMENT PRIORITY 🔴🔴🔴: The user has provided specific files/attachments for analysis. These are marked with "� USER-PROVIDED ATTACHMENTS" in the context. 
 
 MANDATORY REQUIREMENTS:
 1. Your thinking MUST start by identifying and analyzing the user's attachments FIRST
 2. You MUST reference the actual content of these attachments directly in your reasoning
-3. You MUST prioritize the user's attachment content over repository code analysis
+3. You MUST prioritize the user's attachment content in your analysis
 4. Your final answer MUST be primarily based on the user's attachments
-5. If asked about relationships, compare attachment content to repository content
 
 ATTACHMENT CONTENT TAKES ABSOLUTE PRIORITY in your analysis and reasoning.
 """
+        elif "attachment" in question.lower() or "this file" in question.lower() or "uploaded" in question.lower():
+            # Question mentions attachments but none provided
+            attachment_instruction = """
+⚠️⚠️⚠️ ATTACHMENT QUESTION BUT NO USER ATTACHMENTS FOUND ⚠️⚠️⚠️
+
+CRITICAL THINKING REQUIREMENT:
+- Acknowledge immediately that no user attachments were provided
+- Do NOT confuse repository files with user attachments
+- If the user asks about "attachments", recognize this as a potential misunderstanding
+- Consider that they might want to upload files but forgot, or are confused about the feature
+- Do NOT treat repository files as "attachments" in your reasoning
+"""
         
-        return f"""You are an expert AI assistant that thinks step-by-step like DeepSeek R1. You need to show your actual reasoning process - not just structured analysis, but real thinking with exploration, uncertainty, corrections, and discoveries.
+        return f"""You are an expert AI assistant with strong multi-step reasoning capabilities. Show your genuine thought process with exploration, uncertainty, corrections, and discoveries.
 
 {attachment_instruction}
 
@@ -1042,7 +1071,7 @@ Your thinking should include:
 - Having insights and "aha" moments
 - Correcting yourself when you realize something
 - Building understanding piece by piece
-- ESPECIALLY: If user attachments are present, focus on analyzing their specific content
+- ESPECIALLY: When analyzing files, be VERY CLEAR about whether you're looking at user attachments vs repository code
 
 Structure your response as:
 
@@ -1051,7 +1080,7 @@ Let me think about this question step by step...
 
 Hmm, when I look at this question about "{question}", my first thought is... Actually, let me be more careful here. I should probably start by understanding what exactly is being asked.
 
-{f"Wait, I notice there are user-provided attachments marked with 🔴. Let me focus on those first since that's what the user specifically wants me to analyze..." if has_attachments else "Looking at the repository context, I can see... Wait, let me examine this more closely. There seems to be..."}
+{f"Wait, I notice there are user-provided attachments marked with �. Let me focus on those first since that's what the user specifically wants me to analyze..." if has_user_attachments else "Looking at the repository context, I can see... Wait, let me examine this more closely. There seems to be..."}
 
 Actually, I think I was approaching this wrong. Let me step back and think about this differently...
 
@@ -1086,52 +1115,35 @@ Show your genuine reasoning process with all the uncertainty, exploration, and d
         """Build prompt for Q&A."""        
         # Check if context contains user attachments
         has_user_attachments = "🔴 USER-PROVIDED" in context
-          # Check if this is a commit-focused question
-        is_commit_focused = "🔄 COMMIT ANALYSIS RESULTS:" in context
         
-        # Initialize instructions
-        commit_instruction = ""
-        attachment_instruction = ""
-        
-        if is_commit_focused:
-            commit_instruction = """
-🔄🔄� COMMIT-FOCUSED QUESTION DETECTED 🔄🔄🔄
-This question is specifically about commits/commit history. 
+        # If attachments are present, put instruction at the very beginning
+        if has_user_attachments:
+            return f"""
+🔴🔴🔴 CRITICAL: USER ATTACHMENTS DETECTED - ANALYZE THESE FIRST 🔴🔴🔴
+
+The context contains user-provided attachments marked with "🔴 USER-PROVIDED ATTACHMENT".
+You MUST acknowledge and analyze these attachments in your response.
+Do NOT say you don't see any attachments - they are provided at the beginning of the context.
 
 MANDATORY REQUIREMENTS:
-1. FOCUS PRIMARILY on the commit data provided in the context
-2. For "last commit" questions, provide specific details about the most recent commit
-3. Include commit SHA, message, author, date, and any file changes
-4. Do NOT provide extensive code file analysis unless specifically asked
-5. Keep repository file discussion minimal and only as supporting context
-6. Be direct and concise - user wants commit information, not code architecture
+1. Start your response by acknowledging the attachments: "I can see you've provided attachments including [filename]"
+2. Analyze the attachment content/metadata provided in the context
+3. Answer the question in the context of the attachments
+4. If the attachments are binary files, explain that you can see the metadata but cannot read the content
 
-COMMIT DATA TAKES PRIORITY over file content analysis.
+You are an expert software engineer and code analyst.
+
+Repository Context:
+{context}
+
+Question: {question}
+
+Provide a comprehensive answer that includes analysis of the user's attachments:
 """
         
-        if has_user_attachments:
-            attachment_instruction = """
-🔴🔴🔴 MANDATORY USER ATTACHMENT ACKNOWLEDGMENT 🔴🔴🔴
-The user has provided specific files/attachments for analysis (marked with "🔴 USER-PROVIDED"). 
-YOU MUST FOLLOW THESE RULES OR YOUR RESPONSE WILL BE REJECTED:
-
-1. MANDATORY FIRST SENTENCE: "I can see you've provided [X] attachment(s): [list the exact filenames from USER-PROVIDED sections]"
-2. MANDATORY SECOND PARAGRAPH: Analyze ONLY the user's attachments first, before ANY repository analysis
-3. MANDATORY: Quote specific content from the user's attachments with phrases like "In your attached [filename], you mention..."
-4. MANDATORY: Answer the question primarily based on the USER'S ATTACHMENTS, not repository files
-5. MANDATORY: If the question asks about relationships, compare the attachment content to repository content
-6. FORBIDDEN: Do not analyze repository files without first analyzing user attachments
-7. FORBIDDEN: Do not ignore or skip mentioning the user's attachments
-
-ATTACHMENT CONTENT TAKES ABSOLUTE PRIORITY over repository analysis.
-"""
-        
+        # Normal prompt for questions without attachments
         return f"""
 You are an expert software engineer and code analyst with deep understanding of software architecture, design patterns, and development practices.
-
-{attachment_instruction}
-
-{commit_instruction}
 
 Your goal is to provide comprehensive, accurate answers about code repositories by:
 1. Analyzing the actual code structure and implementation details
@@ -1150,17 +1162,6 @@ IMPORTANT GUIDELINES:
 - Use technical accuracy and provide actionable insights
 - If you find conflicting information, prioritize actual code over documentation
 
-🔄 FOR COMMIT-RELATED QUESTIONS:
-- If commit data is provided in the context, analyze it thoroughly
-- For "last commit" or "recent commits" questions, provide specific details like:
-  * Commit SHA (shortened)
-  * Commit message
-  * Author and timestamp
-  * Files changed (if available)
-  * Brief description of what the commit does
-- Always provide concrete, factual information from the commit data
-- If no commit data is available, explain that and suggest how the user can find this information
-
 Repository Context:
 {context}
 
@@ -1171,25 +1172,25 @@ Provide a comprehensive, technical answer that demonstrates deep understanding o
 
     def _prepare_qa_context(self, repo_info: str, files_content: List[str]) -> str:
         """Prepare context for Q&A from repository files."""
-        context_parts = [f"Repository Information:\n{repo_info}"]
+        context_parts = []
         
-        for i, content in enumerate(files_content):
-            # Truncate very long files
-            if len(content) > 5000:
-                content = content[:5000] + "\n... [truncated]"
-              # CRITICAL FIX: Preserve existing "File:" formatting for attachments
-            # Don't add generic "File {i+1}:" prefix if content already starts with "File:" or "🔴 USER-PROVIDED"
-            if content.startswith("File: ") or content.startswith("🔴 USER-PROVIDED"):
-                # This is already formatted (likely an attachment), use as-is
+        # First, add all user attachments at the very beginning for maximum visibility
+        for content in files_content:
+            if content.startswith("🔴 USER-PROVIDED"):
                 context_parts.append(content)
-                if "🔴 USER-PROVIDED" in content:
-                    logger.info(f"🎉 PRESERVED USER-PROVIDED ATTACHMENT: {content[:100]}...")
+        
+        # Then repository info
+        context_parts.append(f"Repository Information:\n{repo_info}")
+        
+        # Then other files
+        for content in files_content:
+            if not content.startswith("🔴 USER-PROVIDED"):
+                # Preserve existing "File:" formatting for repository files
+                if content.startswith("File: "):
+                    context_parts.append(content)
                 else:
-                    logger.info(f"🎉 PRESERVED ATTACHMENT FORMATTING: {content[:100]}...")
-            else:
-                # This is a repository file, add standard prefix
-                context_parts.append(f"File {i+1}:\n{content}")
-            
+                    context_parts.append(f"File:\n{content}")
+        
         return "\n\n".join(context_parts)
         
     def _calculate_confidence(self, answer: str, context: str) -> float:
@@ -1446,6 +1447,105 @@ Analyze the question and respond:
         except Exception as e:
             logger.error(f"Error generating content: {str(e)}")
             return "Unable to generate insights at this time."
+
+    async def analyze_image_with_vision(self, image_base64: str, prompt: str, mime_type: str = "image/png") -> str:
+        """Analyze an image using Gemini's vision capabilities.
+        
+        Args:
+            image_base64: Base64 encoded image data
+            prompt: Text prompt describing what to analyze
+            mime_type: MIME type of the image (e.g., 'image/png', 'image/jpeg')
+            
+        Returns:
+            str: Analysis result from Gemini
+        """
+        self._ensure_configured()
+        
+        max_retries = 3
+        base_delay = 1
+        
+        for attempt in range(max_retries):
+            try:
+                # Get active API key
+                current_key = self.api_key_manager.get_active_key()
+                if not current_key:
+                    logger.warning("No active API keys available for vision analysis")
+                    return "Unable to analyze image - no API keys available"
+                
+                # Configure Gemini with current key
+                genai.configure(api_key=current_key)
+                
+                # Use Gemini 2.0 Flash for vision (supports images)
+                vision_model = genai.GenerativeModel('gemini-2.0-flash-exp')
+                
+                # Prepare the image part
+                import base64
+                from google.generativeai.types import content_types
+                
+                # Decode base64 to bytes
+                image_bytes = base64.b64decode(image_base64)
+                
+                # Create image part
+                image_part = {
+                    "mime_type": mime_type,
+                    "data": image_bytes
+                }
+                
+                # Generate content with image and text
+                response = await asyncio.to_thread(
+                    vision_model.generate_content,
+                    [prompt, image_part],
+                    safety_settings=self.safety_settings
+                )
+                
+                # Extract text from response
+                if response and response.text:
+                    analysis = response.text.strip()
+                    logger.info(f"Successfully analyzed image with Gemini Vision: {len(analysis)} chars")
+                    
+                    # Record success
+                    self.api_key_manager.record_success(current_key)
+                    self.rate_limit_manager.record_success()
+                    
+                    return analysis
+                else:
+                    logger.warning("Gemini Vision returned empty response")
+                    return "No analysis could be generated for this image"
+                    
+            except Exception as e:
+                error_str = str(e).lower()
+                
+                # Log error
+                logger.warning(f"Vision analysis attempt {attempt + 1} failed: {str(e)}")
+                
+                # Check if it's a rate limit error
+                if 'rate' in error_str or 'quota' in error_str or 'resource_exhausted' in error_str:
+                    self.rate_limit_manager.record_rate_limit()
+                    current_key = self.api_key_manager.get_active_key()
+                    if current_key:
+                        self.api_key_manager.record_failure(current_key, error_str)
+                        self.api_key_manager.rotate_to_next_key()
+                    
+                    # Exponential backoff
+                    delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                    await asyncio.sleep(delay)
+                    continue
+                    
+                # For other errors, try rotating key
+                current_key = self.api_key_manager.get_active_key()
+                if current_key:
+                    self.api_key_manager.record_failure(current_key, error_str)
+                    self.api_key_manager.rotate_to_next_key()
+                
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    logger.error(f"Vision analysis failed after {max_retries} attempts: {str(e)}")
+                    return f"Failed to analyze image: {str(e)}"
+        
+        return "Unable to analyze image after multiple attempts"
 
 
 # Global Gemini client instance

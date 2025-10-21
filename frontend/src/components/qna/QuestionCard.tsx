@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect, memo } from 'react'
+import { useState, useRef, useEffect, memo, lazy, Suspense } from 'react'
+import { useUserData } from '@/hooks/useUserData'
 import { 
   ChevronDownIcon,
   ChevronRightIcon,
@@ -18,10 +19,10 @@ import {
   HandThumbDownIcon
 } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
-import MarkdownContent from '@/components/ui/MarkdownContent'
+// Lazy load heavy components for better performance
+const MarkdownContent = lazy(() => import('@/components/ui/MarkdownContent'))
 import QuestionMetadata from '@/components/ui/QuestionMetadata'
 import LazyCodeContent from '@/components/qna/LazyCodeContent'
-import ReasoningSteps from '@/components/qna/ReasoningSteps'
 import AttachmentDisplay from '@/components/qna/AttachmentDisplay'
 import { Question, FileContent } from '@/hooks/useQnAFiltering'
 import { Repository } from '@/contexts/RepositoryContext'
@@ -46,6 +47,7 @@ interface QuestionCardProps {
   isPageVisible?: boolean
   onToggleFavorite?: (question: Question) => void
   useConfidenceFilter?: boolean
+  refetchQuestions?: () => Promise<void>
 }
 
 const QuestionCard = memo(({
@@ -66,57 +68,111 @@ const QuestionCard = memo(({
   getFollowUpSuggestions,
   handleSelectFollowUp,
   isPageVisible = true,
-  useConfidenceFilter = false
+  useConfidenceFilter = false,
+  refetchQuestions
 }: QuestionCardProps) => {
+  const { userData } = useUserData()
   const [isInView, setIsInView] = useState(false)
-  const [isExpanded, setIsExpanded] = useState(false)
-  const [feedback, setFeedback] = useState<'like' | 'dislike' | null>(null)
+  // ✅ Start collapsed by default
+  const [isExpanded, setIsExpanded] = useState<boolean>(false)
+  const [feedback, setFeedback] = useState<'LIKE' | 'DISLIKE' | null>(question.feedback || null)
+  const [isCopied, setIsCopied] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [showFullAnswer, setShowFullAnswer] = useState(false)
   const [showFullQuestion, setShowFullQuestion] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
 
-  // Animate card expansion/collapse
-  const detailsRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (detailsRef.current) {
-      detailsRef.current.style.transition = 'max-height 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.3s';
-      detailsRef.current.style.overflow = 'hidden';
-      detailsRef.current.style.maxHeight = isExpanded ? detailsRef.current.scrollHeight + 'px' : '0px';
-      detailsRef.current.style.opacity = isExpanded ? '1' : '0';
-    }
-  }, [isExpanded]);
+  // ✅ Track previous status to detect transition from pending to completed
+  const prevStatusRef = useRef<string | null>(null);
+  const hasAutoExpandedRef = useRef<boolean>(false);
 
-  // Handle favorite toggle
-  const handleToggleFavorite = async (e: React.MouseEvent) => {
+  // ✅ Auto-expand when answer becomes available (only for actual status transitions from pending to completed)
+  useEffect(() => {
+    const prevStatus = prevStatusRef.current;
+    const currentStatus = question.status;
+
+    // Initialize prevStatus on first mount
+    if (prevStatus === null) {
+      prevStatusRef.current = currentStatus;
+      return;
+    }
+
+    // Auto-expand ONLY when transitioning from 'pending' to 'completed'
+    // This ensures questions start collapsed and only expand when processing completes
+    const shouldAutoExpand =
+      prevStatus === 'pending' &&
+      currentStatus === 'completed' &&
+      question.answer &&
+      question.answer.trim().length > 0 && // Ensure answer is not empty
+      !hasAutoExpandedRef.current;
+
+    if (shouldAutoExpand) {
+      console.log(`🎉 Auto-expanding question ${question.id}: ${prevStatus} → ${currentStatus} (answer length: ${question.answer?.length})`);
+      setIsExpanded(true);
+      hasAutoExpandedRef.current = true;
+    }
+
+    // Update previous status for next comparison
+    prevStatusRef.current = currentStatus;
+  }, [question.status, question.answer, question.id]);
+
+  // Debug log for relevant files
+  useEffect(() => {
+    if (question.status === 'completed') {
+      console.log(`🔍 QuestionCard ${question.id}: relevantFiles =`, question.relevantFiles);
+      console.log(`🔍 QuestionCard ${question.id}: relevantFiles length =`, question.relevantFiles?.length);
+    }
+  }, [question.relevantFiles, question.status, question.id]);
+
+  // Optimized animation using CSS classes instead of JS manipulation
+  const detailsRef = useRef<HTMLDivElement>(null)
+
+  // Handle favorite toggle with optimistic update + server sync
+  const handleToggleFavorite = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent expanding the question when clicking favorite
+    
+    const newFavoriteState = !question.isFavorite;
+    console.log(`⭐ Toggling favorite: ${question.isFavorite} → ${newFavoriteState}`);
+    
+    // Optimistic update - show immediately (THIS IS INSTANT!)
     const updatedQuestion = {
       ...question,
-      isFavorite: !question.isFavorite
+      isFavorite: newFavoriteState
     };
-    // Optimistic update
     onQuestionUpdate(updatedQuestion);
-    try {
-      const response = await fetch('/api/qna', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          questionId: question.id,
-          userId: '1',
-          isFavorite: !question.isFavorite
-        })
-      });
-      if (!response.ok) {
-        // Revert on failure
+    
+    // Fire-and-forget API call (runs in background, doesn't block UI)
+    fetch('/api/qna', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        questionId: question.id,
+        userId: userData?.id || '1',
+        isFavorite: newFavoriteState
+      })
+    })
+      .then(async response => {
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error('❌ Failed to toggle favorite:', response.status, errorData);
+          // Revert on failure
+          onQuestionUpdate(question);
+        } else {
+          const data = await response.json();
+          console.log('✅ Favorite updated successfully:', data.question?.isFavorite);
+          // Trigger refetch to sync with server (also in background)
+          if (refetchQuestions) {
+            refetchQuestions();
+          }
+        }
+      })
+      .catch(error => {
+        console.error('❌ Error toggling favorite:', error);
+        // Revert on error
         onQuestionUpdate(question);
-      }
-    } catch (error) {
-      console.error('Error toggling favorite:', error);
-      // Revert on error
-      onQuestionUpdate(question);
-    }
+      });
   }
 
   // Voice output for answer
@@ -139,15 +195,63 @@ const QuestionCard = memo(({
     }
   }
 
+  // Sync feedback state only on mount or when question ID changes
+  // Don't sync on feedback prop changes to preserve optimistic updates
+  const initialFeedbackRef = useRef<'LIKE' | 'DISLIKE' | null>(question.feedback || null)
+  
   useEffect(() => {
-    // Feedback is disabled, set to null
-    setFeedback(null)
-  }, [question.id])
+    // Only sync feedback from props when question ID changes (new question)
+    // This prevents refetch from overwriting our optimistic updates
+    initialFeedbackRef.current = question.feedback || null
+    setFeedback(question.feedback || null)
+  }, [question.id]) // Only depend on question.id, NOT question.feedback
 
-  const handleFeedback = async (value: 'like' | 'dislike') => {
-    // Feedback feature is disabled
-    console.log('Feedback feature is currently disabled')
-    return
+  const handleFeedback = async (value: 'LIKE' | 'DISLIKE') => {
+    // YouTube-style: Update UI instantly (optimistic update)
+    const newFeedback = feedback === value ? null : value
+    setFeedback(newFeedback)
+    
+    // Update parent state optimistically
+    const updatedQuestion = { ...question, feedback: newFeedback, feedbackAt: new Date().toISOString() }
+    onQuestionUpdate(updatedQuestion)
+
+    // Background API call (fire and forget)
+    fetch(`/api/qna/${question.id}/feedback`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ feedback: newFeedback }),
+    })
+      .then(async response => {
+        if (!response.ok) {
+          console.error('Failed to update feedback')
+          // Revert on error
+          setFeedback(initialFeedbackRef.current)
+          onQuestionUpdate(question)
+        } else {
+          console.log('✅ Feedback updated:', newFeedback)
+          // Update the ref to the new value
+          initialFeedbackRef.current = newFeedback
+          // Don't refetch - optimistic update is enough and faster
+        }
+      })
+      .catch(error => {
+        console.error('❌ Error updating feedback:', error)
+        // Revert on error
+        setFeedback(initialFeedbackRef.current)
+        onQuestionUpdate(question)
+      })
+  }
+
+  const handleCopyAnswer = async () => {
+    if (!question.answer) return
+    
+    try {
+      await navigator.clipboard.writeText(question.answer)
+      setIsCopied(true)
+      setTimeout(() => setIsCopied(false), 2000)
+    } catch (error) {
+      console.error('Failed to copy:', error)
+    }
   }
 
   useEffect(() => {
@@ -172,6 +276,7 @@ const QuestionCard = memo(({
     <article
       ref={cardRef}
       data-question-id={question.id}
+      data-expanded={isExpanded}  // Add expanded state as data attribute
       className={
         `border-2 border-slate-200 dark:border-slate-800 rounded-2xl ` +
         `bg-white dark:bg-slate-900 ` +
@@ -225,11 +330,11 @@ const QuestionCard = memo(({
             </div>
           </div>
         </div>
-        {/* Modern Favorite Button - blazing fast, no loader */}
+        {/* Modern Favorite Button - YouTube-style instant feedback */}
         <div className="flex items-center gap-2 mt-2 sm:mt-0 flex-shrink-0">
           <button
             onClick={handleToggleFavorite}
-            className={`relative p-2 rounded-full shadow-md bg-white/60 dark:bg-green-900/40 border border-yellow-200 dark:border-yellow-700 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400 ${
+            className={`relative p-2 rounded-full shadow-md bg-white/60 dark:bg-green-900/40 border border-yellow-200 dark:border-yellow-700 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400 hover:scale-105 active:scale-95 ${
               question.isFavorite
                 ? 'text-yellow-400 dark:text-yellow-300 scale-110'
                 : 'text-slate-400 hover:text-yellow-400 dark:hover:text-yellow-300'
@@ -239,9 +344,9 @@ const QuestionCard = memo(({
             style={{ boxShadow: question.isFavorite ? '0 2px 8px 0 rgba(255, 193, 7, 0.15)' : undefined }}
           >
             {question.isFavorite ? (
-              <StarIconSolid className="w-6 h-6" />
+              <StarIconSolid className="w-6 h-6 transition-transform duration-200" />
             ) : (
-              <StarIcon className="w-6 h-6" />
+              <StarIcon className="w-6 h-6 transition-transform duration-200" />
             )}
           </button>
           <span className={`px-2 py-1 text-xs font-semibold rounded-full shadow-sm ${getStatusColor(question.status)}`}>{question.status}</span>
@@ -249,15 +354,19 @@ const QuestionCard = memo(({
       </div>
       {/* Visual separation between question and answer */}
       <div className="h-1 bg-gradient-to-r from-slate-100 via-white to-slate-100 dark:from-slate-800 dark:to-slate-800" />
-      {/* Question Details - Expandable with animation */}
+      {/* Question Details - Expandable with optimized CSS animation */}
       <div
         id={`question-details-${question.id}`}
         ref={detailsRef}
         aria-hidden={!isExpanded}
-        className="will-change-[max-height,opacity]"
+        className={`transition-all duration-300 ease-in-out overflow-hidden ${
+          isExpanded ? 'max-h-[5000px] opacity-100' : 'max-h-0 opacity-0'
+        }`}
+        style={{ willChange: isExpanded ? 'max-height, opacity' : 'auto' }}
       >
-        {isExpanded && isInView && (
-          <div>
+        {/* Only render content when expanded or about to expand for better performance */}
+        {isExpanded && (
+        <div>
             {/* Attachments Section */}
             {(question.questionAttachments?.length ?? 0) > 0 && (
               <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
@@ -266,8 +375,15 @@ const QuestionCard = memo(({
                 />
               </div>
             )}
-            {/* Scrollable answer+metadata+followup section */}
-            <div className="relative max-h-[32rem] overflow-y-auto rounded-b-2xl">
+            {/* ✅ FIX: Optimized scrollable section with CSS containment for smooth scrolling */}
+            <div 
+              className="relative max-h-[32rem] overflow-y-auto rounded-b-2xl scroll-smooth"
+              style={{ 
+                contain: 'layout style paint',
+                willChange: 'scroll-position',
+                WebkitOverflowScrolling: 'touch'
+              }}
+            >
               {/* Answer Section */}
               {question.answer && (
                 <div className="p-0 bg-white dark:bg-slate-900">
@@ -286,10 +402,19 @@ const QuestionCard = memo(({
                       </span>
                     )}
                   </div>
-                  {/* Scrollable answer with fade for long content */}
+                  {/* ✅ FIX: Optimized scrollable answer with progressive rendering */}
                   <div className="relative px-2 sm:px-4 pt-2 pb-0 overflow-x-auto">
                     <div className="prose prose-slate dark:prose-invert max-w-none break-words">
-                      <MarkdownContent content={question.answer} />
+                      <Suspense fallback={
+                        <div className="flex items-center justify-center py-8">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                        </div>
+                      }>
+                        {/* Use will-change for GPU acceleration during scroll */}
+                        <div style={{ willChange: 'transform', contain: 'layout style paint' }}>
+                          <MarkdownContent content={question.answer} />
+                        </div>
+                      </Suspense>
                     </div>
                   </div>
                   {/* Modern Action Bar with loading spinners */}
@@ -318,47 +443,78 @@ const QuestionCard = memo(({
                         </svg>
                       </button>
                     )}
-                    {/* Like/Dislike Buttons - blazing fast, no loader */}
+                    {/* Like/Dislike/Copy Buttons - YouTube-style instant feedback with clear visual indicators */}
                     <button
                       type="button"
-                      onClick={() => handleFeedback('like')}
-                      className={`p-2 rounded-full border border-slate-200 dark:border-green-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400 transform-gpu ${
-                        feedback === 'like' ? 'bg-green-500 !text-white scale-110 shadow-lg' : 'bg-white dark:bg-slate-800 hover:bg-green-100 dark:hover:bg-green-900/30'
+                      onClick={() => handleFeedback('LIKE')}
+                      className={`p-2 rounded-full border-2 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400 transform ${
+                        feedback === 'LIKE' 
+                          ? 'bg-green-500 border-green-500 scale-110 shadow-lg dark:bg-green-600 dark:border-green-600' 
+                          : 'bg-slate-50 border-slate-300 hover:bg-green-50 hover:border-green-400 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700 dark:hover:border-green-500'
                       }`}
-                      title="Like answer"
-                      aria-label="Like answer"
-                      style={{ transition: 'background 0.2s, color 0.2s, transform 0.2s' }}
+                      title={feedback === 'LIKE' ? 'Unlike answer' : 'Like answer'}
+                      aria-label={feedback === 'LIKE' ? 'Unlike answer' : 'Like answer'}
+                      aria-pressed={feedback === 'LIKE'}
                     >
-                      <HandThumbUpIcon className={`w-5 h-5 ${feedback === 'like' ? '!text-white' : 'text-green-600'}`} />
+                      <HandThumbUpIcon 
+                        className={`w-5 h-5 transition-colors ${
+                          feedback === 'LIKE' 
+                            ? 'text-white stroke-2' 
+                            : 'text-slate-600 dark:text-slate-400'
+                        }`} 
+                        strokeWidth={feedback === 'LIKE' ? 2.5 : 2}
+                      />
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleFeedback('dislike')}
-                      className={`p-2 rounded-full border border-slate-200 dark:border-green-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 transform-gpu ${
-                        feedback === 'dislike' ? 'bg-red-500 !text-white scale-110 shadow-lg' : 'bg-white dark:bg-slate-800 hover:bg-red-100 dark:hover:bg-red-900/30'
+                      onClick={() => handleFeedback('DISLIKE')}
+                      className={`p-2 rounded-full border-2 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 transform ${
+                        feedback === 'DISLIKE' 
+                          ? 'bg-red-500 border-red-500 scale-110 shadow-lg dark:bg-red-600 dark:border-red-600' 
+                          : 'bg-slate-50 border-slate-300 hover:bg-red-50 hover:border-red-400 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700 dark:hover:border-red-500'
                       }`}
-                      title="Dislike answer"
-                      aria-label="Dislike answer"
-                      style={{ transition: 'background 0.2s, color 0.2s, transform 0.2s' }}
+                      title={feedback === 'DISLIKE' ? 'Remove dislike' : 'Dislike answer'}
+                      aria-label={feedback === 'DISLIKE' ? 'Remove dislike' : 'Dislike answer'}
+                      aria-pressed={feedback === 'DISLIKE'}
                     >
-                      <HandThumbDownIcon className={`w-5 h-5 ${feedback === 'dislike' ? '!text-white' : 'text-red-600'}`} />
+                      <HandThumbDownIcon 
+                        className={`w-5 h-5 transition-colors ${
+                          feedback === 'DISLIKE' 
+                            ? 'text-white stroke-2' 
+                            : 'text-slate-600 dark:text-slate-400'
+                        }`}
+                        strokeWidth={feedback === 'DISLIKE' ? 2.5 : 2}
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCopyAnswer}
+                      className={`p-2 rounded-full border-2 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 transform ${
+                        isCopied 
+                          ? 'bg-blue-500 border-blue-500 scale-110 shadow-lg dark:bg-blue-600 dark:border-blue-600' 
+                          : 'bg-slate-50 border-slate-300 hover:bg-blue-50 hover:border-blue-400 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700 dark:hover:border-blue-500'
+                      }`}
+                      title="Copy answer"
+                      aria-label="Copy answer"
+                    >
+                      <ClipboardDocumentIcon 
+                        className={`w-5 h-5 transition-colors ${
+                          isCopied 
+                            ? 'text-white' 
+                            : 'text-slate-600 dark:text-slate-400'
+                        }`} 
+                      />
                     </button>
                     {feedback && (
-                      <span className={`ml-2 text-xs ${feedback === 'like' ? 'text-green-600' : 'text-red-600'}`}>{feedback === 'like' ? 'Thanks for your feedback!' : 'We appreciate your feedback!'}</span>
+                      <span className={`ml-2 text-xs font-medium ${feedback === 'LIKE' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {feedback === 'LIKE' ? 'Liked!' : 'Disliked'}
+                      </span>
+                    )}
+                    {isCopied && (
+                      <span className="ml-2 text-xs font-medium text-blue-600 dark:text-blue-400">Copied!</span>
                     )}
                   </div>
                   {/* End Action Bar */}
-                  {/* Multi-Step Reasoning */}
-                  {question.hasMultiStepReasoning && (question.reasoningSteps?.length ?? 0) > 0 && (
-                    <div className="mt-6">
-                      <ReasoningSteps 
-                        steps={question.reasoningSteps ?? []}
-                        isProcessing={false}
-                        showByDefault={false}
-                        className="border-t border-slate-200 dark:border-slate-700 pt-4"
-                      />
-                    </div>
-                  )}
                 </div>
               )}
               {/* Relevant Files - modern card style with more padding and gap */}

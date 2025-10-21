@@ -62,7 +62,8 @@ class DatabaseService:
             async with pool.acquire() as connection:                
                 row = await connection.fetchrow(
                     """
-                    SELECT id, name, url, embedding_status, processed, file_count, total_size
+                    SELECT id, name, full_name, owner, url, description, language, stars, 
+                           avatar_url, embedding_status, processed, file_count, total_size
                     FROM repositories 
                     WHERE id = $1
                     """,
@@ -73,7 +74,13 @@ class DatabaseService:
                     return {
                         'id': row['id'],
                         'name': row['name'],
+                        'full_name': row['full_name'],
+                        'owner': row['owner'],
                         'url': row['url'],
+                        'description': row['description'],
+                        'language': row['language'],
+                        'stars': row['stars'],
+                        'avatar_url': row['avatar_url'],
                         'embedding_status': row['embedding_status'],
                         'processed': row['processed'],
                         'file_count': row['file_count'],
@@ -297,7 +304,8 @@ class DatabaseService:
         answer: str,
         confidence_score: float = 0.9,
         relevant_files: List[Dict[str, Any]] = None,
-        category: str = "ai_generated"
+        category: str = "ai_generated",
+        attachment_ids: List[str] = None  # ✅ NEW: Attachment IDs to link
     ) -> str:
         """
         Create a new question entry in the database.
@@ -310,6 +318,7 @@ class DatabaseService:
             confidence_score: Confidence score for the answer
             relevant_files: List of relevant files
             category: Question category
+            attachment_ids: List of attachment IDs to link to this question
             
         Returns:
             The created question ID
@@ -350,11 +359,104 @@ class DatabaseService:
                 )
                 
                 logger.info(f"Created question in database with ID: {question_id}")
+                
+                # ✅ NEW: Link attachments to this question
+                if attachment_ids and len(attachment_ids) > 0:
+                    logger.info(f"📎 Linking {len(attachment_ids)} attachments to question {question_id}")
+                    for att_id in attachment_ids:
+                        try:
+                            await connection.execute(
+                                """
+                                UPDATE question_attachments 
+                                SET question_id = $1, updated_at = NOW()
+                                WHERE id = $2
+                                """,
+                                question_id,
+                                att_id
+                            )
+                            logger.info(f"✅ Linked attachment {att_id} to question {question_id}")
+                        except Exception as link_error:
+                            logger.error(f"❌ Failed to link attachment {att_id}: {str(link_error)}")
+                
                 return str(question_id)
                 
         except Exception as e:
             logger.error(f"Failed to create question in database: {str(e)}")
             raise
+    
+    async def update_question(
+        self,
+        question_id: str,
+        answer: str = None,
+        confidence_score: float = None,
+        relevant_files: List[str] = None,
+        status: str = None
+    ) -> bool:
+        """
+        Update an existing question entry in the database.
+        
+        Args:
+            question_id: Question ID to update
+            answer: The answer text (optional)
+            confidence_score: Confidence score for the answer (optional)
+            relevant_files: List of relevant file paths (optional)
+            status: Status of the question (optional, e.g. 'completed')
+            
+        Returns:
+            True if update successful, False otherwise
+        """
+        try:
+            pool = await self._get_connection_pool()
+            
+            async with pool.acquire() as connection:
+                # Build dynamic update query
+                updates = ["updated_at = NOW()"]
+                params = []
+                param_count = 0
+                
+                if answer is not None:
+                    param_count += 1
+                    updates.append(f"answer = ${param_count}")
+                    params.append(answer)
+                
+                if confidence_score is not None:
+                    param_count += 1
+                    updates.append(f"confidence_score = ${param_count}")
+                    params.append(confidence_score)
+                
+                if relevant_files is not None:
+                    param_count += 1
+                    updates.append(f"relevant_files = ${param_count}")
+                    params.append(json.dumps(relevant_files))
+                
+                if status is not None:
+                    param_count += 1
+                    updates.append(f"status = ${param_count}")
+                    params.append(status)
+                
+                # Add question_id as last parameter
+                param_count += 1
+                params.append(question_id)
+                
+                query = f"""
+                    UPDATE questions 
+                    SET {', '.join(updates)}
+                    WHERE id = ${param_count}
+                    RETURNING id
+                """
+                
+                result = await connection.fetchval(query, *params)
+                
+                if result:
+                    logger.info(f"Successfully updated question {question_id}")
+                    return True
+                else:
+                    logger.warning(f"Question {question_id} not found for update")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"Failed to update question: {str(e)}")
+            return False
     
     async def get_commits_by_query(self, repository_id: str, query: str) -> List[Dict[str, Any]]:
         """
