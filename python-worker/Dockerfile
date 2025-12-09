@@ -26,6 +26,6 @@ EXPOSE 8001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD curl -f http://localhost:${PORT:-8001}/health || exit 1
 
-# Run only the API server (not the background worker) for free tier
-# The background worker requires more memory for ML processing
-CMD ["python", "-m", "uvicorn", "api_server:app", "--host", "0.0.0.0", "--port", "8001"]
+# Run both API server and background worker
+# Now lightweight: uses AssemblyAI for transcription, Gemini for embeddings
+CMD ["python", "main.py"]
