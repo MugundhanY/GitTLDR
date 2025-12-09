@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-05-28.basil',
-})
+// Lazy initialization to avoid build-time errors when STRIPE_SECRET_KEY is not set
+const getStripe = () => {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error('STRIPE_SECRET_KEY is not configured')
+  }
+  return new Stripe(process.env.STRIPE_SECRET_KEY, {
+    apiVersion: '2025-05-28.basil',
+  })
+}
 
 export async function POST(request: NextRequest) {
   try {
+    const stripe = getStripe()
+
     // TODO: Get customer ID from user's subscription in database
     const customerId = 'cus_mock_customer' // Replace with actual customer lookup
 

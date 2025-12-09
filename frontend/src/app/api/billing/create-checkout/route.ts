@@ -3,24 +3,33 @@ import Stripe from 'stripe'
 import { getUserFromRequest } from '@/lib/auth'
 import { PrismaClient } from '@prisma/client'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-05-28.basil'
-})
+// Lazy initialization to avoid build-time errors when STRIPE_SECRET_KEY is not set
+const getStripe = () => {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error('STRIPE_SECRET_KEY is not configured')
+  }
+  return new Stripe(process.env.STRIPE_SECRET_KEY, {
+    apiVersion: '2025-05-28.basil'
+  })
+}
 
 const prisma = new PrismaClient()
 
 export async function POST(request: NextRequest) {
   try {
+    // Initialize Stripe lazily
+    const stripe = getStripe()
+
     // Get authenticated user
     const authUser = await getUserFromRequest(request)
-    
+
     if (!authUser) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
 
     // Get full user data
     const user = await prisma.user.findUnique({ where: { id: authUser.id } })
-    
+
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
@@ -29,7 +38,7 @@ export async function POST(request: NextRequest) {
 
     if (!packageId || !credits || !amount || !packageName) {
       return NextResponse.json(
-        { error: 'Missing required fields' }, 
+        { error: 'Missing required fields' },
         { status: 400 }
       )
     }

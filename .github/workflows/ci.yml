@@ -130,11 +130,12 @@ jobs:
         run: npm run build
         env:
           SKIP_ENV_VALIDATION: true
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
-          NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
-          NEXT_PUBLIC_NODE_WORKER_URL: ${{ secrets.NEXT_PUBLIC_NODE_WORKER_URL }}
-          NEXT_PUBLIC_PYTHON_WORKER_URL: ${{ secrets.NEXT_PUBLIC_PYTHON_WORKER_URL }}
+          # Use dummy values for build - actual values set in Vercel
+          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
+          NEXTAUTH_SECRET: dummy-secret-for-build-only
+          NEXTAUTH_URL: http://localhost:3000
+          NEXT_PUBLIC_NODE_WORKER_URL: http://localhost:3001
+          NEXT_PUBLIC_PYTHON_WORKER_URL: http://localhost:8001
 
   # Deploy Frontend to Vercel
   deploy:
