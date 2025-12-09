@@ -4,7 +4,15 @@ import { PrismaClient } from '@prisma/client';
 import Redis from 'ioredis';
 
 const prisma = new PrismaClient();
-const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+
+// Lazy initialization to avoid build-time connection errors
+let redisClient: Redis | null = null;
+const getRedis = () => {
+  if (!redisClient) {
+    redisClient = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+  }
+  return redisClient;
+};
 
 export async function GET(
   req: NextRequest,
@@ -15,21 +23,22 @@ export async function GET(
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    
+
+    const redis = getRedis();
     const { jobId } = await params;
-    
+
     // Get job status from Redis
     const jobData = await redis.hgetall(`job:${jobId}`);
-    
+
     if (!jobData.id) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     }
-    
+
     // Get IssueFix record
     const issueFix = await prisma.issueFix.findUnique({
       where: { id: jobData.issueFixId }
     });
-    
+
     console.log(`📊 Fix status for job ${jobId}:`, {
       issueFixId: jobData.issueFixId,
       found: !!issueFix,
@@ -37,16 +46,16 @@ export async function GET(
       hasProposedFix: !!issueFix?.proposedFix,
       completedAt: issueFix?.completedAt
     });
-    
+
     if (!issueFix || issueFix.userId !== user.id) {
       return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
     }
-    
-    return NextResponse.json({ 
+
+    return NextResponse.json({
       fix: issueFix,
-      jobStatus: jobData 
+      jobStatus: jobData
     });
-    
+
   } catch (error) {
     console.error('Error fetching fix status:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

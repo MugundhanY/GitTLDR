@@ -3,14 +3,29 @@ import { PrismaClient } from '@prisma/client'
 import Stripe from 'stripe'
 
 const prisma = new PrismaClient()
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-05-28.basil'
-})
 
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!
+// Lazy initialization to avoid build-time errors
+const getStripe = () => {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error('STRIPE_SECRET_KEY is not configured')
+  }
+  return new Stripe(process.env.STRIPE_SECRET_KEY, {
+    apiVersion: '2025-05-28.basil'
+  })
+}
+
+const getWebhookSecret = () => {
+  if (!process.env.STRIPE_WEBHOOK_SECRET) {
+    throw new Error('STRIPE_WEBHOOK_SECRET is not configured')
+  }
+  return process.env.STRIPE_WEBHOOK_SECRET
+}
 
 export async function POST(request: NextRequest) {
   try {
+    const stripe = getStripe()
+    const webhookSecret = getWebhookSecret()
+
     const body = await request.text()
     const signature = request.headers.get('stripe-signature')!
 
@@ -28,12 +43,12 @@ export async function POST(request: NextRequest) {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
-        
+
         console.log('Processing checkout session:', session.id)
-        
+
         // Get user ID from metadata (preferred) or customer email (fallback)
         let userId = session.metadata?.userId
-        
+
         if (!userId) {
           // Fallback: find user by customer email
           const customerId = session.customer as string
@@ -74,7 +89,7 @@ export async function POST(request: NextRequest) {
           console.error('Invalid credits amount in metadata:', session.metadata)
           break
         }
-        
+
         // Create transaction record
         const transaction = await prisma.transaction.create({
           data: {
@@ -111,10 +126,10 @@ export async function POST(request: NextRequest) {
       case 'payment_intent.payment_failed': {
         const paymentIntent = event.data.object as Stripe.PaymentIntent
         console.error('Payment failed:', paymentIntent.id)
-        
+
         // You could create a failed transaction record here
         // and notify the user about the failed payment
-        
+
         break
       }
 
@@ -122,30 +137,30 @@ export async function POST(request: NextRequest) {
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription
-        
+
         // Handle subscription events if you have subscription-based billing
         console.log(`Subscription ${event.type}:`, subscription.id)
-        
+
         // You could update user subscription status here
-        
+
         break
       }
 
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object as Stripe.Invoice
-        
+
         // Handle recurring subscription payments
         console.log('Invoice payment succeeded:', invoice.id)
-        
+
         break
       }
 
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice
-        
+
         // Handle failed subscription payments
         console.log('Invoice payment failed:', invoice.id)
-        
+
         break
       }
 

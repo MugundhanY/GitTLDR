@@ -4,7 +4,15 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import Redis from 'ioredis';
 
 const prisma = new PrismaClient();
-const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+
+// Lazy initialization to avoid build-time connection errors
+let redisClient: Redis | null = null;
+const getRedis = () => {
+  if (!redisClient) {
+    redisClient = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+  }
+  return redisClient;
+};
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,24 +20,26 @@ export async function POST(req: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    
-    const { 
-      repositoryId, 
-      issueNumber, 
-      issueTitle, 
-      issueBody, 
-      issueUrl 
+
+    const redis = getRedis();
+
+    const {
+      repositoryId,
+      issueNumber,
+      issueTitle,
+      issueBody,
+      issueUrl
     } = await req.json();
-    
+
     // Verify repository ownership
     const repository = await prisma.repository.findUnique({
       where: { id: repositoryId }
     });
-    
+
     if (!repository || repository.userId !== user.id) {
       return NextResponse.json({ error: 'Repository not found' }, { status: 404 });
     }
-    
+
     // Create or update IssueFix record (handles re-running fixes on same issue)
     const issueFix = await prisma.issueFix.upsert({
       where: {
@@ -63,9 +73,9 @@ export async function POST(req: NextRequest) {
         status: 'PENDING'
       }
     });
-    
+
     const jobId = `issue_fix_${issueFix.id}_${Date.now()}`;
-    
+
     // Create job in Redis
     await redis.hset(`job:${jobId}`, {
       id: jobId,
@@ -77,7 +87,7 @@ export async function POST(req: NextRequest) {
       status: 'queued',
       createdAt: new Date().toISOString()
     });
-    
+
     // Queue job for Python API server
     await redis.lpush('gittldr_tasks', JSON.stringify({
       jobId,
@@ -90,13 +100,13 @@ export async function POST(req: NextRequest) {
       issueBody,
       timestamp: new Date().toISOString()
     }));
-    
-    return NextResponse.json({ 
-      jobId, 
+
+    return NextResponse.json({
+      jobId,
       issueFixId: issueFix.id,
-      status: 'queued' 
+      status: 'queued'
     });
-    
+
   } catch (error) {
     console.error('Error analyzing issue:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
