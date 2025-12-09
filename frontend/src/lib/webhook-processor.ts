@@ -26,7 +26,7 @@ export class WebhookBackgroundProcessor {
   async addJob(job: WebhookProcessingJob): Promise<void> {
     console.log(`Adding webhook job for repository ${job.repositoryId}, event: ${job.event}`);
     this.processingQueue.push(job);
-    
+
     // Start processing if not already running
     if (!this.isProcessing) {
       this.processQueue();
@@ -51,7 +51,7 @@ export class WebhookBackgroundProcessor {
         console.error(`Failed to process job for repository ${job.repositoryId}:`, error);
         // Optionally, add failed jobs back to queue or to a dead letter queue
       }
-      
+
       // Small delay between processing jobs to avoid overwhelming the system
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
@@ -96,7 +96,7 @@ export class WebhookBackgroundProcessor {
     for (const commit of commits) {
       // Save commit to database
       await this.saveCommit(repository.id, commit);
-      
+
       // Process changed files
       const changedFiles = [
         ...(commit.added || []),
@@ -130,14 +130,14 @@ export class WebhookBackgroundProcessor {
   // Process repository events (settings changes, etc.)
   private async processRepositoryEvent(repository: any, payload: any): Promise<void> {
     console.log(`Processing repository event for ${repository.fullName}:`, payload.action);
-    
+
     // Handle different repository actions
     switch (payload.action) {
       case 'privatized':
       case 'publicized':
         await prisma.repository.update({
           where: { id: repository.id },
-          data: { 
+          data: {
             isPrivate: payload.repository.private,
             updatedAt: new Date()
           }
@@ -146,7 +146,7 @@ export class WebhookBackgroundProcessor {
       case 'renamed':
         await prisma.repository.update({
           where: { id: repository.id },
-          data: { 
+          data: {
             name: payload.repository.name,
             fullName: payload.repository.full_name,
             updatedAt: new Date()
@@ -161,7 +161,12 @@ export class WebhookBackgroundProcessor {
   // Save commit to database
   private async saveCommit(repositoryId: string, commit: any): Promise<void> {
     const existingCommit = await prisma.commit.findUnique({
-      where: { sha: commit.id }
+      where: {
+        repositoryId_sha: {
+          repositoryId: repositoryId,
+          sha: commit.id
+        }
+      }
     });
 
     if (existingCommit) {
@@ -217,7 +222,7 @@ export class WebhookBackgroundProcessor {
     try {
       const [owner, repo] = repository.fullName.split('/');
       const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${commitSha}`;
-      
+
       const response = await fetch(url, {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
@@ -231,7 +236,7 @@ export class WebhookBackgroundProcessor {
       }
 
       const data = await response.json() as any;
-      
+
       if (data.type !== 'file') {
         console.log(`${filePath} is not a file, skipping`);
         return null;
@@ -251,7 +256,7 @@ export class WebhookBackgroundProcessor {
     try {
       // Call Python worker API to upload to B2
       const pythonWorkerUrl = process.env.PYTHON_WORKER_URL || 'http://localhost:8000';
-      
+
       const response = await fetch(`${pythonWorkerUrl}/api/upload-file`, {
         method: 'POST',
         headers: {
@@ -320,7 +325,7 @@ export class WebhookBackgroundProcessor {
   private async generateEmbeddings(repository: any, filePath: string, content: string): Promise<void> {
     try {
       const pythonWorkerUrl = process.env.PYTHON_WORKER_URL || 'http://localhost:8000';
-      
+
       const response = await fetch(`${pythonWorkerUrl}/api/generate-embeddings`, {
         method: 'POST',
         headers: {
@@ -351,7 +356,7 @@ export class WebhookBackgroundProcessor {
   // Handle file removal
   private async handleFileRemoval(repository: any, filePath: string): Promise<void> {
     console.log(`Handling removal of file: ${filePath}`);
-    
+
     // Remove from database
     await prisma.repositoryFile.deleteMany({
       where: {
@@ -363,7 +368,7 @@ export class WebhookBackgroundProcessor {
     // Optionally remove from B2 and embeddings
     try {
       const pythonWorkerUrl = process.env.PYTHON_WORKER_URL || 'http://localhost:8000';
-      
+
       await fetch(`${pythonWorkerUrl}/api/remove-file`, {
         method: 'POST',
         headers: {

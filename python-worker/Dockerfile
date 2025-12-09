@@ -1,33 +1,30 @@
-# Use Python 3.11 slim for smaller image size
+# Use Python 3.11 slim for smaller image
 FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies including git, ffmpeg for audio processing
-RUN apt-get update && apt-get install -y \
-    curl \
-    git \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy requirements first for better caching
-COPY requirements.txt .
+COPY requirements.txt ./
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy source code (excluding sensitive files via .dockerignore)
+# Copy source code
 COPY . .
 
-# Create non-root user
-RUN useradd -m -u 1000 worker
+# Expose port (API server runs on PORT env var, defaults to 8001)
+EXPOSE 8001
 
-# Set up git configuration for the worker user
-USER worker
-RUN git config --global user.email "worker@gittldr.app" && \
-    git config --global user.name "GitTLDR Worker" && \
-    git config --global init.defaultBranch main
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:${PORT:-8001}/health || exit 1
 
-# Start the worker (no health check for background worker)
-CMD ["python", "worker.py"]
+# Start BOTH API server and background worker using combined main.py
+# This ensures the worker runs even on free-tier web services
+CMD ["python", "main.py"]

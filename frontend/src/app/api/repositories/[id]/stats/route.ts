@@ -36,28 +36,23 @@ export async function GET(
             size: true,
             language: true,
           }
-        },        commits: {
-          select: {
-            id: true,
-            sha: true,
-            message: true,
-            authorName: true,
-            authorEmail: true,
-            authorAvatar: true,
-            timestamp: true,
-            status: true,
-            filesChanged: true,
-            summary: true,
-          },
-          orderBy: {
-            timestamp: 'desc'
-          },
-          take: 10
         },
         questions: {
           select: {
             id: true,
           }
+        },
+        meetings: {
+          select: {
+            id: true,
+            title: true,
+            created_at: true,
+            status: true,
+          },
+          orderBy: {
+            created_at: 'desc'
+          },
+          take: 10
         }
       }
     });
@@ -86,40 +81,27 @@ export async function GET(
       name: lang,
       count,
       percentage: Math.round((count / totalFiles) * 100)
-    })).sort((a, b) => b.count - a.count);    // Recent activity from commits with enhanced data
-    const recentActivity = repository.commits.map(commit => {
-      const messageLines = commit.message?.split('\n') || [];
-      const title = messageLines[0]?.substring(0, 50) + (messageLines[0]?.length > 50 ? '...' : '') || `Commit ${commit.sha.substring(0, 8)}`;
-      
-      // Generate avatar URL
-      const avatarUrl = commit.authorAvatar || 
-        `https://github.com/${commit.authorEmail?.split('@')[0] || 'user'}.png?size=32` ||
-        `https://ui-avatars.com/api/?name=${encodeURIComponent(commit.authorName || 'Unknown')}&size=32&background=6366f1&color=fff`;
+    })).sort((a, b) => b.count - a.count);
 
-      return {
-        id: commit.id,
-        type: 'commit' as const,
-        title,
-        description: commit.summary || 
-          (commit.status === 'COMPLETED' ? 'AI summary available' : 
-           commit.status === 'PROCESSING' ? 'Generating...' : 
-           `${commit.filesChanged || 0} files changed`),
-        timestamp: commit.timestamp?.toISOString() || new Date().toISOString(),
-        author: commit.authorName || 'Unknown',
-        email: commit.authorEmail,
-        avatar: avatarUrl,
-        sha: commit.sha.substring(0, 8),
-        filesChanged: commit.filesChanged || 0,
-        hasAiSummary: !!commit.summary,
-        summaryStatus: commit.status
-      };
-    });    const stats = {
+    // Recent activity from meetings
+    const recentActivity = repository.meetings.map(meeting => ({
+      id: meeting.id,
+      type: 'meeting' as const,
+      title: meeting.title,
+      description: meeting.status === 'COMPLETED' ? 'Meeting analyzed' : 
+                   meeting.status === 'PROCESSING' ? 'Processing...' : 
+                   'Meeting scheduled',
+      timestamp: meeting.created_at?.toISOString() || new Date().toISOString(),
+      status: meeting.status
+    }));
+
+    const stats = {
       totalFiles,
       totalQuestions,
       totalSize,
       languages,
       recentActivity,
-      commitCount: repository.commits.length,
+      meetingCount: repository.meetings.length,
       processed: repository.processed,
       embeddingStatus: repository.embeddingStatus
     };

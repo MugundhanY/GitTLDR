@@ -11,21 +11,21 @@ export async function POST(request: NextRequest) {
     const body = await request.text();
     const signature = request.headers.get('x-hub-signature-256');
     const event = request.headers.get('x-github-event');
-    
+
     // Verify webhook signature (optional but recommended)
     if (process.env.GITHUB_WEBHOOK_SECRET) {
       const expectedSignature = `sha256=${crypto
         .createHmac('sha256', process.env.GITHUB_WEBHOOK_SECRET)
         .update(body)
         .digest('hex')}`;
-      
+
       if (signature !== expectedSignature) {
         return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
       }
     }
 
     const payload = JSON.parse(body);
-    
+
     // Handle different webhook events
     switch (event) {
       case 'push':
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
 async function handlePushEvent(payload: any) {
   const repository = payload.repository;
   const commits = payload.commits;
-  
+
   // Find the repository in our database
   const repo = await prisma.repository.findFirst({
     where: {
@@ -70,7 +70,12 @@ async function handlePushEvent(payload: any) {
   for (const commit of commits) {
     // Check if commit already exists
     const existingCommit = await prisma.commit.findUnique({
-      where: { sha: commit.id }
+      where: {
+        repositoryId_sha: {
+          repositoryId: repo.id,
+          sha: commit.id
+        }
+      }
     });
 
     if (!existingCommit) {
@@ -95,7 +100,7 @@ async function handlePushEvent(payload: any) {
   // Update repository's updated timestamp
   await prisma.repository.update({
     where: { id: repo.id },
-    data: { 
+    data: {
       updatedAt: new Date(),
       embeddingStatus: 'PENDING' // Mark for re-processing
     }
@@ -116,7 +121,7 @@ async function handlePushEvent(payload: any) {
 async function handleRepositoryEvent(payload: any) {
   if (payload.action === 'edited' || payload.action === 'updated') {
     const repository = payload.repository;
-    
+
     // Find the repository in our database
     const repo = await prisma.repository.findFirst({
       where: {

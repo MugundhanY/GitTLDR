@@ -63,7 +63,6 @@ export function useDashboard() {
   // Real data from APIs
   const stats: DashboardStats = dashboardData?.stats || {
     repositories: 0,
-    totalCommits: 0,
     activeProjects: 0,
     aiAnalyses: 0,
     meetings: 0,
@@ -180,7 +179,6 @@ export function useDashboard() {
     
     if (allRepositories.length > 0) cards.push('repositories');
     if (stats.creditsRemaining > 0 || stats.creditsUsed > 0) cards.push('credits');
-    if (stats.totalCommits > 0) cards.push('commits');
     if (recentActivities.length > 0) cards.push('activities');
     if (stats.repositories > 0 || stats.meetings > 0 || stats.questions > 0) cards.push('analytics');
     if (stats.repositories > 0) cards.push('performance');

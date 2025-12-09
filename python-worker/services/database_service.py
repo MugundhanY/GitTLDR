@@ -46,15 +46,15 @@ class DatabaseService:
                 raise
         return self.connection_pool
     
-    async def get_repository_status(self, repository_id: str) -> Optional[Dict[str, Any]]:
+    async def get_repository(self, repository_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get repository processing status from database.
+        Get repository data from database.
         
         Args:
             repository_id: Repository ID
             
         Returns:
-            Repository status dict or None if not found
+            Repository dict or None if not found
         """
         try:
             pool = await self._get_connection_pool()
@@ -63,7 +63,8 @@ class DatabaseService:
                 row = await connection.fetchrow(
                     """
                     SELECT id, name, full_name, owner, url, description, language, stars, 
-                           avatar_url, embedding_status, processed, file_count, total_size
+                           avatar_url, embedding_status, processed, file_count, total_size,
+                           created_at, updated_at
                     FROM repositories 
                     WHERE id = $1
                     """,
@@ -75,6 +76,7 @@ class DatabaseService:
                         'id': row['id'],
                         'name': row['name'],
                         'full_name': row['full_name'],
+                        'owner_name': row['owner'],  # Map 'owner' to 'owner_name'
                         'owner': row['owner'],
                         'url': row['url'],
                         'description': row['description'],
@@ -84,15 +86,29 @@ class DatabaseService:
                         'embedding_status': row['embedding_status'],
                         'processed': row['processed'],
                         'file_count': row['file_count'],
-                        'total_size': row['total_size']
+                        'total_size': row['total_size'],
+                        'created_at': row['created_at'],
+                        'updated_at': row['updated_at']
                     }
                 else:
                     logger.warning(f"Repository {repository_id} not found in database")
                     return None
                     
         except Exception as e:
-            logger.error(f"Failed to get repository status: {str(e)}")
+            logger.error(f"Failed to get repository: {str(e)}")
             return None
+    
+    async def get_repository_status(self, repository_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get repository processing status from database (alias for get_repository).
+        
+        Args:
+            repository_id: Repository ID
+            
+        Returns:
+            Repository status dict or None if not found
+        """
+        return await self.get_repository(repository_id)
     
     async def get_repository_files(self, repository_id: str) -> List[Dict[str, Any]]:
         """
@@ -289,6 +305,11 @@ class DatabaseService:
                     except UnicodeDecodeError:
                         logger.warning(f"Could not decode file content for: {file_info.get('path')}")
                         return None
+            
+            if content:
+                logger.info(f"✅ Downloaded {file_info.get('path')}: {len(content)} chars. Preview: {content[:100]!r}")
+            else:
+                logger.warning(f"⚠️ Downloaded empty content for {file_info.get('path')}")
             
             return content
             
@@ -1243,7 +1264,7 @@ class DatabaseService:
         """
         Get files with content for Q&A processing.
         This method retrieves files from the database and loads their content from B2 storage.
-        Uses smart filtering to avoid loading too many files.
+        Loads content for ALL files to ensure hybrid retrieval has complete data.
         
         Args:
             repository_id: Repository ID
@@ -1259,17 +1280,28 @@ class DatabaseService:
                 logger.warning(f"No files found in database for repository {repository_id}")
                 return []
             
-            # For general Q&A, we need to be smarter about which files to load
-            # Create a basic question analysis for prioritization
-            question_analysis = {
-                'type': 'general',
-                'specific_files': [],
-                'specific_folders': [],
-                'keywords': []
-            }
-            
-            # Load content for relevant files using existing method
-            files_with_content = await self.load_file_contents(files_metadata, question_analysis)
+            # ✅ CRITICAL FIX: Load content for ALL files, not just filtered subset
+            # This ensures hybrid retrieval can access any file's content
+            files_with_content = []
+            for file_info in files_metadata:
+                try:
+                    content = await self._load_file_content(file_info)
+                    if content:
+                        file_with_content = file_info.copy()
+                        file_with_content['content'] = content
+                        files_with_content.append(file_with_content)
+                    else:
+                        # Even if content load fails, include file with empty content
+                        # so it can still be used for path/metadata matching
+                        file_with_content = file_info.copy()
+                        file_with_content['content'] = ''
+                        files_with_content.append(file_with_content)
+                except Exception as e:
+                    logger.warning(f"Failed to load content for {file_info.get('path')}: {str(e)}")
+                    # Still include file with empty content
+                    file_with_content = file_info.copy()
+                    file_with_content['content'] = ''
+                    files_with_content.append(file_with_content)
             
             logger.info(f"Successfully loaded content for {len(files_with_content)} files from repository {repository_id}")
             return files_with_content
@@ -1412,5 +1444,323 @@ class DatabaseService:
             logger.error(f"Failed to get meeting info for {meeting_id}: {str(e)}")
             return None
 
+    async def get_issue_fix(self, issue_fix_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get IssueFix record from database.
+        
+        Args:
+            issue_fix_id: IssueFix ID
+            
+        Returns:
+            IssueFix dict or None if not found
+        """
+        try:
+            pool = await self._get_connection_pool()
+            
+            async with pool.acquire() as connection:
+                row = await connection.fetchrow(
+                    """
+                    SELECT 
+                        id, repository_id, user_id, issue_number, issue_title, issue_body, issue_url,
+                        analysis, relevant_files, proposed_fix, diff, explanation, confidence,
+                        status, error_message,
+                        pr_number, pr_url, pr_created_at,
+                        created_at, updated_at, completed_at
+                    FROM issue_fixes 
+                    WHERE id = $1
+                    """,
+                    issue_fix_id
+                )
+                
+                if row:
+                    # Parse JSON fields
+                    analysis = json.loads(row['analysis']) if row['analysis'] else None
+                    relevant_files = json.loads(row['relevant_files']) if row['relevant_files'] else None
+                    proposed_fix = json.loads(row['proposed_fix']) if row['proposed_fix'] else None
+                    
+                    return {
+                        'id': row['id'],
+                        'repository_id': row['repository_id'],
+                        'user_id': row['user_id'],
+                        'issue_number': row['issue_number'],
+                        'issue_title': row['issue_title'],
+                        'issue_body': row['issue_body'],
+                        'issue_url': row['issue_url'],
+                        'analysis': analysis,
+                        'relevant_files': relevant_files,
+                        'proposed_fix': proposed_fix,
+                        'diff': row['diff'],  # Include diff field
+                        'explanation': row['explanation'],
+                        'confidence': float(row['confidence']) if row['confidence'] is not None else None,
+                        'status': row['status'],
+                        'error_message': row['error_message'],
+                        'pr_number': row['pr_number'],
+                        'pr_url': row['pr_url'],
+                        'pr_created_at': row['pr_created_at'],
+                        'created_at': row['created_at'],
+                        'updated_at': row['updated_at'],
+                        'completed_at': row['completed_at']
+                    }
+                else:
+                    logger.warning(f"IssueFix {issue_fix_id} not found in database")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"Failed to get IssueFix {issue_fix_id}: {str(e)}")
+            return None
+
+    async def update_issue_fix(
+        self,
+        issue_fix_id: str,
+        status: str = None,
+        analysis: Dict[str, Any] = None,
+        relevant_files: List[Dict[str, Any]] = None,
+        proposed_fix: Dict[str, Any] = None,
+        diff: str = None,
+        explanation: str = None,
+        confidence: float = None,
+        error_message: str = None,
+        issue_body: str = None
+    ) -> bool:
+        """
+        Update an IssueFix record in the database.
+        
+        Args:
+            issue_fix_id: IssueFix ID to update
+            status: New status
+            analysis: Issue analysis JSON
+            relevant_files: Relevant files JSON
+            proposed_fix: Proposed fix JSON (LEGACY: operations format)
+            diff: Unified diff patch (PRIMARY format)
+            explanation: Human-readable explanation
+            confidence: AI confidence score
+            error_message: Error message if failed
+            issue_body: Updated issue body (for clarification context)
+            
+        Returns:
+            True if update successful, False otherwise
+        """
+        try:
+            pool = await self._get_connection_pool()
+            
+            async with pool.acquire() as connection:
+                # Build dynamic update query
+                updates = ["updated_at = NOW()"]
+                params = []
+                param_count = 0
+                
+                if status is not None:
+                    param_count += 1
+                    updates.append(f"status = ${param_count}")
+                    params.append(status)
+                
+                if analysis is not None:
+                    param_count += 1
+                    updates.append(f"analysis = ${param_count}")
+                    params.append(json.dumps(analysis))
+                
+                if relevant_files is not None:
+                    param_count += 1
+                    updates.append(f"relevant_files = ${param_count}")
+                    params.append(json.dumps(relevant_files))
+                
+                if proposed_fix is not None:
+                    param_count += 1
+                    updates.append(f"proposed_fix = ${param_count}")
+                    params.append(json.dumps(proposed_fix))
+                
+                if diff is not None:
+                    param_count += 1
+                    updates.append(f"diff = ${param_count}")
+                    params.append(diff)
+                
+                if explanation is not None:
+                    param_count += 1
+                    updates.append(f"explanation = ${param_count}")
+                    params.append(explanation)
+                
+                if confidence is not None:
+                    param_count += 1
+                    updates.append(f"confidence = ${param_count}")
+                    params.append(confidence)
+                    logger.info(f"💾 Saving confidence: {confidence} (type: {type(confidence).__name__}) for issue_fix_id: {issue_fix_id}")
+                
+                if error_message is not None:
+                    param_count += 1
+                    updates.append(f"error_message = ${param_count}")
+                    params.append(error_message)
+                
+                if issue_body is not None:
+                    param_count += 1
+                    updates.append(f"issue_body = ${param_count}")
+                    params.append(issue_body)
+                
+                if status == 'COMPLETED':
+                    updates.append("completed_at = NOW()")
+                
+                param_count += 1
+                params.append(issue_fix_id)
+                
+                query = f"""
+                    UPDATE issue_fixes
+                    SET {', '.join(updates)}
+                    WHERE id = ${param_count}
+                """
+                
+                logger.info(f"🔍 SQL Query: {query}")
+                logger.info(f"🔍 SQL Params: {params}")
+                await connection.execute(query, *params)
+                logger.info(f"✅ Updated IssueFix {issue_fix_id} with status={status}, confidence={'in update' if confidence is not None else 'not modified'}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to update IssueFix {issue_fix_id}: {str(e)}")
+            return False
+    
+    async def get_file_content(
+        self,
+        repository_id: str,
+        file_path: str
+    ) -> Optional[str]:
+        """
+        Get file content from database or B2 storage.
+        
+        Args:
+            repository_id: Repository ID
+            file_path: File path within repository
+            
+        Returns:
+            File content as string, or None if not found
+        """
+        try:
+            pool = await self._get_connection_pool()
+            
+            async with pool.acquire() as connection:
+                row = await connection.fetchrow(
+                    """
+                    SELECT id, file_key, file_url, size
+                    FROM repository_files
+                    WHERE repository_id = $1 AND path = $2
+                    """,
+                    repository_id,
+                    file_path
+                )
+                
+                if not row:
+                    logger.warning(f"File not found: {file_path} in repo {repository_id}")
+                    return None
+                
+                # Load content from B2 storage
+                if row['file_key']:
+                    try:
+                        content_bytes = await asyncio.to_thread(
+                            self.b2_storage.download_file,
+                            row['file_key']
+                        )
+                        content = content_bytes.decode('utf-8', errors='ignore')
+                        return content
+                    except Exception as e:
+                        logger.error(f"Failed to load file from B2: {str(e)}")
+                        return None
+                else:
+                    logger.warning(f"File {file_path} has no B2 key")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"Failed to get file content: {str(e)}")
+            return None
+    
+    async def search_files_by_keywords(
+        self,
+        repository_id: str,
+        keywords: List[str],
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Search files by keywords using full-text search.
+        
+        Args:
+            repository_id: Repository ID
+            keywords: List of keywords to search for
+            limit: Maximum number of results
+            
+        Returns:
+            List of matching files with content
+        """
+        try:
+            pool = await self._get_connection_pool()
+            
+            # Build keyword search query
+            keyword_conditions = []
+            for keyword in keywords[:10]:  # Limit to 10 keywords
+                keyword_conditions.append(f"(path ILIKE '%{keyword}%' OR summary ILIKE '%{keyword}%')")
+            
+            if not keyword_conditions:
+                return []
+            
+            query = f"""
+                SELECT id, path, name, size, summary, language, file_key, file_url
+                FROM repository_files
+                WHERE repository_id = $1 AND ({' OR '.join(keyword_conditions)})
+                ORDER BY size ASC
+                LIMIT {limit}
+            """
+            
+            async with pool.acquire() as connection:
+                rows = await connection.fetch(query, repository_id)
+                
+                # Load file contents
+                results = []
+                for row in rows:
+                    if row['file_key']:
+                        try:
+                            content_bytes = await asyncio.to_thread(
+                                self.b2_storage.download_file,
+                                row['file_key']
+                            )
+                            content = content_bytes.decode('utf-8', errors='ignore')
+                            
+                            results.append({
+                                'file_path': row['path'],
+                                'content': content[:10000],  # Limit to 10K chars
+                                'match_score': 0.7  # Base score for keyword match
+                            })
+                        except Exception as e:
+                            logger.warning(f"Failed to load {row['path']}: {str(e)}")
+                            continue
+                
+                logger.info(f"Found {len(results)} files matching keywords")
+                return results
+                
+        except Exception as e:
+            logger.error(f"Failed to search files by keywords: {str(e)}")
+            return []
+    
+    async def get_file_dependencies(
+        self,
+        repository_id: str,
+        file_paths: List[str]
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Get dependencies for files (imports, etc).
+        
+        Args:
+            repository_id: Repository ID
+            file_paths: List of file paths
+            
+        Returns:
+            Dict mapping file paths to dependency info
+        """
+        try:
+            # For now, return empty dict
+            # TODO: Implement dependency analysis using Neo4j or code analysis
+            logger.debug(f"Dependency analysis not implemented yet for {len(file_paths)} files")
+            return {}
+                
+        except Exception as e:
+            logger.error(f"Failed to get file dependencies: {str(e)}")
+            return {}
+
 # Global instance
 database_service = DatabaseService()
+

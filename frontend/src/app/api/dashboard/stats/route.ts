@@ -36,22 +36,16 @@ export async function GET(request: NextRequest) {
             language: true,
             size: true,
           }
-        },        commits: {
+        },
+        meetings: {
           select: {
             id: true,
-            sha: true,
-            message: true,
-            authorName: true,
-            authorEmail: true,
-            authorAvatar: true,
-            timestamp: true,
-            summary: true,
+            title: true,
+            created_at: true,
             status: true,
-            filesChanged: true,
-            createdAt: true,
           },
           orderBy: {
-            timestamp: 'desc'
+            created_at: 'desc'
           },
           take: 10
         }
@@ -143,60 +137,23 @@ export async function GET(request: NextRequest) {
 
     // Calculate local statistics
     const totalFiles = repository.files.length;
-    const totalSize = repository.files.reduce((sum, file) => sum + (file.size || 0), 0);    // Recent activity from commits with enhanced avatar generation
-    const recentActivity = repository.commits.map(commit => {
-      const messageLines = commit.message?.split('\n') || [];
-      const title = messageLines[0]?.substring(0, 60) + (messageLines[0]?.length > 60 ? '...' : '') || `Commit ${commit.sha.substring(0, 8)}`;
-        // Extract GitHub username and generate best avatar
-      const githubUsername = extractGitHubUsername(commit.authorEmail, commit.authorName);
-      const avatarUrl = getBestAvatarURL(
-        commit.authorName || 'Unknown',
-        commit.authorEmail,
-        githubUsername || undefined,
-        commit.authorAvatar ?? undefined,
-        40
-      );
+    const totalSize = repository.files.reduce((sum, file) => sum + (file.size || 0), 0);
 
-      // Enhanced description with better formatting
-      let description = '';
-      if (commit.summary) {
-        description = commit.summary.length > 100 
-          ? commit.summary.substring(0, 100) + '...' 
-          : commit.summary;
-      } else {
-        switch (commit.status) {
-          case 'COMPLETED':
-            description = '✨ AI summary ready';
-            break;
-          case 'PROCESSING':
-            description = '🔄 Generating AI summary...';
-            break;
-          case 'FAILED':
-            description = '❌ Summary generation failed';
-            break;
-          default:
-            description = `📝 ${commit.filesChanged || 0} files changed`;
-        }
-      }
+    // Recent activity from meetings
+    const recentActivity = repository.meetings.map(meeting => ({
+      id: meeting.id,
+      type: 'meeting' as const,
+      title: meeting.title || 'Meeting Analysis',
+      author: 'AI Assistant',
+      time: formatRelativeTime(meeting.created_at || new Date()),
+      avatar: 'AI',
+      description: meeting.status === 'COMPLETED' ? '✨ Meeting analyzed' : 
+                   meeting.status === 'PROCESSING' ? '🔄 Processing...' : 
+                   '📝 Meeting scheduled',
+      status: meeting.status
+    }));
 
-      return {
-        id: commit.id,
-        type: 'commit' as const,
-        title,
-        author: commit.authorName || 'Unknown',
-        email: commit.authorEmail,
-        time: formatRelativeTime(commit.timestamp || commit.createdAt),
-        avatar: avatarUrl,
-        description,
-        sha: commit.sha.substring(0, 8),
-        filesChanged: commit.filesChanged || 0,
-        hasAiSummary: !!commit.summary,
-        summaryStatus: commit.status,
-        githubUsername
-      };
-    });
-
-    // Add some mock activity if no commits
+    // Add some mock activity if no meetings
     const finalActivity = recentActivity.length > 0 ? recentActivity : [
       {
         id: 'mock-1',

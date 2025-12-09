@@ -202,3 +202,12 @@ class B2StorageService:
             else:
                 logger.error(f"Download error: {error_str}")
                 raise Exception(f"Failed to download file from B2: {error_str}")
+
+    def download_file(self, file_key: str) -> bytes:
+        """
+        Synchronous download method for compatibility with asyncio.to_thread().
+        Alias for download_file_bytes().
+        
+        Used by database_service.py for hybrid search file retrieval.
+        """
+        return self.download_file_bytes(file_key)

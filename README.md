@@ -4,43 +4,40 @@
   <img src="frontend/public/GitTLDR_logo.png" alt="GitTLDR Logo" width="120" />
 </div>
 
-GitTLDR transforms how development teams understand and collaborate on code repositories. Built from frustration with lengthy code reviews and scattered repository insights, this platform combines AI-powered summarization with real-time team coordination to make repository management actually efficient.
+GitTLDR transforms how development teams understand and collaborate on code repositories. Built from frustration with lengthy code reviews and scattered repository insights, this platform combines AI-powered analysis with real-time team coordination to make repository management actually efficient.
 
 ## What GitTLDR Does
 
 ### AI-Powered Repository Intelligence
 Extract meaningful insights from your repositories without drowning in documentation. Our AI analyzes commit patterns, identifies code relationships, and generates summaries that actually help developers understand what's happening.
 
-### Real-Time Team Coordination
-See who's working on what, track changes as they happen, and get notified about relevant updates. No more "wait, who changed this?" moments during code reviews.
+### Automated GitHub Issue Fixing 
+Transform GitHub issues into working code automatically. Our AI analyzes issue descriptions, understands your codebase context through vector embeddings, generates validated fixes using Tree-of-Thought reasoning, and creates pull requests with confidence scoring.
+
+### Intelligent Q&A
+Ask questions about your codebase in natural language. Get answers with citations to specific files and lines, powered by RAG (Retrieval-Augmented Generation) and Google Gemini AI.
 
 ### Meeting Integration & Transcription
 Connect your development meetings to repository context. Record team discussions, automatically transcribe them, and link decisions back to specific code changes or repository events.
 
-### Smart Dashboard & Analytics
-Visualize repository health, contributor patterns, and project velocity through customizable dashboards. Drag and drop widgets to create views that matter to your team.
-
-## Why We Built This
-
-Traditional repository management tools show you *what* changed but not *why* it matters. Code reviews become archaeological expeditions, and team knowledge lives in Slack threads that disappear. GitTLDR connects the dots between code, conversations, and team coordination.
-
-We also use AI-generated summaries and vector embeddings of your codebase to answer questions about your repository more accurately. Instead of keyword search, you get context-aware answers that understand relationships and intent in your code. In some features, we use both summaries and embeddings together for even deeper understanding and better results.
+### Real-Time Team Coordination
+See who's working on what, track changes as they happen, and get notified about relevant updates.
 
 ## Repository Structure
 
-This is a microservices architecture with three main components:
-
 ```
 GitTLDR/
-├── frontend/        # Next.js 15 dashboard and web interface
-├── node-worker/     # Express.js API server and task orchestration
-└── python-worker/   # FastAPI service for AI processing and embeddings
+├── frontend/        # Next.js 15 dashboard and web interface (port 3000)
+├── node-worker/     # Express.js API server and task orchestration (port 3001)
+├── python-worker/   # FastAPI AI processing and embeddings (port 8001)
+└── load-tests/      # k6 performance testing scripts
 ```
 
-Each service handles specific responsibilities:
-- **Frontend**: User interface, authentication, real-time updates
+### Service Responsibilities
+
+- **Frontend**: User interface, authentication, real-time updates via WebSocket
 - **Node Worker**: GitHub integration, webhooks, queue management, database operations
-- **Python Worker**: AI summarization, vector embeddings, semantic search
+- **Python Worker**: AI summarization, vector embeddings, semantic search, issue fix generation
 
 ## Core Features
 
@@ -50,64 +47,61 @@ Each service handles specific responsibilities:
 - Integration health monitoring and dependency tracking
 
 ### AI-Powered Insights
-- Intelligent code and documentation summarization using Gemini and DeepSeek
+- Intelligent code and documentation summarization using Google Gemini
 - Vector-based semantic search across repositories and meeting transcripts
 - Context-aware explanations for complex code changes
+- **Automated issue analysis and fix generation**
 
 ### Team Collaboration
 - Real-time notifications for relevant repository events
 - Meeting transcription with automatic linking to repository context
 - Shared workspace for repository insights and team coordination
 
-### Performance & Scale
-- Handles repositories up to 10GB with sub-50ms search response times
-- Processes 1000+ concurrent repository analyses through distributed queues
-- Real-time updates with <100ms WebSocket latency
+### Automated Issue Resolution
+- AI-powered analysis of GitHub issue descriptions
+- Precision code retrieval using vector embeddings and AST parsing
+- Multi-layer validation with confidence scoring
+- Automatic PR creation with detailed change explanations
 
 ## Technology Choices
 
 | Component | Technology | Why We Chose It |
-|-----------|------------|-----------------|
-| **Frontend** | Next.js 15, React 19, TypeScript | Server-side rendering for fast initial loads, excellent TypeScript support |
-| **API Layer** | Node.js, Express, Prisma | Familiar ecosystem, great GitHub API integration, type-safe database queries |
-| **AI Processing** | Python, FastAPI, Sentence Transformers | Best-in-class ML libraries, async processing for AI workloads |
-| **Database** | PostgreSQL, Redis, Qdrant | Reliable ACID transactions, fast caching, specialized vector search |
-| **Infrastructure** | Docker, Railway, Vercel | Simple deployment, automatic scaling, global CDN |
+|-----------|------------|--------------------|
+| **Frontend** | Next.js 15, React 19, TypeScript | Server-side rendering, excellent TypeScript support |
+| **API Layer** | Node.js, Express, Prisma | Familiar ecosystem, great GitHub API integration |
+| **AI Processing** | Python, FastAPI, Google Gemini | Best-in-class ML libraries, async processing |
+| **Database** | PostgreSQL, Redis, Qdrant | ACID transactions, fast caching, vector search |
+| **Knowledge Graph** | Neo4j | Code relationship mapping |
+| **Infrastructure** | Docker, Render, Vercel | Simple deployment, automatic scaling |
 
 ## Getting Started Locally
 
-### What You'll Need
+### Prerequisites
 - Node.js 18+ and Python 3.11+
 - PostgreSQL and Redis instances
-- GitHub OAuth application (for repository access)
-- API keys for Gemini and GitHub token for DeepSeek (for AI features)
+- GitHub OAuth application
+- Google Gemini API key
 
 ### Quick Setup
 
-1. **Get the code and configure environment**
+1. **Clone and configure:**
    ```bash
    git clone https://github.com/MugundhanY/GitTLDR.git
    cd GitTLDR
    
-   # Copy and configure environment files
    cp frontend/.env.example frontend/.env
    cp node-worker/.env.example node-worker/.env  
    cp python-worker/.env.example python-worker/.env
    ```
 
-2. **Install dependencies**
+2. **Install dependencies:**
    ```bash
-   # Frontend
    cd frontend && npm install && cd ..
-   
-   # Node worker
    cd node-worker && npm install && cd ..
-   
-   # Python worker  
    cd python-worker && pip install -r requirements.txt && cd ..
    ```
 
-3. **Set up the database**
+3. **Set up database:**
    ```bash
    cd frontend
    npx prisma migrate dev
@@ -115,7 +109,7 @@ Each service handles specific responsibilities:
    cd ..
    ```
 
-4. **Start all services** (in separate terminals)
+4. **Start all services** (in separate terminals):
    ```bash
    # Frontend (http://localhost:3000)
    cd frontend && npm run dev
@@ -123,70 +117,96 @@ Each service handles specific responsibilities:
    # Node worker (http://localhost:3001)  
    cd node-worker && npm run dev
    
-   # Python worker (http://localhost:8000)
-   cd python-worker && python worker.py
+   # Python worker (http://localhost:8001)
+   # Option 1: Combined mode (API + background worker)
+   cd python-worker && python main.py
    
-   # Make sure Redis and PostgreSQL are running
+   # Option 2: Separate processes
+   cd python-worker && python api_server.py  # API only
+   cd python-worker && python worker.py      # Worker only
    ```
 
 ## Key Environment Variables
-
-You'll need to configure these in your `.env` files:
 
 **GitHub Integration**
 ```
 GITHUB_CLIENT_ID=your_github_app_client_id
 GITHUB_CLIENT_SECRET=your_github_app_secret
-GITHUB_WEBHOOK_SECRET=your_webhook_secret
 ```
 
-**AI Services** (choose one or both)
+**AI Services**
 ```
 GEMINI_API_KEY=your_gemini_key
-GITHUB_TOKEN=github_pat_your_token  # For DeepSeek via GitHub AI
+GEMINI_API_KEYS=key1,key2,key3  # Multiple keys for rotation
 ```
 
 **Infrastructure**
 ```
 DATABASE_URL=postgresql://user:password@localhost:5432/gittldr
 REDIS_URL=redis://localhost:6379
-QDRANT_URL=http://localhost:6333  # for vector search
+QDRANT_URL=http://localhost:6333
 ```
-
-## Performance Characteristics
-
-GitTLDR is designed to handle real-world repository workloads:
-
-- **Repository Analysis**: Processes repos up to 10GB in under 5 minutes
-- **Search Performance**: Vector similarity search returns results in <50ms
-- **Real-time Updates**: WebSocket notifications with <100ms latency
-- **Concurrent Processing**: Handles 1000+ simultaneous repository analyses
-- **Uptime**: 99.5% availability with automatic failover and health checks
 
 ## Architecture Decisions
 
 ### Microservices Approach
-We chose microservices to allow independent scaling of AI processing (CPU/GPU intensive) versus web traffic (memory/network intensive). The Node.js worker handles GitHub API rate limits and database operations, while Python excels at AI/ML workloads.
+Independent scaling of AI processing (CPU/GPU intensive) versus web traffic (memory/network intensive). Node.js handles GitHub API rate limits, while Python excels at AI/ML workloads.
 
 ### Queue-Based Processing  
-Repository analysis can take minutes for large repos. Instead of blocking HTTP requests, we use Redis lists and pub/sub to process work asynchronously and provide real-time progress updates.
+Repository analysis can take minutes for large repos. Redis lists and pub/sub process work asynchronously with real-time progress updates.
 
 ### Vector Search Integration
-Traditional text search fails on code repositories. We generate embeddings for code, comments, and documentation to enable semantic search that understands context and relationships.
+Semantic search using Qdrant that understands context and relationships, not just keywords.
+
+## Testing
+
+```bash
+# Python Worker (25 tests)
+cd python-worker && pip install -r requirements-test.txt && pytest -v
+
+# Node Worker (13 tests)
+cd node-worker && npm install && npm test
+```
+
+Test results:
+- [python-worker/TEST_RESULTS.md](./python-worker/TEST_RESULTS.md)
+- [node-worker/TEST_RESULTS.md](./node-worker/TEST_RESULTS.md)
+
+### Load Testing
+
+```bash
+# Install k6: https://k6.io/docs/get-started/installation/
+cd load-tests
+
+# Quick test (services must be running)
+k6 run --vus 2 --duration 10s k6-health.js
+
+# Test deployed services
+k6 run -e PYTHON_URL=https://your-app.onrender.com -e NODE_URL=https://your-node.onrender.com k6-health.js
+```
+
+## CI/CD Pipeline
+
+GitHub Actions runs on every push:
+- Python tests (pytest)
+- Node tests (Jest)
+- Frontend build verification
+- Deployment to Render/Vercel on main branch
+
+See [.github/workflows/ci.yml](./.github/workflows/ci.yml)
 
 ## Deployment
 
-GitTLDR runs well on several platforms:
+**Recommended: Render + Vercel (Free Tier)**
+- Backend services on Render using `render.yaml` Blueprint
+- Frontend on Vercel (global CDN)
+- Neon for PostgreSQL, Upstash for Redis, Qdrant Cloud for vectors
 
-**Recommended: Railway + Vercel**
-- Deploy backend services on Railway (automatic PostgreSQL, Redis)
-- Deploy frontend on Vercel (global CDN, automatic deployments)
-- Configure environment variables and connect services
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete guide.
 
-**Alternative: Docker Compose**
-- Single-machine deployment with all services containerized
-- Includes PostgreSQL, Redis, and Qdrant containers
-- Good for staging environments or smaller teams
+**Alternative: Railway**
+- $5 free credit, supports background workers
+- Better for full functionality
 
 ---
 

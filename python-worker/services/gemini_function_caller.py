@@ -51,7 +51,7 @@ class GeminiFunctionCaller:
         self.tool_registry = tool_registry
         self.github_client = github_client
         self.max_turns = 5  # Prevent infinite loops
-        self.model_name = "gemini-2.0-flash-lite"  # Use same model as gemini_client
+        self.model_name = "gemini-2.5-flash-lite"  # Updated to 2.5 flash lite (10 RPM)
     
     async def process_question(
         self,

@@ -38,9 +38,13 @@ class QuadrantVectorClient:
                 self.client = QdrantClient(
                     url=self.settings.qdrant_url,
                     api_key=self.settings.qdrant_api_key,
+                    timeout=60.0  # Increased timeout for slow connections
                 )
             else:
-                self.client = QdrantClient(url=self.settings.qdrant_url)
+                self.client = QdrantClient(
+                    url=self.settings.qdrant_url,
+                    timeout=60.0  # Increased timeout for slow connections
+                )
                 
             # Test connection
             collections = self.client.get_collections()

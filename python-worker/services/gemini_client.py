@@ -4,6 +4,7 @@ Gemini API client for AI-powered processing with API key rotation and enhanced r
 import asyncio
 import time
 import random
+import redis
 from typing import List, Dict, Any, Optional
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
@@ -19,27 +20,79 @@ logger = get_logger(__name__)
 class APIKeyManager:
     """Manages multiple API keys with rotation and rate limiting tracking."""
     
-    def __init__(self, api_keys: List[str]):
+    def __init__(self, api_keys: List[str], redis_client: Optional[redis.Redis] = None):
         self.api_keys = api_keys
         self.current_index = 0
+        self.redis_client = redis_client  # For persistent rate limit tracking
         self.key_status = {}  # Track status of each key
         self.key_last_error_time = {}  # Track when each key last had an error
+        self.key_last_rate_limit_time = {}  # Track when each key was last rate limited
         self.key_consecutive_failures = {}  # Track consecutive failures per key
+        self.key_last_success_time = {}  # Track when each key last succeeded
         self.circuit_breaker_timeout = 300  # 5 minutes
+        self.rate_limit_cooldown = 180  # 180 seconds cooldown after rate limit hit (3 minutes for IP-based limiting)
         self.max_consecutive_failures = 3  # Lower threshold per key
+        self.inter_key_delay = 5.0  # Minimum 5 seconds between rotating keys (IP-based rate limit)
+        self.min_request_interval = 20.0  # Minimum 20 seconds between ANY requests from this IP
         
         # Initialize status for all keys
         for key in api_keys:
             self.key_status[key] = "active"
             self.key_last_error_time[key] = None
             self.key_consecutive_failures[key] = 0
+            self.key_last_success_time[key] = None
+            
+            # Load rate limit time from Redis if available
+            if self.redis_client:
+                try:
+                    redis_key = f"gemini_rate_limit:{self._hash_key(key)}"
+                    stored_time = self.redis_client.get(redis_key)
+                    if stored_time:
+                        self.key_last_rate_limit_time[key] = float(stored_time)
+                        time_since = time.time() - float(stored_time)
+                        if time_since < self.rate_limit_cooldown:
+                            logger.info(f"API key index {self.api_keys.index(key)} still in cooldown (started {time_since:.0f}s ago, {self.rate_limit_cooldown - time_since:.0f}s remaining)")
+                    else:
+                        self.key_last_rate_limit_time[key] = None
+                except Exception as e:
+                    logger.warning(f"Failed to load rate limit time from Redis: {e}")
+                    self.key_last_rate_limit_time[key] = None
+            else:
+                self.key_last_rate_limit_time[key] = None
             
         logger.info(f"Initialized API key manager with {len(api_keys)} keys")
+        
+        # Log status of all keys
+        available_count = sum(1 for key in api_keys if self._is_key_available(key))
+        logger.info(f"Available keys: {available_count}/{len(api_keys)}")
+    
+    def _hash_key(self, api_key: str) -> str:
+        """Create a safe hash of the API key for Redis storage."""
+        import hashlib
+        return hashlib.sha256(api_key.encode()).hexdigest()[:16]
     
     def get_active_key(self) -> Optional[str]:
         """Get the next active API key for use."""
+        key, _ = self.get_active_key_with_index()
+        return key
+    
+    def get_active_key_with_index(self) -> tuple[Optional[str], int]:
+        """Get the next active API key with its index for quotaUser."""
         if not self.api_keys:
-            return None
+            return None, -1
+        
+        # CRITICAL: Enforce minimum interval between ANY requests (IP-based rate limit)
+        # Check if we need to wait before making ANY request
+        most_recent_success = max(
+            (t for t in self.key_last_success_time.values() if t is not None),
+            default=None
+        )
+        if most_recent_success:
+            time_since_last = time.time() - most_recent_success
+            if time_since_last < self.min_request_interval:
+                wait_time = self.min_request_interval - time_since_last
+                logger.warning(f"⏰ IP rate limit: Waiting {wait_time:.1f}s before next request (last request {time_since_last:.1f}s ago)")
+                time.sleep(wait_time)
             
         # Find the next available key
         attempts = 0
@@ -48,20 +101,29 @@ class APIKeyManager:
             
             if self._is_key_available(key):
                 logger.debug(f"Using API key index {self.current_index}")
-                return key
+                return key, self.current_index
             
             # Move to next key
             self.current_index = (self.current_index + 1) % len(self.api_keys)
             attempts += 1
         
         # All keys are unavailable
-        logger.warning("All API keys are currently unavailable")
-        return None
+        logger.warning("🚫 All API keys are currently unavailable - IP rate limit exhausted")
+        return None, -1
     
     def _is_key_available(self, key: str) -> bool:
         """Check if a specific key is available for use."""
         if self.key_status[key] == "disabled":
             return False
+        
+        # CRITICAL: Check rate limit cooldown first
+        # Don't reuse a key that was just rate-limited (give it 90s to reset + burst limit recovery)
+        last_rate_limit_time = self.key_last_rate_limit_time.get(key)
+        if last_rate_limit_time:
+            time_since_rate_limit = time.time() - last_rate_limit_time
+            if time_since_rate_limit < self.rate_limit_cooldown:
+                # Key is in cooldown period after rate limit
+                return False
             
         # Check circuit breaker
         consecutive_failures = self.key_consecutive_failures[key]
@@ -84,30 +146,98 @@ class APIKeyManager:
         if key in self.key_consecutive_failures:
             self.key_consecutive_failures[key] = 0
             self.key_status[key] = "active"
+            # Record success time for IP-based rate limiting
+            self.key_last_success_time[key] = time.time()
+            # Clear rate limit cooldown on success
+            self.key_last_rate_limit_time[key] = None
+            
+            # Clear from Redis
+            if self.redis_client:
+                try:
+                    redis_key = f"gemini_rate_limit:{self._hash_key(key)}"
+                    self.redis_client.delete(redis_key)
+                except Exception as e:
+                    logger.warning(f"Failed to clear rate limit from Redis: {e}")
             
     def record_failure(self, key: str, error_str: str):
         """Record failed API call for a key."""
         self.key_consecutive_failures[key] = self.key_consecutive_failures.get(key, 0) + 1
         self.key_last_error_time[key] = time.time()
         
+        # CRITICAL: Track rate limit separately for cooldown
+        error_lower = error_str.lower()
+        if "429" in error_str or "resource_exhausted" in error_lower or "rate limit" in error_lower or "quota" in error_lower:
+            current_time = time.time()
+            self.key_last_rate_limit_time[key] = current_time
+            logger.warning(f"🚫 API key index {self.api_keys.index(key)} rate limited - entering 180s cooldown (IP-based rate limit)")
+            
+            # Persist to Redis so cooldown survives worker restarts
+            if self.redis_client:
+                try:
+                    redis_key = f"gemini_rate_limit:{self._hash_key(key)}"
+                    # Store with 120s expiry (30s buffer beyond cooldown)
+                    self.redis_client.setex(redis_key, 120, str(current_time))
+                except Exception as e:
+                    logger.warning(f"Failed to save rate limit to Redis: {e}")
+        
         # Check if key should be temporarily disabled
         if self.key_consecutive_failures[key] >= self.max_consecutive_failures:
             self.key_status[key] = "circuit_breaker"
-            logger.warning(f"API key index {self.api_keys.index(key)} disabled due to consecutive failures")
+            logger.warning(f"Circuit breaker triggered for API key index {self.api_keys.index(key)}")
+    
+    def all_keys_exhausted(self) -> bool:
+        """
+        Check if ALL keys are in cooldown due to IP-based rate limiting.
+        
+        When this returns True, no point rotating - should fail fast and
+        fall back to alternative retrieval methods instead of waiting 60s+ per attempt.
+        
+        This prevents the 405s wait scenario that causes MetaController timeout.
+        """
+        if not self.api_keys:
+            return True
+        
+        current_time = time.time()
+        
+        # Check if ALL keys are in rate limit cooldown
+        available_count = 0
+        for key in self.api_keys:
+            last_rate_limit = self.key_last_rate_limit_time.get(key)
+            if not last_rate_limit:
+                # Key has never been rate limited
+                available_count += 1
+            elif (current_time - last_rate_limit) >= self.rate_limit_cooldown:
+                # Key cooldown expired
+                available_count += 1
+        
+        # All keys exhausted if none available
+        exhausted = (available_count == 0)
+        if exhausted:
+            logger.warning(f"🚫 All {len(self.api_keys)} Gemini keys are in IP-based rate limit cooldown")
+        
+        return exhausted
     
     def rotate_to_next_key(self):
-        """Manually rotate to the next key."""
+        """Manually rotate to the next key with delay to avoid burst limits."""
+        # Add small delay to avoid burst limits when rapidly rotating keys
+        time.sleep(self.inter_key_delay)
         self.current_index = (self.current_index + 1) % len(self.api_keys)
         
     def get_status(self) -> Dict[str, Any]:
         """Get status of all API keys."""
         status = {}
         for i, key in enumerate(self.api_keys):
+            last_rate_limit = self.key_last_rate_limit_time.get(key)
+            time_since_rate_limit = time.time() - last_rate_limit if last_rate_limit else None
+            in_cooldown = time_since_rate_limit is not None and time_since_rate_limit < self.rate_limit_cooldown
+            
             status[f"key_{i}"] = {
                 "status": self.key_status[key],
                 "consecutive_failures": self.key_consecutive_failures[key],
                 "time_since_last_error": time.time() - self.key_last_error_time[key] 
-                    if self.key_last_error_time[key] else None
+                    if self.key_last_error_time[key] else None,
+                "time_since_rate_limit": time_since_rate_limit,
+                "in_cooldown": in_cooldown
             }
         return status
 
@@ -202,14 +332,19 @@ class RateLimitManager:
     def get_retry_delay(self, error_str: str, attempt: int, base_delay: int = 1) -> int:
         """Calculate retry delay based on error type and attempt count."""
         if self.is_rate_limited(error_str):
-            # Longer delays for rate limiting
-            return base_delay * (3 ** attempt)  # 1s, 3s, 9s, 27s...
+            # FIXED: Cap at 60s max delay to prevent 405s waits that cause timeouts
+            # With base_delay=5: 5s, 15s, 45s, 60s (capped), 60s (capped)...
+            # This prevents MetaController timeout while still allowing multiple retries
+            delay = base_delay * (3 ** attempt)
+            return min(delay, 60)  # Cap at 60 seconds maximum
         elif self.is_service_unavailable(error_str):
-            # Moderate delays for service issues
-            return base_delay * (2 ** attempt)  # 1s, 2s, 4s, 8s...
+            # Moderate delays for service issues, also capped
+            delay = base_delay * (2 ** attempt)
+            return min(delay, 30)  # Cap at 30 seconds
         else:
-            # Standard exponential backoff for other errors
-            return base_delay * (2 ** attempt)
+            # Standard exponential backoff for other errors, capped
+            delay = base_delay * (2 ** attempt)
+            return min(delay, 20)  # Cap at 20 seconds
     
     def record_success(self):
         """Record successful API call."""
@@ -317,8 +452,8 @@ class GeminiClient:
                     logger.warning("No active API keys available, falling back to local embeddings")
                     return await self._generate_local_embedding(text)
                 
-                # Configure Gemini with current key
-                genai.configure(api_key=current_key)
+                # Use REST API for embeddings
+                base_url = "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent"
                 
                 # Truncate text if too long for Gemini embeddings
                 token_count = self.count_tokens(text)
@@ -333,15 +468,25 @@ class GeminiClient:
                         chunks=len(chunks)
                     )
                 
-                # Generate embedding using Gemini API
-                result = await asyncio.to_thread(
-                    genai.embed_content,
-                    model="models/text-embedding-004",  # Latest Gemini embedding model
-                    content=text,
-                    task_type="semantic_similarity"
-                )
+                # Build REST API request
+                params = {"key": current_key}
+                headers = {"Content-Type": "application/json"}
+                data = {
+                    "model": "models/text-embedding-004",
+                    "content": {"parts": [{"text": text}]},
+                    "taskType": "SEMANTIC_SIMILARITY"
+                }
                 
-                embedding = result['embedding']
+                # Make REST API call
+                if not hasattr(self, 'http_client'):
+                    import httpx
+                    self.http_client = httpx.AsyncClient()
+                
+                response = await self.http_client.post(base_url, params=params, headers=headers, json=data, timeout=30.0)
+                response.raise_for_status()
+                result = response.json()
+                
+                embedding = result['embedding']['values']
                 
                 # Record success
                 self.api_key_manager.record_success(current_key)
@@ -441,7 +586,33 @@ class GeminiClient:
             return embedding[:384]
 
     async def generate_summary(self, text: str, context: str = "code repository") -> str:
-        """Generate summary of text with API key rotation and comprehensive retry logic."""
+        """
+        Generate summary using UnifiedAIClient (Grok-3-mini → Gemini fallback).
+        
+        This provides better quality than Gemini-2.0-flash-lite alone.
+        """
+        from services.unified_ai_client import unified_client
+        
+        try:
+            # Use UnifiedAIClient with summary task type (routes to Grok-3-mini)
+            prompt = self._build_summary_prompt(text, context)
+            
+            summary = await unified_client.generate_content_async(
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=1000,
+                task_type='summary'
+            )
+            
+            return summary.strip()
+            
+        except Exception as e:
+            logger.error(f"Summary generation failed: {str(e)}")
+            # Last resort: try Gemini directly as ultimate fallback
+            return await self._generate_summary_gemini_fallback(text, context)
+    
+    async def _generate_summary_gemini_fallback(self, text: str, context: str = "code repository") -> str:
+        """Emergency fallback to Gemini if UnifiedAIClient fails."""
         self._ensure_configured()
         
         # Check circuit breaker and auto-reset if timeout has passed
@@ -467,26 +638,37 @@ class GeminiClient:
                 if not current_key:
                     raise Exception("No active API keys available for summary generation")
                 
-                # Configure Gemini with current key
-                genai.configure(api_key=current_key)
-                model = genai.GenerativeModel('gemini-2.0-flash-lite')
+                # Use REST API for summary generation with quotaUser
+                base_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent"
                 
                 # Prepare prompt
                 prompt = self._build_summary_prompt(text, context)
                 
-                # Generate summary (sync call in async context)
-                response = await asyncio.to_thread(
-                    model.generate_content,
-                    prompt,
-                    safety_settings=self.safety_settings,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.3,
-                        top_p=0.8,
-                        top_k=40,
-                        max_output_tokens=1000,
-                    )
-                )
-                summary = response.text.strip()
+                # Build request with quotaUser
+                params = {"key": current_key}
+                headers = {"Content-Type": "application/json"}
+                data = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.3,
+                        "topP": 0.8,
+                        "topK": 40,
+                        "maxOutputTokens": 1000
+                    },
+                    "safetySettings": self.safety_settings
+                }
+                
+                # Make REST API call
+                if not hasattr(self, 'http_client'):
+                    import httpx
+                    self.http_client = httpx.AsyncClient()
+                
+                response = await self.http_client.post(base_url, params=params, headers=headers, json=data, timeout=120.0)
+                response.raise_for_status()
+                result = response.json()
+                
+                # Extract text from response
+                summary = result['candidates'][0]['content']['parts'][0]['text'].strip()
                 
                 # Record success for the current key
                 self.api_key_manager.record_success(current_key)
@@ -595,9 +777,8 @@ class GeminiClient:
                 if not current_key:
                     raise Exception("No active API keys available for Q&A")
                 
-                # Configure Gemini with current key
-                genai.configure(api_key=current_key)
-                model = genai.GenerativeModel('gemini-2.0-flash-lite')
+                # Use REST API for Q&A with quotaUser
+                base_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent"
                 
                 # Check if this is a commit-focused question and optimize context
                 is_commit_focused = "🔄 COMMIT ANALYSIS RESULTS:" in context or any("🔄 COMMIT ANALYSIS" in fc for fc in files_content)
@@ -656,7 +837,9 @@ class GeminiClient:
                 logger.info(f"Q&A Debug - Combined context preview: {context_preview}")
                 
                 # Build Q&A prompt
-                prompt = self._build_qa_prompt(question, combined_context)                # Generate answer with adaptive token limits based on context size
+                prompt = self._build_qa_prompt(question, combined_context)
+                
+                # Generate answer with adaptive token limits based on context size
                 context_size = len(combined_context)
                 if context_size > 15000:  # Very large context
                     max_tokens = 6000  # More tokens for complex questions
@@ -667,17 +850,29 @@ class GeminiClient:
                 
                 logger.info(f"Using {max_tokens} max tokens for context size: {context_size} chars")
                 
-                response = await asyncio.to_thread(
-                    model.generate_content,
-                    prompt,
-                    safety_settings=self.safety_settings,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.2,
-                        top_p=0.9,
-                        max_output_tokens=max_tokens,  # Adaptive token limit
-                    )
-                )
-                answer = response.text.strip()
+                # Build REST API request
+                params = {"key": current_key}
+                headers = {"Content-Type": "application/json"}
+                data = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.2,
+                        "topP": 0.9,
+                        "maxOutputTokens": max_tokens
+                    },
+                    "safetySettings": self.safety_settings
+                }
+                
+                # Make REST API call
+                if not hasattr(self, 'http_client'):
+                    import httpx
+                    self.http_client = httpx.AsyncClient()
+                
+                response = await self.http_client.post(base_url, params=params, headers=headers, json=data, timeout=120.0)
+                response.raise_for_status()
+                result = response.json()
+                
+                answer = result['candidates'][0]['content']['parts'][0]['text'].strip()
                 
                 # Enhanced truncation detection and handling
                 is_likely_truncated = False
@@ -1252,16 +1447,24 @@ Provide a comprehensive, technical answer that demonstrates deep understanding o
             if not api_keys:
                 raise ValueError("Please set valid GEMINI_API_KEY or GEMINI_API_KEYS in your environment variables")
             
-            # Initialize API key manager
-            self.api_key_manager = APIKeyManager(api_keys)
+            # Get Redis client for persistent rate limit tracking
+            redis_conn = None
+            try:
+                from services.redis_client import redis_client
+                if hasattr(redis_client, 'client') and redis_client.client:
+                    redis_conn = redis_client.client
+                    logger.info("Connected to Redis for persistent rate limit tracking")
+            except Exception as e:
+                logger.warning(f"Could not connect to Redis for rate limit tracking: {e}")
             
-            # Configure with first available key
+            # Initialize API key manager with Redis support
+            self.api_key_manager = APIKeyManager(api_keys, redis_client=redis_conn)
+            
+            # Get first available key (for compatibility, but we use REST API now)
             first_key = self.api_key_manager.get_active_key()
             if first_key:
-                genai.configure(api_key=first_key)
-                # Use Gemini 2.0 Flash Lite which is faster and has better rate limits
-                self.text_model = genai.GenerativeModel('gemini-2.0-flash-lite')
-                logger.info(f"Initialized Gemini 2.0 Flash Lite model with {len(api_keys)} API keys for rotation")
+                logger.info(f"Initialized Gemini 2.0 Flash Lite REST API with {len(api_keys)} API keys for rotation")
+                logger.warning("⚠️ IP-based rate limiting in effect: All keys share the same quota from this IP")
             else:
                 raise ValueError("No active API keys available")
                 
@@ -1435,18 +1638,140 @@ Analyze the question and respond:
 
 
     async def generate_content_async(self, prompt: str, max_tokens: int = 500, temperature: float = 0.7) -> str:
-        """Generate content using Gemini API with async support."""
-        try:
-            # Use the existing answer_question method as a fallback
-            response = await self.answer_question(
-                question=prompt,
-                context="Analytics insights generation",
-                files_content=[]
-            )
-            return response.get('answer', 'Unable to generate insights at this time.')
-        except Exception as e:
-            logger.error(f"Error generating content: {str(e)}")
-            return "Unable to generate insights at this time."
+        """Generate content using Gemini API with async support and custom token limits."""
+        self._ensure_configured()
+        
+        max_retries = 5  # Increased from 3 to match other methods
+        base_delay = 20  # 20 seconds base delay for IP-based rate limiting (was 5s)
+        
+        for attempt in range(max_retries):
+            try:
+                # Get active API key with rotation
+                current_key, key_idx = self.api_key_manager.get_active_key_with_index()
+                if not current_key:
+                    logger.warning("No active API keys available for content generation")
+                    raise Exception("No API keys available")
+                
+                # Use REST API with quotaUser for quota isolation
+                import httpx
+                base_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent"
+                
+                # Build quota user ID from task context
+                quota_user_param = f"content_gen_k{key_idx}"
+                params = {"key": current_key, "quotaUser": quota_user_param}
+                
+                headers = {
+                    "Content-Type": "application/json",
+                    "User-Agent": "GitTLDR/1.0"
+                }
+                
+                data = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": temperature,
+                        "topP": 0.95,
+                        "maxOutputTokens": max_tokens
+                    },
+                    "safetySettings": [
+                        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+                    ]
+                }
+                
+                logger.info(f"Generating content with max_tokens={max_tokens}, temperature={temperature}, quotaUser={quota_user_param}")
+                
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    response = await client.post(base_url, params=params, headers=headers, json=data)
+                    response.raise_for_status()
+                    result_json = response.json()
+                
+                # Extract text from response
+                if 'candidates' in result_json and result_json['candidates']:
+                    candidate = result_json['candidates'][0]
+                    if 'content' in candidate and 'parts' in candidate['content']:
+                        result = candidate['content']['parts'][0]['text'].strip()
+                        
+                        # Check finish reason
+                        finish_reason = candidate.get('finishReason', 'STOP')
+                        logger.info(f"Generation finish_reason: {finish_reason}, output length: {len(result)} chars")
+                        
+                        if finish_reason == 'STOP':
+                            logger.info("✅ Content generation completed naturally")
+                        elif finish_reason == 'MAX_TOKENS':
+                            logger.warning(f"⚠️ Content truncated: Hit max_tokens limit ({max_tokens})")
+                        elif finish_reason == 'SAFETY':
+                            logger.warning("⚠️ Content blocked by safety filters")
+                        elif finish_reason == 'RECITATION':
+                            logger.warning("⚠️ Content flagged for recitation")
+                        
+                        # Record success
+                        self.api_key_manager.record_success(current_key)
+                        self.rate_limit_manager.record_success()
+                        
+                        return result
+                    else:
+                        logger.warning("Gemini returned empty response")
+                        raise Exception("Empty response from Gemini")
+                else:
+                    logger.warning("Gemini returned response without candidates")
+                    raise Exception("No candidates in response")
+                    
+            except Exception as e:
+                error_str = str(e)
+                
+                # Record failure for rate limiting
+                if current_key:
+                    self.api_key_manager.record_failure(current_key, error_str)
+                
+                # Record failure for rate limiting manager
+                self.rate_limit_manager.record_failure()
+                
+                # Check if we should retry using the sophisticated retry logic
+                if self.rate_limit_manager.should_retry(error_str, attempt, max_retries):
+                    # Use RateLimitManager's intelligent retry delay calculation
+                    # This gives longer delays for rate limits: 5s, 15s, 45s, 135s, 405s
+                    retry_delay = self.rate_limit_manager.get_retry_delay(error_str, attempt, base_delay)
+                    
+                    # Rotate key on rate limit errors
+                    if self.rate_limit_manager.is_rate_limited(error_str):
+                        self.api_key_manager.rotate_to_next_key()
+                        logger.warning(
+                            f"Rate limit hit, rotating key and retrying in {retry_delay:.2f}s (attempt {attempt + 1}/{max_retries})",
+                            new_key_index=self.api_key_manager.current_index,
+                            error=error_str[:200]
+                        )
+                    elif self.rate_limit_manager.is_service_unavailable(error_str):
+                        logger.warning(
+                            f"Service unavailable, retrying in {retry_delay:.2f}s (attempt {attempt + 1}/{max_retries})",
+                            error=error_str[:200]
+                        )
+                    elif self.rate_limit_manager.is_temporary_error(error_str):
+                        logger.warning(
+                            f"Temporary error, retrying in {retry_delay:.2f}s (attempt {attempt + 1}/{max_retries})",
+                            error=error_str[:200]
+                        )
+                    
+                    await asyncio.sleep(retry_delay)
+                    continue
+                
+                # For last attempt or non-retryable errors, log and raise
+                if attempt == max_retries - 1:
+                    circuit_status = self.rate_limit_manager.get_circuit_breaker_status()
+                    key_status = self.api_key_manager.get_status()
+                    logger.error(
+                        f"Failed to generate content after {max_retries} attempts: {error_str}",
+                        circuit_status=circuit_status,
+                        key_status=key_status
+                    )
+                    raise
+                    
+                # For non-retryable errors, raise immediately
+                logger.error(f"Non-retryable error in content generation: {error_str}")
+                raise
+        
+        raise Exception("Failed to generate content after all retries")
 
     async def analyze_image_with_vision(self, image_base64: str, prompt: str, mime_type: str = "image/png") -> str:
         """Analyze an image using Gemini's vision capabilities.
@@ -1547,6 +1872,247 @@ Analyze the question and respond:
         
         return "Unable to analyze image after multiple attempts"
 
+    async def generate_with_tools(
+        self,
+        prompt: str,
+        tools: List[Dict[str, Any]],
+        max_tokens: int = 2000,
+        temperature: float = 0.7
+    ) -> Any:
+        """
+        Generate content with tool/function calling support.
+        
+        Args:
+            prompt: The prompt for the LLM
+            tools: List of tool schemas in Gemini format
+            max_tokens: Maximum output tokens
+            temperature: Temperature for generation
+        
+        Returns:
+            Response object with text and/or function_calls
+        """
+        self._ensure_configured()
+        
+        max_retries = 5
+        base_delay = 5
+        
+        for attempt in range(max_retries):
+            try:
+                # Get active API key
+                current_key = self.api_key_manager.get_active_key()
+                if not current_key:
+                    logger.warning("No active API keys available for tool-use generation")
+                    raise Exception("No API keys available")
+                
+                # Configure Gemini with current key
+                genai.configure(api_key=current_key)
+                
+                # Convert tool schemas to Gemini format
+                from google.generativeai.types import FunctionDeclaration, Tool
+                
+                function_declarations = []
+                for tool in tools:
+                    func_decl = FunctionDeclaration(
+                        name=tool['name'],
+                        description=tool['description'],
+                        parameters=tool['parameters']
+                    )
+                    function_declarations.append(func_decl)
+                
+                gemini_tools = [Tool(function_declarations=function_declarations)]
+                
+                # Use Gemini 2.0 Flash model (supports function calling)
+                model = genai.GenerativeModel(
+                    'gemini-2.0-flash-exp',
+                    tools=gemini_tools
+                )
+                
+                logger.info(f"Generating with {len(tools)} tools available")
+                
+                # Generate content with tools
+                response = await asyncio.to_thread(
+                    model.generate_content,
+                    prompt,
+                    safety_settings=self.safety_settings,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=temperature,
+                        top_p=0.95,
+                        max_output_tokens=max_tokens,
+                    )
+                )
+                
+                # Record success
+                self.api_key_manager.record_success(current_key)
+                self.rate_limit_manager.record_success()
+                
+                # Check if response has function calls
+                if response.candidates:
+                    candidate = response.candidates[0]
+                    if hasattr(candidate.content, 'parts'):
+                        for part in candidate.content.parts:
+                            if hasattr(part, 'function_call'):
+                                logger.info(f"🔧 LLM wants to call: {part.function_call.name}")
+                
+                return response
+                
+            except Exception as e:
+                error_str = str(e)
+                
+                # Record failure
+                if current_key:
+                    self.api_key_manager.record_failure(current_key, error_str)
+                self.rate_limit_manager.record_failure()
+                
+                # Check if we should retry
+                if self.rate_limit_manager.should_retry(error_str, attempt, max_retries):
+                    retry_delay = self.rate_limit_manager.get_retry_delay(error_str, attempt, base_delay)
+                    
+                    if self.rate_limit_manager.is_rate_limited(error_str):
+                        self.api_key_manager.rotate_to_next_key()
+                        logger.warning(f"Rate limit hit, rotating key and retrying in {retry_delay:.2f}s")
+                    
+                    await asyncio.sleep(retry_delay)
+                else:
+                    logger.error(f"Non-retryable error in tool-use generation: {error_str[:200]}")
+                    raise
+        
+        raise Exception(f"Failed to generate with tools after {max_retries} attempts")
 
-# Global Gemini client instance
-gemini_client = GeminiClient()
+
+# ==============================================================================
+# BACKWARD COMPATIBILITY WRAPPER - Uses UnifiedAIClient with fallback
+# ==============================================================================
+
+class GeminiClientWrapper:
+    """
+    Backward-compatible wrapper that uses UnifiedAIClient with multi-tier fallback.
+    
+    This maintains the same interface as GeminiClient but uses the new UnifiedAIClient
+    under the hood for automatic fallback across Gemini, OpenRouter, and GitHub providers.
+    
+    To disable old Gemini rotation and use new multi-tier system:
+    1. Keep GEMINI_API_KEYS with a single key (for Tier 1)
+    2. Add OPENROUTER_API_KEY (for Tier 2)
+    3. Add GITHUB_TOKEN or GITHUB_TOKENS (for Tier 3/4)
+    """
+    
+    def __init__(self):
+        from services.unified_ai_client import unified_client
+        self.unified_client = unified_client
+        # Don't initialize old_client yet - will create on demand with single key only
+        self._old_client = None
+        logger.info("🔄 Using UnifiedAIClient with multi-tier fallback")
+    
+    def _get_old_client_for_tools(self):
+        """Lazy initialization of old client with SINGLE KEY ONLY for tool calling"""
+        if self._old_client is None:
+            # Create a modified GeminiClient that uses only ONE key
+            import os
+            original_keys = os.environ.get("GEMINI_API_KEYS", "")
+            
+            # Temporarily set to single key
+            if original_keys:
+                first_key = original_keys.split(',')[0].strip()
+                os.environ["GEMINI_API_KEYS"] = first_key
+                logger.info("⚠️ Tool calling: Using SINGLE Gemini key (no rotation)")
+            
+            self._old_client = GeminiClient()
+            
+            # Restore original keys
+            if original_keys:
+                os.environ["GEMINI_API_KEYS"] = original_keys
+        
+        return self._old_client
+    
+    async def generate_content_async(self, prompt: str, max_tokens: int = 500, temperature: float = 0.7, task_type: str = 'general', quota_user: Optional[str] = None) -> str:
+        """Generate content using unified multi-tier fallback with quotaUser support"""
+        return await self.unified_client.generate_content_async(
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            prefer_reasoning=False,
+            task_type=task_type,
+            quota_user=quota_user
+        )
+    
+    async def generate_embedding(self, text: str) -> List[float]:
+        """Generate embeddings using GitHub's embedding model"""
+        return await self.unified_client.generate_embedding(text)
+    
+    async def generate_summary(self, text: str, context: str = "code repository") -> str:
+        """Generate summary using unified client"""
+        prompt = f"""Please provide a concise summary of the following {context}:
+
+{text}
+
+Focus on key functionality, main components, and notable patterns."""
+        
+        return await self.unified_client.generate_content_async(
+            prompt=prompt,
+            max_tokens=1500,
+            temperature=0.3
+        )
+    
+    async def answer_question(self, question: str, context: str, files_content: List[str]) -> Dict[str, Any]:
+        """Answer question using unified client"""
+        combined_context = "\n\n".join(files_content[:10])  # Limit context
+        
+        prompt = f"""Based on the following context, answer the question:
+
+Context:
+{context}
+
+Relevant Files:
+{combined_context[:8000]}
+
+Question: {question}
+
+Provide a detailed, accurate answer based solely on the information provided."""
+        
+        answer = await self.unified_client.generate_content_async(
+            prompt=prompt,
+            max_tokens=2000,
+            temperature=0.3
+        )
+        
+        return {
+            "answer": answer,
+            "confidence": 0.85,  # Default confidence
+            "sources": files_content[:5]
+        }
+    
+    async def generate_with_tools(
+        self,
+        prompt: str,
+        tools: List[Any],
+        max_tokens: int = 500,
+        temperature: float = 0.7
+    ) -> Any:
+        """
+        Generate with tools - falls back to old Gemini client for tool calling.
+        
+        Tool calling is specific to Gemini API and not yet supported by
+        OpenRouter/GitHub providers, so we use the old client for this.
+        """
+        logger.warning("⚠️ Tool calling requires Gemini - using single key (no rotation)")
+        old_client = self._get_old_client_for_tools()
+        return await old_client.generate_with_tools(
+            prompt=prompt,
+            tools=tools,
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
+    
+    def get_rate_limit_status(self) -> Dict[str, Any]:
+        """Get status of all tiers"""
+        return self.unified_client.get_status()
+    
+    def reset_circuit_breakers(self):
+        """Reset failure counts"""
+        for tier in self.unified_client.tier_failure_counts:
+            self.unified_client.tier_failure_counts[tier] = 0
+        logger.info("✅ Reset all tier failure counts")
+
+
+# Global Gemini client instance (now uses UnifiedAIClient)
+gemini_client = GeminiClientWrapper()

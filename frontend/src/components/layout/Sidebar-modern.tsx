@@ -27,11 +27,14 @@ import {
   ArchiveBoxIcon,
   StarIcon,
   LockClosedIcon,
-  GlobeAltIcon,  ChevronDownIcon,
+  GlobeAltIcon,
+  ChevronDownIcon,
   MagnifyingGlassIcon,
   PlusIcon,
   ChevronLeftIcon,
-  ChevronRightIcon
+  ChevronRightIcon,
+  SparklesIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 
 interface SidebarProps {
@@ -89,6 +92,25 @@ export default function Sidebar({ selectedRepository }: SidebarProps) {
       }
     },
     enabled: true,
+    staleTime: 1000 * 60 * 5 // 5 minutes
+  });
+
+  // Fetch issues count
+  const { data: issuesData, isLoading: issuesLoading } = useQuery({
+    queryKey: ['github-issues-count', selectedRepository?.id],
+    queryFn: async () => {
+      if (!selectedRepository?.id) return 0;
+      try {
+        const response = await fetch(`/api/issues/list?repositoryId=${selectedRepository.id}`);
+        if (!response.ok) return 0;
+        const data = await response.json();
+        return data.issues?.length || 0;
+      } catch (error) {
+        console.error('Error fetching issues count:', error);
+        return 0;
+      }
+    },
+    enabled: !!selectedRepository?.id,
     staleTime: 1000 * 60 * 5 // 5 minutes
   });
   
@@ -167,6 +189,14 @@ export default function Sidebar({ selectedRepository }: SidebarProps) {
       description: 'AI-powered assistance',
       badge: null,
       count: stats?.totalQuestions?.toString() || (statsLoading ? '...' : null)
+    },
+    { 
+      name: 'Auto-Fix Issues', 
+      href: '/issues', 
+      icon: SparklesIcon,
+      description: 'AI-powered issue fixing',
+      badge: 'AI',
+      count: issuesData?.toString() || (issuesLoading ? '...' : null)
     },
     { 
       name: 'Analytics', 

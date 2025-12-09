@@ -29,9 +29,9 @@ subscriber.on('message', async (channel, message) => {
     try {
       const statusUpdate = JSON.parse(message);
       const { meeting_id, status, ...result } = statusUpdate;
-      
+
       console.log(`📅 Received meeting status update: ${meeting_id} -> ${status}`);
-      
+
       // Update meeting status in database with full result data
       await updateMeetingStatus(`meeting_${meeting_id}_`, status, result);
     } catch (error) {
@@ -47,9 +47,37 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '50mb' }));
 
-// Health check
-app.get('/health', (req: Request, res: Response) => {
-  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+// Health check with service status
+app.get('/health', async (_req: Request, res: Response) => {
+  const startTime = Date.now();
+  const services: Record<string, string> = {};
+
+  // Check Redis connectivity
+  try {
+    await redis.ping();
+    services.redis = 'connected';
+  } catch {
+    services.redis = 'disconnected';
+  }
+
+  // Check Database connectivity
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    services.database = 'connected';
+  } catch {
+    services.database = 'disconnected';
+  }
+
+  const allHealthy = Object.values(services).every(s => s === 'connected');
+  const responseTime = Date.now() - startTime;
+
+  res.status(allHealthy ? 200 : 503).json({
+    status: allHealthy ? 'healthy' : 'degraded',
+    timestamp: new Date().toISOString(),
+    responseTimeMs: responseTime,
+    version: process.env.npm_package_version || '0.1.0',
+    services
+  });
 });
 
 // Job status endpoint
@@ -57,11 +85,11 @@ app.get('/job/:jobId', async (req: Request, res: Response) => {
   try {
     const jobId = req.params.jobId;
     const status = await redis.hgetall(`job:${jobId}`);
-    
+
     if (!status.id) {
       return res.status(404).json({ error: 'Job not found' });
     }
-    
+
     res.json(status);
   } catch (error) {
     console.error('Error fetching job status:', error);
@@ -73,13 +101,13 @@ app.get('/job/:jobId', async (req: Request, res: Response) => {
 app.post('/process-repository', async (req: Request, res: Response) => {
   try {
     const { repositoryId, userId, repoUrl, action = 'full_analysis' } = req.body;
-    
+
     if (!repositoryId || !userId || !repoUrl) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-    
+
     const jobId = `${action}_${repositoryId}_${Date.now()}`;
-    
+
     // Create job record
     await redis.hset(`job:${jobId}`, {
       id: jobId,
@@ -91,7 +119,7 @@ app.post('/process-repository', async (req: Request, res: Response) => {
       createdAt: new Date().toISOString(),
       progress: '0'
     });
-    
+
     // Queue job for Python worker
     await redis.lpush(process.env.QUEUE_NAME || 'gittldr_tasks', JSON.stringify({
       jobId,
@@ -101,9 +129,9 @@ app.post('/process-repository', async (req: Request, res: Response) => {
       repoUrl,
       timestamp: new Date().toISOString()
     }));
-    
+
     console.log(`📦 Queued ${action} job for repository ${repositoryId}`);
-    
+
     res.json({ jobId, status: 'queued' });
   } catch (error) {
     console.error('Error processing repository:', error);
@@ -119,11 +147,11 @@ app.post('/process-question', async (req: Request, res: Response) => {
     if (!questionId || !repositoryId || !userId || !question) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-    
+
     // Prioritize attachments from request body (which include content)
     // Only fall back to database if no attachments provided in request
     let allAttachments: any[] = [];
-    
+
     if (attachments && attachments.length > 0) {
       // Use attachments from request body - they include the content field
       console.log(`📎 Using ${attachments.length} attachments from request body (with content)`);
@@ -135,7 +163,7 @@ app.post('/process-question', async (req: Request, res: Response) => {
           where: { id: questionId },
           include: { questionAttachments: true }
         });
-        
+
         if (existingQuestion && existingQuestion.questionAttachments) {
           allAttachments = existingQuestion.questionAttachments.map(att => ({
             fileName: att.backblazeFileId || att.fileName, // Use backblazeFileId as the B2 key
@@ -149,9 +177,9 @@ app.post('/process-question', async (req: Request, res: Response) => {
         console.warn(`⚠️ Failed to retrieve attachments from database: ${(dbError as Error).message}`);
       }
     }
-    
+
     const jobId = `qna_${questionId}_${Date.now()}`;
-    
+
     // Create job record
     await redis.hset(`job:${jobId}`, {
       id: jobId,
@@ -164,7 +192,7 @@ app.post('/process-question', async (req: Request, res: Response) => {
       createdAt: new Date().toISOString(),
       progress: '0'
     });
-    
+
     // Queue job for Python worker
     await redis.lpush(process.env.QUEUE_NAME || 'gittldr_tasks', JSON.stringify({
       jobId,
@@ -176,9 +204,9 @@ app.post('/process-question', async (req: Request, res: Response) => {
       attachments: allAttachments,
       timestamp: new Date().toISOString()
     }));
-    
+
     console.log(`❓ Queued QnA job for question ${questionId}${allAttachments.length > 0 ? ` with ${allAttachments.length} attachments` : ''}`);
-    
+
     res.json({ jobId, status: 'queued' });
   } catch (error) {
     console.error('Error processing question:', error);
@@ -190,13 +218,13 @@ app.post('/process-question', async (req: Request, res: Response) => {
 app.post('/process-meeting', async (req: Request, res: Response) => {
   try {
     const { meetingId, userId, audioUrl, participants } = req.body;
-    
+
     if (!meetingId || !userId || !audioUrl) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-    
+
     const jobId = `meeting_${meetingId}_${Date.now()}`;
-    
+
     // Create job record
     await redis.hset(`job:${jobId}`, {
       id: jobId,
@@ -209,7 +237,7 @@ app.post('/process-meeting', async (req: Request, res: Response) => {
       createdAt: new Date().toISOString(),
       progress: '0'
     });
-    
+
     // Queue job for Python worker
     await redis.lpush(process.env.QUEUE_NAME || 'gittldr_tasks', JSON.stringify({
       jobId,
@@ -220,9 +248,9 @@ app.post('/process-meeting', async (req: Request, res: Response) => {
       participants,
       timestamp: new Date().toISOString()
     }));
-    
+
     console.log(`🎤 Queued meeting processing job for meeting ${meetingId}`);
-    
+
     res.json({ jobId, status: 'queued' });
   } catch (error) {
     console.error('Error processing meeting:', error);
@@ -235,11 +263,11 @@ app.get('/task-status/:taskId', async (req: Request, res: Response) => {
   try {
     const taskId = req.params.taskId;
     const status = await redis.hgetall(`job:${taskId}`);
-    
+
     if (!status.id) {
       return res.status(404).json({ error: 'Task not found' });
     }
-    
+
     // Parse result if it exists
     if (status.result) {
       try {
@@ -248,7 +276,7 @@ app.get('/task-status/:taskId', async (req: Request, res: Response) => {
         // Keep as string if parsing fails
       }
     }
-    
+
     res.json(status);
   } catch (error) {
     console.error('Error fetching task status:', error);
@@ -309,7 +337,7 @@ subscriber.on('message', async (channel, message) => {
       if (result) updateData.result = JSON.stringify(result);
       if (error) updateData.error = error;
       await redis.hset(`job:${jobId}`, updateData);
-      
+
       // Handle different job types
       if (jobId.startsWith('qna_')) {
         // Extract questionId from jobId (format: qna_{questionId}_{timestamp})
@@ -320,7 +348,7 @@ subscriber.on('message', async (channel, message) => {
             // Update question status in database
             await prisma.question.updateMany({
               where: { id: questionId },
-              data: { 
+              data: {
                 updatedAt: new Date(),
                 // Note: We don't set answer here, that's done by resultProcessor
               }
@@ -330,11 +358,68 @@ subscriber.on('message', async (channel, message) => {
             console.error(`❌ Failed to update question ${questionId} status:`, dbError);
           }
         }
-      } else {
+      } else if (jobId.startsWith('issue_fix_')) {
+        // Update issue fix in database
+        // Extract ID from format: issue_fix_{id}_{timestamp}
+        const parts = jobId.split('_');
+        const issueFixId = parts.slice(2, -1).join('_'); // Remove 'issue', 'fix', and timestamp
+
+        if (!issueFixId) {
+          console.error(`❌ Invalid issue_fix jobId format: ${jobId}`);
+        } else {
+          try {
+            // Check if record exists first
+            const existingIssueFix = await prisma.issueFix.findUnique({
+              where: { id: issueFixId }
+            });
+
+            if (existingIssueFix) {
+              // Map job status to IssueFixStatus enum
+              const statusMapping: Record<string, any> = {
+                'pending': 'PENDING',
+                'analyzing': 'ANALYZING',
+                'retrieving': 'RETRIEVING_CODE',
+                'generating': 'GENERATING_FIX',
+                'validating': 'VALIDATING',
+                'ready': 'READY_FOR_REVIEW',
+                'ready_for_review': 'READY_FOR_REVIEW',
+                'creating_pr': 'CREATING_PR',
+                'completed': 'COMPLETED',
+                'failed': 'FAILED',
+                'cancelled': 'CANCELLED'
+              };
+
+              const mappedStatus = statusMapping[status.toLowerCase()] || 'PENDING';
+
+              // Update existing record
+              await prisma.issueFix.update({
+                where: { id: issueFixId },
+                data: {
+                  status: mappedStatus,
+                  proposedFix: result ? result : null,
+                  explanation: result?.explanation || null,
+                  confidence: result?.confidence || null,
+                  completedAt: status === 'completed' ? new Date() : null,
+                  errorMessage: error || null,
+                  updatedAt: new Date()
+                }
+              });
+              console.log(`✅ Updated issue fix ${issueFixId} to status: ${mappedStatus} (from job status: ${status})`);
+            } else {
+              console.warn(`⚠️ Issue fix record not found: ${issueFixId} (jobId: ${jobId})`);
+              console.warn(`   Status: ${status}, Result available: ${!!result}`);
+            }
+          } catch (dbError) {
+            console.error(`❌ Failed to update issue fix ${issueFixId}:`, dbError);
+          }
+        }
+      } else if (jobId.startsWith('meeting_')) {
         // Handle meeting jobs
         await updateMeetingStatus(jobId, status, result, error);
+      } else {
+        console.warn(`⚠️ Unknown job type for jobId: ${jobId}`);
       }
-      
+
       console.log(`📊 Job ${jobId} updated: ${status} (${progress}%)`);
       if (status === 'completed' || status === 'failed') {
         console.log(`✅ Job ${jobId} finished with status: ${status}`);
@@ -351,13 +436,13 @@ process.on('SIGTERM', async () => {
   await redis.disconnect();
   await subscriber.disconnect();
   await prisma.$disconnect();
-  
+
   // Stop processors
   await fileMetadataProcessor.stop();
   await repositoryCompletionProcessor.stop();
   await resultProcessor.stop();
   await fileSummaryProcessor.stop();
-  
+
   process.exit(0);
 });
 
@@ -386,7 +471,7 @@ app.listen(PORT, async () => {
   console.log(`[SERVER] Node.js Task Manager running on port ${PORT}`);
   console.log(`📡 Connected to Redis: ${process.env.REDIS_URL}`);
   console.log(`🎯 Queue name: ${process.env.QUEUE_NAME || 'gittldr_tasks'}`);
-  
+
   // Start database processors
   await startProcessors();
 });

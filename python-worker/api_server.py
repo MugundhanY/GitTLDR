@@ -2,6 +2,20 @@
 FastAPI server for python-worker HTTP endpoints.
 Clean, scalable architecture focused on Q&A and code analysis.
 """
+import os
+from pathlib import Path
+
+# Load environment variables FIRST before any service imports
+try:
+    from dotenv import load_dotenv
+    env_path = Path(__file__).parent / '.env'
+    load_dotenv(dotenv_path=env_path)
+    print(f"✅ Loaded environment from {env_path}")
+except ImportError:
+    print("⚠️ python-dotenv not installed, using system environment variables")
+except Exception as e:
+    print(f"⚠️ Error loading .env: {e}")
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -16,9 +30,11 @@ from fastapi.responses import StreamingResponse
 from typing import Optional, List
 
 from api.attachments import router as attachments_router
+from api.download_test_package import router as download_router
+from api.clarification import router as clarification_router
 from services.redis_client import redis_client
 from services.qdrant_client import qdrant_client
-from services.gemini_client import GeminiClient
+from services.gemini_client import gemini_client
 from services.github_api_client import GitHubClient
 from services.tools.tool_registry import ToolRegistry
 from services.tools.github.commit_tool import CommitTool, CommitDetailsTool
@@ -115,6 +131,8 @@ app.add_middleware(
 )
 
 app.include_router(attachments_router, prefix="/attachments", tags=["attachments"])
+app.include_router(download_router, tags=["downloads"])
+app.include_router(clarification_router, prefix="/clarification", tags=["clarification"])
 
 # ===== DUPLICATE REQUEST PREVENTION =====
 # Track active requests to prevent duplicate API calls within short timeframes
@@ -377,8 +395,7 @@ async def qna_endpoint(request: QnARequest):
         if user_github_token and tool_registry.get_tool_count() > 0 and uses_github_keywords:
             logger.info("Using GitHub function calling for this question")
             
-            # Initialize Gemini client and function caller
-            gemini_client = GeminiClient()
+            # Use global gemini_client with multi-tier fallback
             function_caller = GeminiFunctionCaller(
                 gemini_client=gemini_client,
                 tool_registry=tool_registry,
@@ -900,8 +917,8 @@ async def generate_analytics_insights(request: AnalyticsInsightsRequest):
     try:
         logger.info(f"Generating AI insights for analytics data (timeRange: {request.timeRange})")
         
-        # Initialize Gemini client
-        gemini_client = GeminiClient()
+        # Use global gemini_client with multi-tier fallback
+        # (already available from imports)
         
         # Prepare analytics summary for AI analysis
         analytics_summary = f"""

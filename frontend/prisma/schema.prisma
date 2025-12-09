@@ -44,6 +44,7 @@ model User {
   accessRequests      RepositoryAccessRequest[] @relation("AccessRequests")
   sharedRepositories  RepositoryShareSetting[]  @relation("SharedRepositories")
   transactions        Transaction[]
+  issueFixes          IssueFix[]
 
   @@map("users")
 }
@@ -79,8 +80,38 @@ model Repository {
   accessRequests      RepositoryAccessRequest[]
   files               RepositoryFile[]
   shareSettings       RepositoryShareSetting[]
+  issueFixes          IssueFix[]
+  commits             Commit[]
 
   @@map("repositories")
+}
+
+model Commit {
+  id           String       @id @default(cuid())
+  repositoryId String       @map("repository_id")
+  sha          String
+  message      String
+  timestamp    DateTime
+  url          String
+  authorName   String       @map("author_name")
+  authorEmail  String       @map("author_email")
+  authorAvatar String?      @map("author_avatar")
+  filesChanged Int          @default(0) @map("files_changed")
+  summary      String?
+  status       CommitStatus @default(PENDING)
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  
+  repository   Repository   @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@unique([repositoryId, sha])
+  @@map("commits")
+}
+
+enum CommitStatus {
+  PENDING
+  COMPLETED
+  FAILED
 }
 
 model RepositoryFile {
@@ -100,6 +131,45 @@ model RepositoryFile {
 
   @@unique([repositoryId, path])
   @@map("repository_files")
+}
+
+model IssueFix {
+  id              String         @id @default(cuid())
+  repositoryId    String         @map("repository_id")
+  userId          String         @map("user_id")
+  issueNumber     Int            @map("issue_number")
+  issueTitle      String         @map("issue_title")
+  issueBody       String?        @map("issue_body")
+  issueUrl        String         @map("issue_url")
+  
+  // Analysis Results
+  analysis        Json?          // Issue understanding, root cause
+  relevantFiles   Json?          @map("relevant_files") // Files to modify
+  proposedFix     Json?          @map("proposed_fix") // Code changes (LEGACY: operations format)
+  diff            String?        @db.Text // Unified diff patch (PRIMARY format)
+  explanation     String?        // Human-readable explanation
+  confidence      Float?         // AI confidence score (0-1)
+  
+  // Status Tracking
+  status          IssueFixStatus @default(PENDING)
+  errorMessage    String?        @map("error_message")
+  
+  // PR Information
+  prNumber        Int?           @map("pr_number")
+  prUrl           String?        @map("pr_url")
+  prCreatedAt     DateTime?      @map("pr_created_at")
+  
+  // Metadata
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+  completedAt     DateTime?      @map("completed_at")
+  
+  // Relations
+  repository      Repository     @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([repositoryId, issueNumber])
+  @@map("issue_fixes")
 }
 
 model Question {
@@ -386,4 +456,18 @@ enum NotificationType {
   ACCESS_REQUEST_RECEIVED
   ACCESS_REQUEST_APPROVED
   ACCESS_REQUEST_DENIED
+}
+
+enum IssueFixStatus {
+  PENDING
+  ANALYZING
+  RETRIEVING_CODE
+  GENERATING_FIX
+  VALIDATING
+  READY_FOR_REVIEW
+  NEEDS_CLARIFICATION
+  CREATING_PR
+  COMPLETED
+  FAILED
+  CANCELLED
 }

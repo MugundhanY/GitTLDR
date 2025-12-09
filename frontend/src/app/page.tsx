@@ -12,11 +12,11 @@ import Footer from '@/components/landing/Footer'
 import { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'GitTLDR - AI-Powered Git Repository Analytics & Meeting Intelligence',
-  description: 'Transform your Git repositories with AI-powered analytics, automated meeting summaries, and intelligent code insights. Track commits, analyze trends, and boost developer productivity with GitTLDR.',
+  title: 'GitTLDR - AI-Powered Repository Intelligence & Automated Issue Fixing',
+  description: 'Transform your Git repositories with AI-powered analytics, automated issue fixing, intelligent Q&A, and meeting summaries. Fix GitHub issues automatically with validated code and pull requests.',
   openGraph: {
-    title: 'GitTLDR - AI-Powered Git Repository Analytics & Meeting Intelligence',
-    description: 'Transform your Git repositories with AI-powered analytics, automated meeting summaries, and intelligent code insights.',
+    title: 'GitTLDR - AI-Powered Repository Intelligence & Automated Issue Fixing',
+    description: 'Transform your Git repositories with AI-powered analytics, automated issue fixing, and intelligent code insights.',
     url: 'https://gittldr.vercel.app',
     siteName: 'GitTLDR',
     images: [
@@ -24,15 +24,15 @@ export const metadata: Metadata = {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'GitTLDR - AI-Powered Git Repository Analytics Platform',
+        alt: 'GitTLDR - AI-Powered Repository Analytics & Issue Fixing Platform',
       },
     ],
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'GitTLDR - AI-Powered Git Repository Analytics',
-    description: 'Transform your Git repositories with AI-powered analytics and meeting intelligence.',
+    title: 'GitTLDR - AI-Powered Repository Intelligence',
+    description: 'Transform your Git repositories with AI-powered analytics, automated issue fixing, and meeting intelligence.',
     images: ['/og-image.png'],
   },
   alternates: {

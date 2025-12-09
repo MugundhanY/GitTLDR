@@ -173,8 +173,7 @@ export async function GET(request: NextRequest) {
         userId: user.id
       },
       include: {
-        files: { select: { id: true } },
-        commits: { select: { id: true } }
+        files: { select: { id: true } }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -185,8 +184,7 @@ export async function GET(request: NextRequest) {
       include: {
         repository: {
           include: {
-            files: { select: { id: true } },
-            commits: { select: { id: true } }
+            files: { select: { id: true } }
           }
         }
       }
@@ -225,7 +223,7 @@ const getCreditsUsedForRepo = (repo: { fullName: string }, usageTransactions: an
       status: repo.embeddingStatus,
       summary: repo.summary,
       fileCount: repo.files.length,
-      commitCount: repo.commits.length,
+      commitCount: 0, // Commits table removed
       avatarUrl: repo.avatarUrl,
       createdAt: repo.createdAt,
       updatedAt: repo.updatedAt,
@@ -250,7 +248,7 @@ const getCreditsUsedForRepo = (repo: { fullName: string }, usageTransactions: an
       status: share.repository.embeddingStatus,
       summary: share.repository.summary,
       fileCount: share.repository.files.length,
-      commitCount: share.repository.commits.length,
+      commitCount: 0, // Commits table removed
       avatarUrl: share.repository.avatarUrl,
       createdAt: share.repository.createdAt,
       updatedAt: share.repository.updatedAt,

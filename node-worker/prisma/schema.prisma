@@ -30,6 +30,7 @@ model User {
   updatedAt           DateTime             @updatedAt @map("updated_at")
   githubAccessToken   String?              @map("github_access_token")
   repositories        Repository[]
+  issueFixes          IssueFix[]
   transactions        Transaction[]
   // Relations for tracking who created items
   createdQuestions    Question[]           @relation("QuestionCreatedBy")
@@ -46,6 +47,44 @@ model User {
   meetings            Meeting[]
 
   @@map("users")
+}
+
+model IssueFix {
+  id              String         @id @default(cuid())
+  repositoryId    String         @map("repository_id")
+  userId          String         @map("user_id")
+  issueNumber     Int            @map("issue_number")
+  issueTitle      String         @map("issue_title")
+  issueBody       String?        @map("issue_body")
+  issueUrl        String         @map("issue_url")
+  
+  // Analysis Results
+  analysis        Json?          // Issue understanding, root cause
+  relevantFiles   Json?          @map("relevant_files") // Files to modify
+  proposedFix     Json?          @map("proposed_fix") // Code changes
+  explanation     String?        // Human-readable explanation
+  confidence      Float?         // AI confidence score (0-1)
+  
+  // Status Tracking
+  status          IssueFixStatus @default(PENDING)
+  errorMessage    String?        @map("error_message")
+  
+  // PR Information
+  prNumber        Int?           @map("pr_number")
+  prUrl           String?        @map("pr_url")
+  prCreatedAt     DateTime?      @map("pr_created_at")
+  
+  // Metadata
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+  completedAt     DateTime?      @map("completed_at")
+  
+  // Relations
+  repository      Repository     @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([repositoryId, issueNumber])
+  @@map("issue_fixes")
 }
 
 model Repository {
@@ -72,6 +111,7 @@ model Repository {
   commits             Commit[]
   questions           Question[]
   meetings            Meeting[]
+  issueFixes          IssueFix[]
   user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   files               RepositoryFile[]
   questionAttachments QuestionAttachment[]
@@ -329,6 +369,18 @@ model Notification {
 
 enum RepositoryStatus {
   PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum IssueFixStatus {
+  PENDING
+  ANALYZING
+  RETRIEVING_CODE
+  GENERATING_FIX
+  VALIDATING
+  READY_FOR_REVIEW
   PROCESSING
   COMPLETED
   FAILED

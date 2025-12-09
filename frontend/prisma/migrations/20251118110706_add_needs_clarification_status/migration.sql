@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "IssueFixStatus" ADD VALUE 'NEEDS_CLARIFICATION';

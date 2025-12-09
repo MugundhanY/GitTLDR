@@ -22,17 +22,14 @@ export async function GET(request: NextRequest) {
 
     // Get owned repositories
     const ownedRepositories = await prisma.repository.findMany({
-      where: { userId: user.id },
-      include: { commits: true }
+      where: { userId: user.id }
     });
 
     // Get shared repositories (shared with this user)
     const sharedRepoShares = await prisma.repositoryShareSetting.findMany({
       where: { userId: user.id },
       include: {
-        repository: {
-          include: { commits: true }
-        }
+        repository: true
       }
     });
     const sharedRepositories = sharedRepoShares.map(share => share.repository);
@@ -41,7 +38,6 @@ export async function GET(request: NextRequest) {
     const allRepositories = [...ownedRepositories, ...sharedRepositories];
 
     const repositoryCount = allRepositories.length;
-    const totalCommits = allRepositories.reduce((sum, repo) => sum + (repo.commits?.length || 0), 0);
 
     // Get meetings count
     const meetingCount = await prisma.meeting.count({
@@ -64,20 +60,8 @@ export async function GET(request: NextRequest) {
       .reduce((sum, t) => sum + t.credits, 0));
 
 
-    // Get recent commits for owned and shared repos
+    // Get recent activities for owned and shared repos
     const repoIds = allRepositories.map(r => r.id);
-    const recentCommits = repoIds.length > 0 ? await prisma.commit.findMany({
-      where: {
-        repositoryId: { in: repoIds }
-      },
-      include: {
-        repository: true
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 3
-    }) : [];
-
-
 
     // Meetings: include meetings for owned and shared repositories
     const recentMeetings = repoIds.length > 0 ? await prisma.meeting.findMany({
@@ -96,17 +80,6 @@ export async function GET(request: NextRequest) {
 
     // Format activities
     const activities = [
-      ...recentCommits.map(commit => ({
-        id: commit.sha,
-        type: 'commit',
-        title: commit.message || 'Code commit',
-        description: `${commit.filesChanged || 0} files changed in ${commit.repository.name}`,
-        time: getTimeAgo(commit.timestamp),
-        timestamp: commit.timestamp,
-        status: 'completed',
-        repository: commit.repository.name,
-        author: commit.authorName || 'Unknown'
-      })),
       ...await Promise.all(recentMeetings.map(async meeting => {
         let author = 'Unknown';
         if (meeting.userId) {
@@ -152,7 +125,6 @@ export async function GET(request: NextRequest) {
     const dashboardData = {
       stats: {
         repositories: repositoryCount,
-        totalCommits,
         activeProjects: repositoryCount, // Assume all repos are active
         aiAnalyses: meetingCount + questionCount,
         meetings: meetingCount,

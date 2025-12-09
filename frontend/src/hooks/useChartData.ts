@@ -36,22 +36,6 @@ export function useChartData(repositories: Repository[], stats: DashboardStats) 
     labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
     datasets: [
       {
-        label: 'Commits',
-        data: stats.totalCommits > 0 ? [
-          Math.floor(stats.totalCommits * 0.15),
-          Math.floor(stats.totalCommits * 0.18), 
-          Math.floor(stats.totalCommits * 0.12),
-          Math.floor(stats.totalCommits * 0.20),
-          Math.floor(stats.totalCommits * 0.25),
-          Math.floor(stats.totalCommits * 0.06),
-          Math.floor(stats.totalCommits * 0.04)
-        ] : [0, 0, 0, 0, 0, 0, 0],
-        borderColor: 'rgb(16, 185, 129)',
-        backgroundColor: 'rgba(16, 185, 129, 0.1)',
-        tension: 0.4,
-        fill: true
-      },
-      {
         label: 'AI Analyses', 
         data: stats.aiAnalyses > 0 ? [
           Math.floor(stats.aiAnalyses * 0.10),

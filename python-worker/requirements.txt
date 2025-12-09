@@ -18,6 +18,7 @@ structlog
 rich
 pydub
 hf_xet
+pyyaml  # For Docker config validation
 
 # PDF processing
 PyPDF2

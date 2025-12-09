@@ -25,14 +25,9 @@ export async function GET(request: NextRequest) {
           include: {
             user: {
               include: {
-                repositories: {
-                  include: {
-                    commits: true
-                  }
-                }
+                repositories: true
               }
-            },
-            commits: true
+            }
           }
         }
       }
@@ -42,7 +37,6 @@ export async function GET(request: NextRequest) {
     sharedWithUser.forEach(share => {
       const owner = share.repository.user;
       if (!teamMembers.has(owner.id)) {
-        const ownerCommits = owner.repositories.reduce((sum, repo) => sum + repo.commits.length, 0);
         teamMembers.set(owner.id, {
           id: owner.id,
           name: owner.name,
@@ -50,7 +44,7 @@ export async function GET(request: NextRequest) {
           avatarUrl: owner.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(owner.name)}&size=40&background=6366f1&color=fff`,
           role: 'Owner',
           repositories: owner.repositories.length,
-          commits: ownerCommits,
+          commits: 0, // Commits table removed
           lastActivity: share.createdAt.toISOString(),
           status: Math.random() > 0.5 ? 'online' : Math.random() > 0.5 ? 'away' : 'offline'
         });
@@ -61,16 +55,11 @@ export async function GET(request: NextRequest) {
     const currentUser = await prisma.user.findUnique({
       where: { id: user.id },
       include: {
-        repositories: {
-          include: {
-            commits: true
-          }
-        }
+        repositories: true
       }
     });
 
     if (currentUser) {
-      const userCommits = currentUser.repositories.reduce((sum, repo) => sum + repo.commits.length, 0);
       const userRole = currentUser.repositories.length > 0 ? 'Owner' : 'Collaborator';
       
       if (!teamMembers.has(currentUser.id)) {
@@ -81,7 +70,7 @@ export async function GET(request: NextRequest) {
           avatarUrl: currentUser.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name)}&size=40&background=6366f1&color=fff`,
           role: userRole,
           repositories: currentUser.repositories.length,
-          commits: userCommits,
+          commits: 0, // Commits table removed
           lastActivity: new Date().toISOString(),
           status: 'online'
         });
@@ -98,11 +87,7 @@ export async function GET(request: NextRequest) {
       include: {
         user: {
           include: {
-            repositories: {
-              include: {
-                commits: true
-              }
-            }
+            repositories: true
           }
         }
       }
@@ -111,7 +96,6 @@ export async function GET(request: NextRequest) {
     userSharedRepos.forEach(share => {
       const collaborator = share.user;
       if (!teamMembers.has(collaborator.id)) {
-        const collaboratorCommits = collaborator.repositories.reduce((sum, repo) => sum + repo.commits.length, 0);
         teamMembers.set(collaborator.id, {
           id: collaborator.id,
           name: collaborator.name,
@@ -119,7 +103,7 @@ export async function GET(request: NextRequest) {
           avatarUrl: collaborator.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(collaborator.name)}&size=40&background=6366f1&color=fff`,
           role: 'Collaborator',
           repositories: collaborator.repositories.length,
-          commits: collaboratorCommits,
+          commits: 0, // Commits table removed
           lastActivity: share.createdAt.toISOString(),
           status: Math.random() > 0.5 ? 'online' : Math.random() > 0.5 ? 'away' : 'offline'
         });

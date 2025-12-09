@@ -38,11 +38,11 @@ export interface CardPosition {
 
 export interface DashboardStats {
   repositories: number;
-  totalCommits: number;
   activeProjects: number;
   aiAnalyses: number;
   meetings: number;
   questions: number;
+  totalCommits: number;
   creditsUsed: number;
   creditsRemaining: number;
 }

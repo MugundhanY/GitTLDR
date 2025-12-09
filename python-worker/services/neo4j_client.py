@@ -4,7 +4,7 @@ Manages code relationships, dependencies, and semantic connections.
 """
 import asyncio
 from typing import Dict, Any, List, Optional, Set, Tuple
-from neo4j import GraphDatabase, AsyncGraphDatabase
+from neo4j import AsyncGraphDatabase
 from neo4j.exceptions import ServiceUnavailable, AuthError
 from datetime import datetime
 
@@ -390,13 +390,13 @@ class Neo4jClient:
         OPTIONAL MATCH (r)-[:CONTAINS]->(f2:File)-[:CONTAINS]->(fn:Function)
         WHERE ANY(keyword IN $keywords WHERE 
             toLower(fn.name) CONTAINS keyword OR 
-            toLower(fn.qualified_name) CONTAINS keyword)
+            toLower(COALESCE(fn.qualified_name, fn.name)) CONTAINS keyword)
         
         // Find classes matching keywords
         OPTIONAL MATCH (r)-[:CONTAINS]->(f3:File)-[:CONTAINS]->(c:Class)
         WHERE ANY(keyword IN $keywords WHERE 
             toLower(c.name) CONTAINS keyword OR 
-            toLower(c.qualified_name) CONTAINS keyword)
+            toLower(COALESCE(c.qualified_name, c.name)) CONTAINS keyword)
         
         // Find modules matching keywords
         OPTIONAL MATCH (r)-[:CONTAINS]->(f4:File)-[:IMPORTS]->(m:Module)
@@ -405,10 +405,10 @@ class Neo4jClient:
         
         WITH f, fn, c, m
         RETURN 
-            COLLECT(DISTINCT {type: 'File', id: id(f), path: f.path, name: f.name}) as files,
-            COLLECT(DISTINCT {type: 'Function', id: id(fn), name: fn.qualified_name}) as functions,
-            COLLECT(DISTINCT {type: 'Class', id: id(c), name: c.qualified_name}) as classes,
-            COLLECT(DISTINCT {type: 'Module', id: id(m), name: m.name}) as modules
+            COLLECT(DISTINCT {type: 'File', id: elementId(f), path: f.path, name: f.name}) as files,
+            COLLECT(DISTINCT {type: 'Function', id: elementId(fn), name: COALESCE(fn.qualified_name, fn.name)}) as functions,
+            COLLECT(DISTINCT {type: 'Class', id: elementId(c), name: COALESCE(c.qualified_name, c.name)}) as classes,
+            COLLECT(DISTINCT {type: 'Module', id: elementId(m), name: m.name}) as modules
         """
         
         entry_nodes = []
@@ -438,9 +438,9 @@ class Neo4jClient:
             return start_nodes[:max_nodes]
         
         # Use variable-length path pattern to find related nodes
-        query = """
+        query = '''
         MATCH (start)
-        WHERE id(start) IN $start_ids
+        WHERE elementId(start) IN $start_ids
         MATCH path = (start)-[*1..3]-(related)
         WHERE related.repository_id = $repository_id
         WITH DISTINCT related, length(path) as distance
@@ -448,14 +448,14 @@ class Neo4jClient:
         LIMIT $max_nodes
         RETURN 
             labels(related)[0] as node_type,
-            id(related) as id,
+            elementId(related) as id,
             related.name as name,
             related.path as path,
-            related.qualified_name as qualified_name,
+            COALESCE(related.qualified_name, related.name) as qualified_name,
             related.description as description,
             related.content_summary as content_summary,
             distance
-        """
+        '''
         
         related_nodes = []
         async with self.driver.session() as session:

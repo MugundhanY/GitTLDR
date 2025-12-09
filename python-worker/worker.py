@@ -12,6 +12,17 @@ import signal
 import json
 from typing import Dict, Any, Optional
 from datetime import datetime
+import os
+from pathlib import Path
+
+# Load .env into os.environ BEFORE importing anything else
+# This ensures UnifiedAIClient can read environment variables
+try:
+    from dotenv import load_dotenv
+    env_path = Path(__file__).parent / '.env'
+    load_dotenv(dotenv_path=env_path)
+except ImportError:
+    pass  # dotenv not installed, will rely on system env vars
 
 from config.settings import get_settings
 from utils.logger import setup_logging, get_logger, TaskLogger
@@ -31,6 +42,10 @@ from processors.embedding import EmbeddingProcessor
 from processors.summarization import SummarizationProcessor
 from processors.file_processor import FileProcessor
 from processors.meeting_summarizer import MeetingProcessor
+from processors.issue_fix_processor import IssueFixProcessor
+
+# Import RATFV architecture
+from agents.meta_controller import meta_controller
 
 # Setup logging
 setup_logging()
@@ -48,8 +63,13 @@ class GitTLDRWorker:
             "summarization": SummarizationProcessor(),
             "file_processing": FileProcessor(),
             "meeting_summarizer": MeetingProcessor(),
+            "issue_fix": IssueFixProcessor(),  # Keep old processor as fallback
         }
         
+        # No architecture flags needed - using standard RATFV pipeline
+        
+
+    
     async def start(self) -> None:
         """Start the worker."""
         logger.info("Starting GitTLDR Worker", version="0.1.0")
@@ -142,11 +162,17 @@ class GitTLDRWorker:
                 # Route to appropriate processor
                 result = await self._route_task(task_data, task_logger)
                 
-                # Always update final status to completed
-                await redis_client.update_task_status(
-                    task_id, "completed", result                )
-                
-                task_logger.info("Task processed successfully")
+                # For issue_fix tasks, MetaController already set the correct final status
+                # (READY_FOR_REVIEW, NEEDS_CLARIFICATION, etc.) - don't override it
+                if task_type == "issue_fix":
+                    # MetaController already published the correct status
+                    task_logger.info(f"Task processed successfully (status already set by MetaController)")
+                else:
+                    # For other task types, update final status to completed
+                    await redis_client.update_task_status(
+                        task_id, "completed", result
+                    )
+                    task_logger.info("Task processed successfully")
                 
             except Exception as e:
                 # Always update final status to failed
@@ -211,6 +237,93 @@ class GitTLDRWorker:
             
         elif task_type == "summarize_file":
             return await self.processors["summarization"].summarize_file(task_data, logger)
+            
+        elif task_type == "issue_fix":
+            # Use NEW RATFV MetaController with tool-based retrieval
+            logger.info("🚀 Using NEW MetaController with tool-based retrieval")
+            
+            try:
+                # Extract task data (handle both camelCase and snake_case)
+                issue_fix_id = task_data.get("issueFixId") or task_data.get("issue_fix_id")
+                repository_id = task_data.get("repositoryId") or task_data.get("repository_id")
+                user_id = task_data.get("userId") or task_data.get("user_id")
+                issue_number = task_data.get("issueNumber") or task_data.get("issue_number")
+                issue_title = task_data.get("issueTitle") or task_data.get("issue_title", "")
+                issue_body = task_data.get("issueBody") or task_data.get("issue_body", "")
+                task_id = task_data.get("jobId", task_data.get("id"))
+                
+                logger.info(f"Processing issue fix: #{issue_number} - {issue_title}")
+                
+                # Call NEW MetaController with task_id for Redis updates
+                fix_result = await meta_controller.process_auto_fix(
+                    issue_fix_id=issue_fix_id,
+                    repository_id=repository_id,
+                    user_id=user_id,
+                    issue_number=issue_number,
+                    issue_title=issue_title,
+                    issue_body=issue_body,
+                    task_id=task_id
+                )
+                
+                # CRITICAL: Check if fix_result is dict (error case) or FixResult object (success case)
+                # MetaController returns dict when blocking delivery at 0% confidence
+                if isinstance(fix_result, dict):
+                    # Dict response means fix was blocked due to low confidence
+                    confidence = fix_result.get('confidence', 0.0)
+                    status = fix_result.get('status', 'failed')
+                    logger.warning(f"⚠️ Received dict from MetaController (blocked delivery): status={status}, confidence={confidence:.1%}")
+                    # Map the status to database format and return
+                    return {
+                        "success": False,
+                        "status": "FAILED",  # Already set in DB by MetaController
+                        "confidence": confidence,
+                        "operations": [],
+                        "explanation": fix_result.get('reason', 'Fix blocked due to low confidence'),
+                        "metrics": {}
+                    }
+                
+                logger.info(f"✅ MetaController completed: status={fix_result.status}, confidence={fix_result.confidence:.1%}")
+                
+                # Map MetaController status to database enum
+                status_mapping = {
+                    "success": "COMPLETED",
+                    "failed": "FAILED",
+                    "needs_clarification": "NEEDS_CLARIFICATION",
+                    "analyzing": "ANALYZING",
+                    "retrieving": "RETRIEVING_CODE",
+                    "generating": "GENERATING_FIX",
+                    "validating": "VALIDATING",
+                    "ready": "READY_FOR_REVIEW",
+                    "creating_pr": "CREATING_PR"
+                }
+                
+                db_status = status_mapping.get(fix_result.status, "FAILED")
+                
+                # Store confidence in result for database update
+                result = {
+                    "success": fix_result.status == "success",
+                    "status": db_status,
+                    "confidence": fix_result.confidence,
+                    "operations": fix_result.operations,
+                    "explanation": fix_result.explanation,
+                    "metrics": fix_result.metrics
+                }
+                
+                # Ensure confidence is logged for UI display
+                logger.info(f"📊 Returning result with confidence: {fix_result.confidence:.1%}")
+                return result
+                
+            except Exception as e:
+                logger.error(f"❌ MetaController failed: {e}", exc_info=True)
+                # NO LEGACY FALLBACK - AI-only system, return proper failure
+                return {
+                    "success": False,
+                    "status": "FAILED",
+                    "confidence": 0.0,
+                    "operations": [],
+                    "explanation": f"❌ AI processing failed: {str(e)}\n\nPlease check logs for details.",
+                    "metrics": {"error": str(e)}
+                }
             
         elif task_type == "answer_question":
             return await self.processors["embedding"].answer_question(task_data, logger)
@@ -318,6 +431,246 @@ class GitTLDRWorker:
             
         else:
             raise ValueError(f"Unknown task type: {task_type}")
+    
+    async def _DISABLED_process_with_next_gen(self, task_data: Dict[str, Any], logger) -> Dict[str, Any]:
+        """
+        Process issue fix with Next-Gen Architecture.
+        
+        Flow:
+        1. GeminiToolAgent generates solution (multi-turn, max 3 iterations with self-review)
+        2. StaticValidator checks syntax, imports, style, security
+        3. TestKitGenerator creates downloadable test kit
+        4. Return solution + test kit URL to user
+        
+        Target: 80% first-attempt success, 95% cumulative with user feedback
+        """
+        logger.info("=" * 60)
+        logger.info("NEXT-GEN ARCHITECTURE - ISSUE FIX PROCESSING")
+        logger.info("=" * 60)
+        
+        # Extract task data
+        issue_fix_id = task_data.get("issueFixId", "unknown")
+        repository_id = task_data.get("repositoryId")
+        user_id = task_data.get("userId")
+        issue_number = task_data.get("issueNumber")
+        issue_title = task_data.get("issueTitle", "")
+        issue_body = task_data.get("issueBody", "")
+        
+        logger.info(f"Issue #{issue_number}: {issue_title}")
+        logger.info(f"Repository: {repository_id}")
+        
+        # Get repository context
+        repo_context = await self._get_repository_context(repository_id)
+        if not repo_context:
+            raise ValueError(f"Repository context not found for {repository_id}")
+        
+        # Keep repository_context as dict (don't convert to string!)
+        repository_context = repo_context
+        
+        # Get components
+        api_key_pool = self.next_gen_components["api_key_pool"]
+        static_validator = self.next_gen_components["static_validator"]
+        self_reviewer = self.next_gen_components["self_reviewer"]
+        test_kit_generator = self.next_gen_components["test_kit_generator"]
+        
+        # Staging directory for this issue
+        import os
+        staging_dir = f"/tmp/gittldr_staging/issue_{issue_number}_{issue_fix_id}"
+        os.makedirs(staging_dir, exist_ok=True)
+        
+        logger.info("\n📊 PHASE 1: ITERATIVE SOLUTION GENERATION")
+        logger.info("-" * 60)
+        
+        # Create tool agent
+        tool_agent = GeminiToolAgent(
+            api_key_pool=api_key_pool,
+            repository_id=repository_id,
+            staging_dir=staging_dir
+        )
+        
+        # Create iterative self-reviewer
+        iterative_reviewer = IterativeSelfReviewer(tool_agent, self_reviewer)
+        
+        try:
+            # Generate solution with iterative self-review (up to 3 attempts)
+            solution_result = await iterative_reviewer.solve_with_review(
+                issue_title=issue_title,
+                issue_body=issue_body,
+                repository_context=repository_context
+            )
+            
+            # Extract solution and review
+            solution = solution_result
+            final_review = solution_result.get('review')
+            iterations = solution_result.get('iterations', 1)
+            
+            logger.info(f"✅ Solution generated after {iterations} iteration(s)")
+            logger.info(f"   Review score: {final_review.overall_score:.1f}/10")
+            logger.info(f"   Completeness: {final_review.completeness_score:.1f}/10")
+            logger.info(f"   Correctness: {final_review.correctness_score:.1f}/10")
+            logger.info(f"   Quality: {final_review.quality_score:.1f}/10")
+            logger.info(f"   Best Practices: {final_review.best_practices_score:.1f}/10")
+            
+        except Exception as e:
+            logger.error(f"❌ Solution generation failed: {str(e)}")
+            raise
+        
+        logger.info("\n📊 PHASE 2: STATIC VALIDATION")
+        logger.info("-" * 60)
+        
+        # Validate solution
+        try:
+            changes = solution.get('changes', [])
+            validation_result = await static_validator.validate_solution(
+                changes=changes,
+                staging_dir=staging_dir
+            )
+            
+            logger.info(f"{'✅' if validation_result.passed else '❌'} Validation: {validation_result.summary}")
+            logger.info(f"   Confidence: {validation_result.confidence_score:.1%}")
+            logger.info(f"   Errors: {validation_result.total_errors}")
+            logger.info(f"   Warnings: {validation_result.total_warnings}")
+            
+            # Log detailed validation report
+            validation_report = static_validator.format_validation_report(validation_result)
+            logger.debug(f"\n{validation_report}")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Static validation failed: {str(e)}")
+            # Continue even if validation fails - user will test anyway
+            validation_result = None
+        
+        logger.info("\n📊 PHASE 3: TEST KIT GENERATION")
+        logger.info("-" * 60)
+        
+        # Generate test kit
+        try:
+            test_kit = await test_kit_generator.generate_test_kit(
+                issue_id=str(issue_number),
+                solution=solution,
+                repository_context=repo_context
+            )
+            
+            logger.info(f"✅ Test kit generated: {test_kit.kit_id}")
+            logger.info(f"   Size: {test_kit.size_bytes} bytes")
+            logger.info(f"   Files: {test_kit.files_included}")
+            logger.info(f"   Download: {test_kit.download_url}")
+            
+        except Exception as e:
+            logger.error(f"❌ Test kit generation failed: {str(e)}")
+            # Continue without test kit
+            test_kit = None
+        
+        logger.info("\n" + "=" * 60)
+        logger.info("NEXT-GEN PROCESSING COMPLETE")
+        logger.info("=" * 60)
+        
+        # Build result
+        result = {
+            "status": "completed" if solution.get('success') else "needs_review",
+            "issue_fix_id": issue_fix_id,
+            "confidence": final_review.overall_score / 10.0,  # Convert 1-10 to 0.0-1.0
+            
+            # Solution details
+            "operations": [
+                {
+                    "type": "modify_file",
+                    "path": change['path'],
+                    "content": change['content']
+                }
+                for change in solution.get('changes', [])
+            ],
+            
+            "explanation": solution.get('explanation', ''),
+            
+            # Metrics
+            "metrics": {
+                "iterations": iterations,
+                "review_score": final_review.overall_score,
+                "completeness_score": final_review.completeness_score,
+                "correctness_score": final_review.correctness_score,
+                "quality_score": final_review.quality_score,
+                "best_practices_score": final_review.best_practices_score,
+                "static_validation_passed": validation_result.passed if validation_result else None,
+                "static_validation_confidence": validation_result.confidence_score if validation_result else None,
+                "total_errors": validation_result.total_errors if validation_result else 0,
+                "total_warnings": validation_result.total_warnings if validation_result else 0,
+                "tool_calls": solution.get('metrics', {}).get('tool_calls', 0),
+                "api_calls": solution.get('metrics', {}).get('api_calls', 0),
+                "retries": solution.get('metrics', {}).get('retries', 0),
+            },
+            
+            # Warnings and feedback
+            "warnings": solution.get('warnings', []),
+            "review_feedback": final_review.feedback if final_review else "",
+            
+            # Test kit
+            "test_kit": {
+                "available": test_kit is not None,
+                "download_url": test_kit.download_url if test_kit else None,
+                "kit_id": test_kit.kit_id if test_kit else None,
+                "size_bytes": test_kit.size_bytes if test_kit else 0,
+            } if test_kit else None,
+            
+            # Instructions for user
+            "user_instructions": self._generate_user_instructions(
+                test_kit=test_kit,
+                validation_result=validation_result,
+                review=final_review
+            ),
+        }
+        
+        return result
+    
+    def _generate_user_instructions(
+        self,
+        test_kit,
+        validation_result,
+        review
+    ) -> str:
+        """Generate user-friendly instructions."""
+        
+        instructions = []
+        
+        instructions.append("🎉 Your issue fix is ready!")
+        instructions.append("")
+        
+        # Review score
+        if review:
+            score = review.overall_score
+            if score >= 8.0:
+                instructions.append(f"✅ AI Review: EXCELLENT ({score:.1f}/10)")
+            elif score >= 7.0:
+                instructions.append(f"✅ AI Review: GOOD ({score:.1f}/10)")
+            elif score >= 6.0:
+                instructions.append(f"⚠️ AI Review: ACCEPTABLE ({score:.1f}/10)")
+            else:
+                instructions.append(f"❌ AI Review: NEEDS WORK ({score:.1f}/10)")
+            instructions.append("")
+        
+        # Validation
+        if validation_result:
+            if validation_result.passed:
+                instructions.append(f"✅ Static Validation: PASSED ({validation_result.confidence_score:.0%} confidence)")
+            else:
+                instructions.append(f"❌ Static Validation: FAILED ({validation_result.total_errors} errors)")
+            instructions.append("")
+        
+        # Test kit instructions
+        if test_kit:
+            instructions.append("📦 Next Steps:")
+            instructions.append(f"1. Download test kit: {test_kit.download_url}")
+            instructions.append("2. Extract and run: ./run_tests.sh")
+            instructions.append("3. Review results:")
+            instructions.append("   ✅ If tests pass → Apply changes")
+            instructions.append("   ❌ If tests fail → Provide feedback for regeneration")
+        else:
+            instructions.append("⚠️ Test kit generation failed. Please manually review the changes.")
+        
+        instructions.append("")
+        instructions.append("💡 Tip: Always test in a separate branch first!")
+        
+        return "\n".join(instructions)
             
     async def _cleanup(self) -> None:
         """Cleanup resources."""
