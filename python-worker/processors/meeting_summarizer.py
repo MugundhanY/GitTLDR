@@ -1,6 +1,10 @@
 """
 Meeting processor for GitTLDR Python Worker.
 Handles meeting audio processing, transcription, and summarization.
+
+Supports two modes:
+1. LIGHTWEIGHT (Render free tier): Uses AssemblyAI for transcription + Gemini for embeddings
+2. FULL (local dev / paid tier): Uses Whisper + SentenceTransformers locally
 """
 import os
 import math
@@ -20,12 +24,34 @@ from services.gemini_client import gemini_client
 from services.qdrant_client import qdrant_client
 from services.redis_client import redis_client
 
-from pydub import AudioSegment
-from faster_whisper import WhisperModel
-from sentence_transformers import SentenceTransformer
-import numpy as np
-import google.generativeai as genai
-from sklearn.feature_extraction.text import TfidfVectorizer
+# AssemblyAI for cloud-based transcription (lightweight mode)
+try:
+    import assemblyai as aai
+    ASSEMBLYAI_AVAILABLE = True
+except ImportError:
+    aai = None
+    ASSEMBLYAI_AVAILABLE = False
+
+# Optional heavy ML imports - not available on lightweight deployments
+try:
+    from pydub import AudioSegment
+    from faster_whisper import WhisperModel
+    from sentence_transformers import SentenceTransformer
+    import numpy as np
+    import google.generativeai as genai
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    HEAVY_ML_AVAILABLE = True
+except ImportError as e:
+    HEAVY_ML_AVAILABLE = False
+    AudioSegment = None
+    WhisperModel = None
+    SentenceTransformer = None
+    np = None
+    genai = None
+    TfidfVectorizer = None
+
+# Meeting processor is available if either AssemblyAI or heavy ML is available
+MEETING_PROCESSOR_AVAILABLE = ASSEMBLYAI_AVAILABLE or HEAVY_ML_AVAILABLE
 
 logger = get_logger(__name__)
 
@@ -35,9 +61,103 @@ class MeetingProcessor:
     def __init__(self):
         self.settings = get_settings()
         self.meeting_collection = getattr(self.settings, "meeting_qdrant_collection", "meeting_segments")
-        self.embedder = SentenceTransformer("all-MiniLM-L6-v2")
+        self._embedder = None  # Lazy initialization
         self.embedding_dimension = getattr(self.settings, "embedding_dimension_meeting", 384)
         self.gemini_call_count = 0
+        
+        # Determine which transcription mode to use
+        self.use_assemblyai = ASSEMBLYAI_AVAILABLE and not HEAVY_ML_AVAILABLE
+        
+        if not MEETING_PROCESSOR_AVAILABLE:
+            logger.warning("MeetingProcessor: No transcription service available")
+        elif self.use_assemblyai:
+            logger.info("MeetingProcessor: Using AssemblyAI for transcription (lightweight mode)")
+            # Initialize AssemblyAI with API key from settings or environment
+            assemblyai_key = getattr(self.settings, 'assemblyai_api_key', None) or os.getenv('ASSEMBLYAI_API_KEY')
+            if assemblyai_key:
+                aai.settings.api_key = assemblyai_key
+            else:
+                logger.warning("ASSEMBLYAI_API_KEY not set - transcription will fail")
+        else:
+            logger.info("MeetingProcessor: Using local Whisper for transcription (full mode)")
+
+    @property
+    def embedder(self):
+        """Lazily initialize the embedder when needed."""
+        if self._embedder is None:
+            if HEAVY_ML_AVAILABLE:
+                self._embedder = SentenceTransformer("all-MiniLM-L6-v2")
+            else:
+                # Return None - will use Gemini embeddings as fallback
+                logger.info("Using Gemini API for embeddings (SentenceTransformer not available)")
+                return None
+        return self._embedder
+
+    async def generate_embedding_lightweight(self, text: str) -> List[float]:
+        """Generate embedding using Gemini API (lightweight mode)."""
+        try:
+            embedding = await gemini_client.generate_embedding(text)
+            # Ensure correct dimension
+            if len(embedding) < self.embedding_dimension:
+                embedding += [0.0] * (self.embedding_dimension - len(embedding))
+            elif len(embedding) > self.embedding_dimension:
+                embedding = embedding[:self.embedding_dimension]
+            return embedding
+        except Exception as e:
+            logger.error(f"Failed to generate embedding via Gemini: {e}")
+            # Fallback to simple hash-based embedding
+            import hashlib
+            text_hash = hashlib.sha256(text.encode()).hexdigest()
+            embedding = [float(int(text_hash[i:i+2], 16)) / 255.0 for i in range(0, min(len(text_hash), self.embedding_dimension * 2), 2)]
+            while len(embedding) < self.embedding_dimension:
+                embedding.append(0.0)
+            return embedding[:self.embedding_dimension]
+
+    def transcribe_with_assemblyai(self, audio_path: str) -> tuple[List[Dict], Any]:
+        """Transcribe audio using AssemblyAI API (lightweight, cloud-based)."""
+        if not ASSEMBLYAI_AVAILABLE:
+            raise RuntimeError("AssemblyAI is not installed. Run: pip install assemblyai")
+        
+        logger.info(f"Transcribing with AssemblyAI: {audio_path}")
+        
+        config = aai.TranscriptionConfig(
+            speech_model=aai.SpeechModel.universal,
+            punctuate=True,
+            format_text=True,
+        )
+        
+        transcriber = aai.Transcriber(config=config)
+        transcript = transcriber.transcribe(audio_path)
+        
+        if transcript.status == aai.TranscriptStatus.error:
+            raise RuntimeError(f"AssemblyAI transcription failed: {transcript.error}")
+        
+        # Convert AssemblyAI response to word-level format matching Whisper output
+        words = []
+        if transcript.words:
+            for word in transcript.words:
+                words.append({
+                    "word": word.text,
+                    "start": word.start / 1000.0,  # Convert ms to seconds
+                    "end": word.end / 1000.0,
+                    "confidence": word.confidence or 0.9
+                })
+        else:
+            # Fallback: split text and estimate timestamps
+            text_words = transcript.text.split() if transcript.text else []
+            duration = transcript.audio_duration or 60  # Default 60s if unknown
+            word_duration = duration / max(len(text_words), 1)
+            for i, word in enumerate(text_words):
+                words.append({
+                    "word": word,
+                    "start": i * word_duration,
+                    "end": (i + 1) * word_duration,
+                    "confidence": 0.8
+                })
+        
+        logger.info(f"AssemblyAI transcription complete: {len(words)} words")
+        return words, {"duration": transcript.audio_duration}
+
 
     async def update_meeting_status(self, meeting_id: str, status: str, data: Optional[dict] = None) -> None:
         """Update meeting status via Redis to notify node-worker, with optional extra data."""
@@ -304,20 +424,40 @@ class MeetingProcessor:
                 logger.info(f"Downloaded audio for meeting {meeting_id} to {audio_path_to_use}")
             else:
                 audio_path_to_use = audio_path
-            norm_path = os.path.join(temp_dir, "norm.wav")
-            denoise_path = os.path.join(temp_dir, "denoise.wav")
-            self.normalize_audio(audio_path_to_use, norm_path)
-            self.denoise_audio_sox(norm_path, denoise_path)
-            chunk_dir = os.path.join(temp_dir, "chunks")
-            chunk_files = self.split_audio(denoise_path, chunk_dir, max_duration_min=10)
-            all_words = []
-            for chunk in sorted(chunk_files):
-                results, _ = self.transcribe_with_whisper(chunk, model_size=model_size, device=device)
-                all_words.extend(results)
-            full_transcript = " ".join([w['word'] for w in all_words])
-            # Update status to summarizing
-            boundaries = self.segment_topics(all_words, window_size=window_size, stride=stride, threshold=threshold)
-            boundaries.append(len(all_words))
+            
+            # Choose transcription method based on available dependencies
+            if self.use_assemblyai:
+                # Lightweight mode: Use AssemblyAI (cloud-based, no heavy dependencies)
+                logger.info(f"Using AssemblyAI for transcription (lightweight mode)")
+                all_words, info = self.transcribe_with_assemblyai(audio_path_to_use)
+                full_transcript = " ".join([w['word'] for w in all_words])
+                
+                # Simple segmentation for lightweight mode (no SentenceTransformer)
+                # Split into chunks by word count
+                WORDS_PER_SEGMENT = 200
+                boundaries = list(range(0, len(all_words), WORDS_PER_SEGMENT))
+                if boundaries[-1] != len(all_words):
+                    boundaries.append(len(all_words))
+            else:
+                # Full mode: Use local Whisper with preprocessing
+                logger.info(f"Using local Whisper for transcription (full mode)")
+                norm_path = os.path.join(temp_dir, "norm.wav")
+                denoise_path = os.path.join(temp_dir, "denoise.wav")
+                self.normalize_audio(audio_path_to_use, norm_path)
+                self.denoise_audio_sox(norm_path, denoise_path)
+                chunk_dir = os.path.join(temp_dir, "chunks")
+                chunk_files = self.split_audio(denoise_path, chunk_dir, max_duration_min=10)
+                all_words = []
+                for chunk in sorted(chunk_files):
+                    results, _ = self.transcribe_with_whisper(chunk, model_size=model_size, device=device)
+                    all_words.extend(results)
+                full_transcript = " ".join([w['word'] for w in all_words])
+                
+                # Semantic segmentation using SentenceTransformers
+                boundaries = self.segment_topics(all_words, window_size=window_size, stride=stride, threshold=threshold)
+                boundaries.append(len(all_words))
+            
+            # Continue with segmentation
             segment_data = []
             for i in range(len(boundaries) - 1):
                 raw_start, raw_end = boundaries[i], boundaries[i + 1]

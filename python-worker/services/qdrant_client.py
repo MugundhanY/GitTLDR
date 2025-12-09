@@ -10,7 +10,14 @@ from qdrant_client.http.models import (
 )
 import uuid
 import time
-from sentence_transformers import SentenceTransformer
+
+# Optional import - sentence-transformers may not be installed on lightweight deployments
+try:
+    from sentence_transformers import SentenceTransformer
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    SentenceTransformer = None
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
 
 from config.settings import get_settings
 from utils.logger import get_logger
@@ -24,8 +31,21 @@ class QuadrantVectorClient:
         self.settings = None
         self.client: Optional[QdrantClient] = None
         self._initialized = False
-        self.embedder = SentenceTransformer("sentence-transformers/paraphrase-mpnet-base-v2")
+        self._embedder = None  # Lazy initialization
         self.embedding_dimension = 768
+
+    def _get_embedder(self):
+        """Lazily initialize the embedder when needed."""
+        if self._embedder is None:
+            if not SENTENCE_TRANSFORMERS_AVAILABLE:
+                raise RuntimeError(
+                    "SentenceTransformer is not available. "
+                    "Install sentence-transformers for local embedding support, "
+                    "or use API-based embeddings via Gemini."
+                )
+            self._embedder = SentenceTransformer("sentence-transformers/paraphrase-mpnet-base-v2")
+            logger.info("Loaded SentenceTransformer model for embeddings")
+        return self._embedder
 
     async def connect(self) -> None:
         """Connect to Quadrant."""
@@ -451,7 +471,7 @@ class QuadrantVectorClient:
             for segment in segments:
                 # Create embedding for segment text
                 segment_text = f"{segment.get('title', '')} {segment.get('summary', '')} {segment.get('text', '')}"
-                embedding = self.embedder.encode(segment_text).tolist()
+                embedding = self._get_embedder().encode(segment_text).tolist()
                 
                 # Ensure embedding has correct dimension
                 if len(embedding) < self.embedding_dimension:

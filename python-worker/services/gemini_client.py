@@ -9,7 +9,14 @@ from typing import List, Dict, Any, Optional
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import tiktoken
-from sentence_transformers import SentenceTransformer
+
+# Optional import - sentence-transformers may not be installed on lightweight deployments
+try:
+    from sentence_transformers import SentenceTransformer
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    SentenceTransformer = None
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
 
 from config.settings import get_settings
 from utils.logger import get_logger
@@ -1413,13 +1420,17 @@ Provide a comprehensive, technical answer that demonstrates deep understanding o
             }
               # Initialize sentence-transformers embedding model ONLY if not using Gemini embeddings
             if not self.settings.use_gemini_embeddings:
-                try:
-                    logger.info("Loading paraphrase-mpnet-base-v2 embedding model for local embeddings...")
-                    self.embedding_model = SentenceTransformer('sentence-transformers/paraphrase-mpnet-base-v2')
-                    logger.info("Local embedding model loaded successfully")
-                except Exception as e:
-                    logger.warning(f"Failed to load sentence-transformers model: {str(e)}")
-                    logger.info("Using fallback embedding approach")
+                if SENTENCE_TRANSFORMERS_AVAILABLE:
+                    try:
+                        logger.info("Loading paraphrase-mpnet-base-v2 embedding model for local embeddings...")
+                        self.embedding_model = SentenceTransformer('sentence-transformers/paraphrase-mpnet-base-v2')
+                        logger.info("Local embedding model loaded successfully")
+                    except Exception as e:
+                        logger.warning(f"Failed to load sentence-transformers model: {str(e)}")
+                        logger.info("Using fallback embedding approach")
+                        self.embedding_model = None
+                else:
+                    logger.warning("sentence-transformers not installed - using API embeddings or fallback")
                     self.embedding_model = None
             else:
                 logger.info("Skipping local embedding model load - using Gemini embeddings")

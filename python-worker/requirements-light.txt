@@ -1,0 +1,40 @@
+# Core dependencies - LIGHTWEIGHT version for Render free tier (512MB limit)
+# This excludes heavy ML models like sentence-transformers, torch, whisper
+
+# Core API
+fastapi
+uvicorn[standard]
+pydantic>=2.0.0
+pydantic-settings
+
+# AI Services (API-based, not local models)
+google-generativeai
+tiktoken
+assemblyai  # Cloud-based transcription - no heavy ML models
+
+# Databases
+redis
+asyncpg
+qdrant-client
+
+# HTTP clients
+httpx
+aiohttp>=3.9.0
+
+# Utilities
+python-dotenv
+structlog
+rich
+pyyaml
+
+# Cloud storage
+b2sdk
+
+# Optional - add these back if you have more memory:
+# sentence-transformers  # ~400MB+ for local embeddings
+# torch                  # ~2GB for ML
+# transformers           # ~500MB
+# faster-whisper         # ~1GB for audio transcription
+# openai-whisper         # ~1GB
+# langchain              # heavy with all deps
+# unstructured[all-docs] # heavy document processing

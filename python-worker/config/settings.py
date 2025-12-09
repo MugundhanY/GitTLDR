@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     # Multiple Gemini API keys for rotation (comma-separated)
     gemini_api_keys: Optional[str] = None  # Format: "key1,key2,key3"
     qdrant_api_key: Optional[str] = None
+    # AssemblyAI for cloud-based transcription (lightweight deployments)
+    assemblyai_api_key: Optional[str] = None
     
     # Embedding Configuration
     use_gemini_embeddings: bool = False  # Set to True to use Gemini, False for local model
