@@ -51,7 +51,7 @@ class GeminiFunctionCaller:
         self.tool_registry = tool_registry
         self.github_client = github_client
         self.max_turns = 5  # Prevent infinite loops
-        self.model_name = "gemini-2.5-flash-lite"  # Updated to 2.5 flash lite (10 RPM)
+        self.model_name = "gemini-2.5-flash"  # Updated to stable 2.5 flash (5 RPM)
     
     async def process_question(
         self,
@@ -285,8 +285,13 @@ Example tool call for getting commits:
 You have access to powerful tools that can fetch real-time data from GitHub:
 
 **Commit Tools:**
-- get_commits_by_author: Fetch commits by a specific author with date filters
+- get_commits_by_author: Fetch commits, optionally by author, with date filters
+  * Automatically includes file changes AND actual code diffs for ≤10 commits
+  * Shows exactly what code was added, removed, or modified (patch/diff content)
+  * For >10 commits, returns basic info only (use get_commit_details for specific commits)
+  * Check metadata.includes_file_changes to know if file details are included
 - get_commit_details: Get detailed information about a specific commit including full diff
+  * Use this when you need file changes for commits from a large result set
 
 **Pull Request Tools:**
 - get_pull_requests: List pull requests with state filters (open/closed/all)
@@ -309,13 +314,38 @@ You have access to powerful tools that can fetch real-time data from GitHub:
 5. **Provide context** - Explain what the data means and why it matters
 6. **Be concise but thorough** - Give complete answers without unnecessary verbosity
 
+**IMPORTANT - Handling Author Questions:**
+When users ask about commits by "a specific author" or "which authors" WITHOUT naming them:
+- DO NOT ask for clarification
+- INSTEAD: Call get_commits_by_author WITHOUT the author parameter to fetch all recent commits
+- Then organize and present the results grouped by author
+- This shows the user all contributors and their work
+- Example: "Here are the recent commits organized by author..."
+
+**IMPORTANT - Handling "What Changed" Questions:**
+When users ask "what changed" or "what did they change" or "what changes were introduced":
+- The get_commits_by_author tool automatically includes file changes AND code diffs for ≤10 commits
+- Simply call get_commits_by_author (with appropriate limit ≤10) to get commits, file stats, AND actual code patches
+- NO need to call get_commit_details separately unless you need more than 10 commits
+- **CRITICAL**: Don't just list statistics - EXPLAIN the changes in plain English by reading the patch content
+- Example: Instead of "Dockerfile: 1 addition, 1 deletion", say "Changed the exposed port from 8080 to 5500"
+- Parse the diff/patch content to understand what code was added, removed, or modified
+- Present meaningful explanations of what the changes accomplish
+
 **Response Format:**
 
 For commit-related questions:
 - List relevant commits with SHAs (short form: abc1234)
 - Include author, date, and message
-- Mention files changed and statistics
+- **Explain changes in plain English** - Don't just list stats, describe what was modified
+- Include file changes with patch/diff when available
+- For each changed file, explain what the code changes accomplish
 - Provide GitHub links
+
+Example format:
+"Commit abc1234 updated the Dockerfile to expose port 5500 instead of port 8080. 
+The change modified line 4 from 'EXPOSE 8080' to 'EXPOSE 5500'. This allows the 
+OpenTTS service to run on the correct port."
 
 For PR-related questions:
 - List PRs with numbers (#123)

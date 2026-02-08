@@ -73,10 +73,24 @@ export async function GET(
     // Try to get content using authenticated B2 access
     try {
       // Initialize B2 service for authenticated access
-      const b2Service = new B2StorageService();
+      let b2Service;
+      try {
+        b2Service = new B2StorageService();
+      } catch (initError) {
+        console.error('B2 service initialization failed on first attempt:', initError);
+        // Retry initialization once
+        try {
+          await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms
+          b2Service = new B2StorageService();
+          console.log('B2 service initialized successfully on retry');
+        } catch (retryError) {
+          console.error('B2 service initialization failed on retry:', retryError);
+          throw retryError; // Propagate to use fallback
+        }
+      }
       
       // If we have a fileKey, use it for B2 access
-      if (file.fileKey) {
+      if (file.fileKey && b2Service) {
         console.log('Fetching content using B2 fileKey:', file.fileKey);
         try {
           content = await b2Service.downloadFileContent(file.fileKey);

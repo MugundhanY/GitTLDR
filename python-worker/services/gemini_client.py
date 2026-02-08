@@ -2114,6 +2114,23 @@ Provide a detailed, accurate answer based solely on the information provided."""
             temperature=temperature
         )
     
+    def _ensure_configured(self):
+        """Ensure the client is configured before use (for tool calling compatibility)"""
+        # For tool calling, we need to ensure old client is ready
+        old_client = self._get_old_client_for_tools()
+        old_client._ensure_configured()
+    
+    @property
+    def api_key_manager(self):
+        """Expose api_key_manager for function calling compatibility"""
+        old_client = self._get_old_client_for_tools()
+        return old_client.api_key_manager
+    
+    async def categorize_question(self, question: str, repository_context: str = "") -> Dict[str, Any]:
+        """Categorize a question using unified client (delegates to old client for compatibility)"""
+        old_client = self._get_old_client_for_tools()
+        return await old_client.categorize_question(question, repository_context)
+    
     def get_rate_limit_status(self) -> Dict[str, Any]:
         """Get status of all tiers"""
         return self.unified_client.get_status()

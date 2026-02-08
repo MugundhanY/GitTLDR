@@ -180,6 +180,18 @@ app.post('/process-question', async (req: Request, res: Response) => {
 
     const jobId = `qna_${questionId}_${Date.now()}`;
 
+    // Strip attachment content to avoid Redis size limits (10MB)
+    // Python worker will fetch content from B2 using metadata
+    const attachmentMetadata = allAttachments.map(att => ({
+      fileName: att.fileName || att.backblazeFileId,
+      originalFileName: att.originalFileName,
+      fileType: att.fileType,
+      fileSize: att.fileSize,
+      backblazeFileId: att.backblazeFileId || att.fileName,
+      uploadUrl: att.uploadUrl
+      // NOTE: Explicitly NOT including 'content' field to stay under Redis 10MB limit
+    }));
+
     // Create job record
     await redis.hset(`job:${jobId}`, {
       id: jobId,
@@ -194,16 +206,25 @@ app.post('/process-question', async (req: Request, res: Response) => {
     });
 
     // Queue job for Python worker
-    await redis.lpush(process.env.QUEUE_NAME || 'gittldr_tasks', JSON.stringify({
+    const taskPayload = {
       jobId,
       type: 'qna',
       questionId,
       repositoryId,
       userId,
       question,
-      attachments: allAttachments,
+      attachments: attachmentMetadata,  // Only metadata, no content
       timestamp: new Date().toISOString()
-    }));
+    };
+    
+    const taskPayloadStr = JSON.stringify(taskPayload);
+    const payloadSize = Buffer.byteLength(taskPayloadStr, 'utf8');
+    
+    if (payloadSize > 10485760) {  // 10MB limit
+      throw new Error(`Task payload too large: ${(payloadSize / 1024 / 1024).toFixed(2)}MB exceeds 10MB Redis limit`);
+    }
+    
+    await redis.lpush(process.env.QUEUE_NAME || 'gittldr_tasks', taskPayloadStr);
 
     console.log(`❓ Queued QnA job for question ${questionId}${allAttachments.length > 0 ? ` with ${allAttachments.length} attachments` : ''}`);
 

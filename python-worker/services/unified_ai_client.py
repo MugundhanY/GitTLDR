@@ -3,9 +3,9 @@ Unified AI Client - Multi-Tier System with Adaptive Throttling
 ===============================================================
 
 ARCHITECTURE:
-Primary: Gemini 2.5 Model Cascade (with quotaUser quota isolation)
-  ├─ gemini-2.5-flash-lite (10 RPM/key) - Primary, fast responses
-  ├─ gemini-2.5-flash (5 RPM/key) - Fallback 1, more capable
+Primary: Gemini 2.5/3.0 Model Cascade (with quotaUser quota isolation)
+  ├─ gemini-2.5-flash (5 RPM/key) - Primary, stable and capable
+  ├─ gemini-3-flash (5 RPM/key) - Fallback 1, newer generation
   └─ gemma-3-4b (30 RPM/key) - Fallback 2, open model with high quota
 
 Fallback: GitHub Models (Azure AI)
@@ -23,10 +23,10 @@ RATE LIMIT PHILOSOPHY:
 We intentionally DO NOT enforce hard API call limits because:
 1. Quality > Cost: Better to use 64 calls and get it right than fail with arbitrary limits
 2. Self-regulating: Adaptive throttling naturally reduces call rate when hitting limits
-3. Gemini Primary: 10 RPM × 11 keys = 110 calls/min baseline capacity
+3. Gemini Primary: 5 RPM × 13 keys = 65 calls/min baseline capacity
 4. Model Cascade: Automatic fallback to higher-quota models (gemma-3-4b: 30 RPM)
 5. Issue Isolation: quotaUser prevents one heavy issue from affecting others
-6. Cost-effective: Gemini 2.5 Flash Lite is free tier (generous quotas)
+6. Cost-effective: Gemini 2.5/3 Flash models are free tier (generous quotas)
 
 TYPICAL USAGE (Medium Issue):
 - Understanding: 2-3 calls (GPT-4.1-mini or Gemini)
@@ -142,8 +142,8 @@ class UnifiedAIClient:
         self._initialized = True
         
         logger.info("🚀 UnifiedAIClient: Multi-Model Gemini CASCADE + GitHub FALLBACK")
-        logger.info("   ├─ PRIMARY: gemini-2.5-flash-lite (" + str(len(self.gemini_keys)) + " keys, 10 RPM/key with quotaUser)")
-        logger.info("   ├─ CASCADE: gemini-2.5-flash (" + str(len(self.gemini_keys)) + " keys, 5 RPM/key) → gemma-3-4b (30 RPM/key)")
+        logger.info("   ├─ PRIMARY: gemini-2.5-flash (" + str(len(self.gemini_keys)) + " keys, 5 RPM/key with quotaUser)")
+        logger.info("   ├─ CASCADE: gemini-3-flash (" + str(len(self.gemini_keys)) + " keys, 5 RPM/key) → gemma-3-4b (30 RPM/key)")
         logger.info("   ├─ FALLBACK: GPT-4.1 (" + str(len(self.github_tokens)) + " tokens) = " + str(len(self.github_tokens) * 15) + " rpm")
         logger.info("   ├─ FALLBACK: GPT-4.1-mini (" + str(len(self.github_tokens)) + " tokens) = " + str(len(self.github_tokens) * 15) + " rpm")
         logger.info("   └─ FEATURES: Adaptive throttling, model cascade, exponential backoff")
@@ -424,11 +424,11 @@ class UnifiedAIClient:
             logger.debug(f"🔑 Trying key {key_idx + 1}/{len(self.gemini_keys)}")
             
             try:
-                # Gemini model cascade: Try fastest first, fallback to alternatives
-                # gemini-2.5-flash-lite (10 RPM) → gemini-2.5-flash (5 RPM) → gemma-3-4b (30 RPM)
+                # Gemini model cascade: Use stable models with fallbacks
+                # gemini-2.5-flash (5 RPM) → gemini-3-flash (5 RPM) → gemma-3-4b (30 RPM)
                 models_to_try = [
-                    ("gemini-2.5-flash-lite", 10),   # Primary: Fast, high RPM quota
-                    ("gemini-2.5-flash", 5),          # Fallback 1: More capable, lower RPM
+                    ("gemini-2.5-flash", 5),          # Primary: Stable, good performance
+                    ("gemini-3-flash", 5),            # Fallback 1: Newer model, same RPM
                     ("gemma-3-4b", 30),               # Fallback 2: Open model, high RPM
                 ]
                 
@@ -605,11 +605,12 @@ class UnifiedAIClient:
                 text = text[:8000]
             
             try:
-                base_url = "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent"
+                # Use gemini-embedding-1 (the new supported embedding model)
+                base_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-1:embedContent"
                 params = {"key": api_key}
                 headers = {"Content-Type": "application/json"}
                 data = {
-                    "model": "models/text-embedding-004",
+                    "model": "models/gemini-embedding-1",
                     "content": {"parts": [{"text": text}]},
                     "taskType": "RETRIEVAL_DOCUMENT"
                 }

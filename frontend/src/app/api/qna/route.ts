@@ -48,7 +48,9 @@ export async function POST(request: NextRequest) {
       console.log(`✅ Created pending question: ${questionId}`);
     } catch (error) {
       console.error('Error creating pending question:', error);
-      // Continue with processing even if pending creation fails
+      const err: any = new Error('Failed to create question');
+      err.questionId = questionId;
+      throw err;
     }
 
     // Check processing mode: API or WORKER
@@ -154,8 +156,22 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error processing question:', error);
+    
+    // Rollback: Delete the pending question if it was created
+    try {
+      const questionId = (error as any).questionId || body?.questionId;
+      if (questionId) {
+        await prisma.question.delete({
+          where: { id: questionId }
+        }).catch(() => {});
+        console.log(`🗑️ Rolled back pending question: ${questionId}`);
+      }
+    } catch (rollbackError) {
+      console.error('Failed to rollback question:', rollbackError);
+    }
+    
     return NextResponse.json(
-      { error: 'Failed to process question' },
+      { error: 'Failed to process question', details: (error as Error).message },
       { status: 500 }
     );
   }
